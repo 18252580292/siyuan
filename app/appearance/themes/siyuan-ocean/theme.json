@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-ocean",
+  "author": "SiYuan local customization",
+  "version": "1.0.0",
+  "url": "https://github.com/siyuan-note/siyuan",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "dark"
+  ],
+  "displayName": {
+    "default": "Deep Ocean",
+    "zh-CN": "深海蓝",
+    "zh-TW": "深海藍"
+  }
+}

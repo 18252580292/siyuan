@@ -9,11 +9,12 @@
   word-wrap: break-word;
   background-color: var(--b3-tooltips-background);
   border-radius: var(--b3-border-radius);
+  box-shadow: var(--b3-tooltip-shadow, none);
   line-height: 17px;
   width: max-content;
   max-width: 320px;
   animation-name: zoomIn;
-  animation-duration: 150ms;
+  animation-duration: var(--b3-tooltip-animation-duration, 150ms);
   animation-delay: 300ms;
   animation-fill-mode: both;
   max-height: 90vh;

@@ -1,4 +1,5 @@
-import {getSettingTab, type TSettingTab} from "../setting/tabs";
+import {getSettingTab} from "../setting/tabs";
+import type {TSettingTab} from "../setting/tabs";
 import type {SettingTabMountContext} from "../setting/builder";
 import {clearSettingTabSearch} from "../setting/mount";
 import {getSearchKeywordsLower} from "./normalize";

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN" data-frontend="desktop" data-theme-mode="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>思源笔记 · 桌面外观预览</title>
+    <link rel="stylesheet" href="desktop.css">
+    <link id="theme" rel="stylesheet" href="/upstream/siyuan/app/appearance/themes/daylight/theme.css">
+    <style>
+        :root { --b3-font-size-editor: 17px; }
+        .preview-workspace { padding: 6px 10px; gap: var(--b3-layout-space); min-height: 0; }
+        .preview-sidebar { width: 250px; display: flex; flex-direction: column; }
+        .preview-outline { width: 185px; display: flex; flex-direction: column; }
+        .preview-section { padding: 20px 16px 8px; font-size: 12px; color: var(--b3-theme-on-surface-light); }
+        .preview-toolbar-title { padding-left: 12px; font-size: 12px; color: var(--b3-theme-on-surface); }
+        .preview-toolbar { height: 44px; }
+        .preview-workspace .layout__center { display: flex; flex-direction: column; min-width: 0; }
+        .preview-workspace .layout-tab-container { flex: 1; min-height: 0; }
+        .preview-workspace .protyle { width: 100%; height: 100%; }
+        .preview-sidebar .b3-text-field { width: calc(100% - 24px); margin: 12px; }
+        .preview-notebook { padding: 12px 16px; font-weight: 600; }
+        .preview-meta { margin: 10px 4px 4px; font-size: 12px; color: var(--b3-theme-on-surface); }
+        @media (max-width: 1000px) { .preview-outline { display: none; } .preview-sidebar { width: 215px; } }
+        @media (max-width: 680px) { .preview-sidebar { width: 160px; } .preview-toolbar-title { display: none; } }
+    </style>
+</head>
+<body class="fn__flex-column">
+    <div class="toolbar preview-toolbar fn__flex" id="toolbar">
+        <button class="toolbar__item ariaLabel" aria-label="侧栏"><svg><use href="#iconDock"></use></svg></button>
+        <span class="preview-toolbar-title">个人空间</span>
+        <span class="fn__flex-1" id="drag">思源笔记</span>
+        <button class="toolbar__item ariaLabel" id="themeToggle" aria-label="切换深色主题"><svg><use href="#iconTheme"></use></svg></button>
+        <button class="toolbar__item ariaLabel" aria-label="设置"><svg><use href="#iconSettings"></use></svg></button>
+    </div>
+    <div class="fn__flex-1 fn__flex preview-workspace layout">
+        <aside class="layout__dockl preview-sidebar file-tree layout__tab--active">
+            <div class="preview-notebook">我的知识花园</div>
+            <input class="b3-text-field" aria-label="搜索笔记" placeholder="搜索笔记...">
+            <div class="b3-list b3-list--background">
+                <div class="b3-list-item"><span class="b3-list-item__graphic"><svg><use href="#iconHistory"></use></svg></span><span class="b3-list-item__text">最近打开</span></div>
+                <div class="b3-list-item"><span class="b3-list-item__graphic"><svg><use href="#iconStar"></use></svg></span><span class="b3-list-item__text">收藏</span></div>
+            </div>
+            <div class="preview-section">笔记本</div>
+            <div class="b3-list b3-list--background">
+                <div class="b3-list-item"><span class="b3-list-item__graphic"><svg><use href="#iconNotebook"></use></svg></span><span class="b3-list-item__text">日常与灵感</span><span class="b3-list-item__meta">12</span></div>
+                <div class="b3-list-item"><span class="b3-list-item__graphic"><svg><use href="#iconRight"></use></svg></span><span class="b3-list-item__text">阅读笔记</span></div>
+                <div class="b3-list-item b3-list-item--focus"><span class="b3-list-item__graphic"><svg><use href="#iconFile"></use></svg></span><span class="b3-list-item__text">留一点空间给思考</span></div>
+                <div class="b3-list-item"><span class="b3-list-item__graphic"><svg><use href="#iconFile"></use></svg></span><span class="b3-list-item__text">十月的阅读清单</span></div>
+                <div class="b3-list-item"><span class="b3-list-item__graphic"><svg><use href="#iconFile"></use></svg></span><span class="b3-list-item__text">周末去山里走走</span></div>
+                <div class="b3-list-item"><span class="b3-list-item__graphic"><svg><use href="#iconNotebook"></use></svg></span><span class="b3-list-item__text">工作与项目</span><span class="b3-list-item__meta">8</span></div>
+            </div>
+            <div class="fn__flex-1"></div>
+            <div class="b3-list b3-list--background"><div class="b3-list-item"><span class="b3-list-item__graphic"><svg><use href="#iconTrashcan"></use></svg></span><span class="b3-list-item__text">回收站</span></div></div>
+            <div class="fn__space"></div>
+        </aside>
+        <main class="layout__center layout__wnd--active fn__flex-1">
+            <div class="fn__flex"><ul class="layout-tab-bar fn__flex-1 fn__flex"><li class="item item--focus"><span class="item__text">留一点空间给思考</span><span class="item__close"><svg><use href="#iconClose"></use></svg></span></li><li class="item"><span class="item__text">十月的阅读清单</span></li></ul></div>
+            <div class="layout-tab-container">
+                <article class="protyle">
+                    <div class="protyle-breadcrumb"><div class="protyle-breadcrumb__bar"><span class="protyle-breadcrumb__item">日常与灵感</span><span class="protyle-breadcrumb__item">阅读笔记</span></div><span class="fn__flex-1"></span><button class="block__icon block__icon--show" aria-label="更多"><svg><use href="#iconMore"></use></svg></button></div>
+                    <div class="protyle-content" data-padding-mode="responsive">
+                        <div class="protyle-top"><div class="protyle-title"><div class="protyle-title__input" contenteditable="true">留一点空间给思考</div><div class="preview-meta">2026 年 10 月 12 日 · 阅读笔记</div></div></div>
+                        <div class="protyle-wysiwyg" contenteditable="true">
+                            <div class="p" data-node-id="preview-1">有些想法，值得慢一点写下来。</div>
+                            <div class="p" data-node-id="preview-2">把散落的片段放在一起，留出一点空白，让思路自然地连接。笔记不必一次写完，也可以在每次重新阅读时，长出新的理解。</div>
+                            <div class="bq" data-node-id="preview-3"><div class="p" data-node-id="preview-4">好的工具，让注意力回到内容本身。</div></div>
+                            <div class="h2" data-node-id="preview-5">今天想做的三件事</div>
+                            <div class="p" data-node-id="preview-6">读完正在看的那一章，记下一个有启发的观点。</div>
+                            <div class="p" data-node-id="preview-7">整理最近的灵感，把有关联的笔记放在一起。</div>
+                            <div class="p" data-node-id="preview-8">给自己一个没有通知打扰的下午。</div>
+                            <div class="h2" data-node-id="preview-9">接下来，慢慢积累</div>
+                            <div class="p" data-node-id="preview-10">不急着得到答案，先把问题记录下来。等到合适的时候，再回来看它。</div>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </main>
+        <aside class="layout__dockr preview-outline">
+            <div class="preview-section">文档大纲</div>
+            <div class="b3-list b3-list--background"><div class="b3-list-item b3-list-item--focus"><span class="b3-list-item__text">留一点空间给思考</span></div><div class="b3-list-item"><span class="b3-list-item__text">今天想做的三件事</span></div><div class="b3-list-item"><span class="b3-list-item__text">接下来，慢慢积累</span></div></div>
+        </aside>
+    </div>
+    <div class="status fn__flex"><span class="status__msg">外观预览 · 演示内容</span><span class="fn__flex-1"></span><span class="status__counter">思源共享组件与内置主题</span></div>
+    <script src="/upstream/siyuan/app/appearance/icons/litheness/icon.js"></script>
+    <script>
+        const theme = document.getElementById("theme");
+        const toggle = document.getElementById("themeToggle");
+        const fontSize = Number(new URLSearchParams(location.search).get("font"));
+        if (fontSize >= 12 && fontSize <= 40) {
+            document.documentElement.style.setProperty("--b3-font-size-editor", `${fontSize}px`);
+        }
+        const applyTheme = dark => {
+            theme.href = `/upstream/siyuan/app/appearance/themes/${dark ? "midnight" : "daylight"}/theme.css`;
+            document.documentElement.dataset.themeMode = dark ? "dark" : "light";
+            toggle.setAttribute("aria-label", dark ? "切换浅色主题" : "切换深色主题");
+        };
+        applyTheme(new URLSearchParams(location.search).get("theme") === "dark");
+        toggle.addEventListener("click", () => applyTheme(document.documentElement.dataset.themeMode !== "dark"));
+    </script>
+</body>
+</html>

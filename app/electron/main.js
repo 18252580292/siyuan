@@ -39,6 +39,7 @@ const {
 const {updateGlobalShortcutBindings} = require("./globalShortcutBindings");
 const {appendChromiumSwitch} = require("./chromiumSwitches");
 const {waitForPreviousWorkspaceExit, requestWorkspaceExitRecovery} = require("./workspaceExit");
+const {installBundledThemes} = require("./bundledThemes");
 const path = require("path");
 const fs = require("fs");
 const {pathToFileURL} = require("url");
@@ -730,7 +731,9 @@ remote.initialize();
 
 // Electron 相关文件夹名称改为 `SiYuan-Electron` https://github.com/siyuan-note/siyuan/issues/3349
 // getPath("userData") 会创建空的 SiYuan 目录，改为 app.getPath("appData")
-app.setPath("userData", path.join(app.getPath("appData"), app.getName() + "-Electron"));
+// 本地定制包使用固定配置名称，使显示名称调整后仍能读取原有设置。
+const electronProfileName = require("../package.json").localProfileName || app.getName();
+app.setPath("userData", path.join(app.getPath("appData"), electronProfileName + "-Electron"));
 
 if (process.platform === "win32") {
     // Windows 需要设置 AppUserModelId 才能正确显示应用名称和应用图标 https://github.com/siyuan-note/siyuan/issues/17022
@@ -2680,6 +2683,13 @@ const initKernel = (workspace, port, lang, safeMode, preparedBoot) => {
         let cmd = `ui version [${appVer}], booting kernel [${kernelPath} ${cmds.join(" ")}]`;
         writeLog(cmd);
         if (!isDevEnv || workspaces.length > 0) {
+            if (!safeMode) {
+                try {
+                    installBundledThemes(appDir, currentWorkspace);
+                } catch (error) {
+                    writeLog("install bundled themes failed: " + error.message);
+                }
+            }
             const spawnStartedAt = Date.now();
             const kernelProcess = childProcess.spawn(kernelPath, cmds, {
                 detached: false, // 桌面端内核进程不再以游离模式拉起 https://github.com/siyuan-note/siyuan/issues/6336

@@ -40,6 +40,30 @@ module.exports = (env, argv) => {
                 chunks: "all",
                 minSize: 20000,
                 cacheGroups: {
+                    // 设置面板的异步代码保持独立，避免共享入口将其重新合并到首屏 common。
+                    settingsDialog: {
+                        test: /[\\/]src[\\/]config[\\/]/,
+                        name: "settings-dialog",
+                        chunks: "async",
+                        priority: 30,
+                        enforce: true,
+                    },
+                    // 密码字典不并入首屏 vendors，仅在密码强度检查时加载。
+                    passwordEstimator: {
+                        test: /[\\/]node_modules[\\/]zxcvbn[\\/]/,
+                        name: "password-estimator",
+                        chunks: "async",
+                        priority: 20,
+                        enforce: true,
+                    },
+                    // PDF 查看器保持独立异步分包，普通笔记启动不解析查看器代码。
+                    pdfViewer: {
+                        test: /[\\/]src[\\/]asset[\\/]pdf[\\/](?!loadCore\.ts$)/,
+                        name: "pdf-viewer",
+                        chunks: "async",
+                        priority: 20,
+                        enforce: true,
+                    },
                     // MP3 编码器仅由录音 Worker 使用，单独分包可避免主界面提前加载。
                     recordMediaEncoder: {
                         test: /[\\/]node_modules[\\/]@breezystack[\\/]lamejs[\\/]/,

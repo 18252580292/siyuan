@@ -42,6 +42,7 @@ import {applyHeadingLevelUpdates, getHeadingLevelUpdateOperations} from "../../p
 import {syncDocTitleIAL} from "../../protyle/util/docTitleIAL";
 import {canBatchConvertHeadings, showHeadingBatchDialog} from "../../protyle/util/headingBatch";
 import {waitForPendingTransactions} from "../../protyle/util/transactionQueue";
+import {createOutlineHeadingLookup} from "../../protyle/util/outlineHeadingLookup";
 
 export class Outline extends Model {
     private currentRequestID = 0;
@@ -541,9 +542,8 @@ export class Outline extends Model {
             return;
         }
         const ops = data.data.sources[0];
-        const headingIDs = new Set(Array.from(this.element.querySelectorAll<HTMLElement>(
-            ".b3-list-item[data-node-id]"
-        )).map(item => item.dataset.nodeId!));
+        const headingIDs = createOutlineHeadingLookup(this.element,
+            (ops.doOperations?.length || 0) + (ops.undoOperations?.length || 0));
         const needReload = operationsMayChangeOutline(ops.doOperations, headingIDs) ||
             operationsMayChangeOutline(ops.undoOperations, headingIDs);
         if (needReload) {

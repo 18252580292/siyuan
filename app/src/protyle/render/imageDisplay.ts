@@ -3,6 +3,39 @@ import {renameAsset} from "../../editor/rename";
 import {getImageTitle, setImageTitle} from "./imageTitle";
 
 const boundImageNames = new WeakSet<HTMLElement>();
+const boundImageLayouts = new WeakSet<HTMLImageElement>();
+const imageDimensions = new Map<string, {width: number, ratio: number}>();
+
+// 只缓存当前渲染进程中已成功加载的尺寸，不请求资源，也不写入正文样式或偏好设置。
+const prepareImageLayout = (image: HTMLImageElement) => {
+    const source = image.src;
+    const cacheable = source.length <= 4096 && image.getAttribute("data-src") && !source.includes("/stage/loading");
+    const remember = () => {
+        if (!cacheable || !source || !image.naturalWidth || !image.naturalHeight) {
+            return;
+        }
+        imageDimensions.delete(source);
+        imageDimensions.set(source, {width: image.naturalWidth, ratio: image.naturalWidth / image.naturalHeight});
+        if (imageDimensions.size > 256) {
+            imageDimensions.delete(imageDimensions.keys().next().value);
+        }
+    };
+    if (image.complete) {
+        remember();
+    }
+    const dimensions = cacheable ? imageDimensions.get(source) : undefined;
+    if (dimensions) {
+        image.setAttribute("data-ui-image-width", `${dimensions.width}px`);
+        image.setAttribute("data-ui-image-ratio", String(dimensions.ratio));
+    } else {
+        image.removeAttribute("data-ui-image-width");
+        image.removeAttribute("data-ui-image-ratio");
+    }
+    if (!boundImageLayouts.has(image)) {
+        boundImageLayouts.add(image);
+        image.addEventListener("load", () => prepareImageLayout(image));
+    }
+};
 
 const setImageName = (element: HTMLElement, path: string) => {
     const text = document.createElement("span");
@@ -12,6 +45,7 @@ const setImageName = (element: HTMLElement, path: string) => {
 
 export const renderImageDisplay = (root: Element) => {
     root.querySelectorAll<HTMLImageElement>(".img img").forEach(image => {
+        prepareImageLayout(image);
         setImageTitle(image, getImageTitle(image));
         const container = image.parentElement;
         const title = container.querySelector<HTMLElement>(".protyle-action__title");

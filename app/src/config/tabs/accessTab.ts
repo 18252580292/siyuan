@@ -24,12 +24,15 @@ import {
     updatePublishConfig
 } from "./accessRuntime";
 import {sendAppSetting} from "./appRuntime";
-import zxcvbn = require("zxcvbn");
+import {createLazyModuleLoader} from "../../util/lazyModule";
 import {canOpenExternalURL, getHostCapabilities} from "../../util/hostCapabilities";
 import {openNotebookArchiveDialog, openNotebookArchiveImportDialog} from "../notebookArchive";
 
-const getPasswordStrength = (password: string) => {
-    const score = zxcvbn(password).score;
+const loadPasswordEstimator = createLazyModuleLoader(() => import("./passwordEstimator").then(module => module.estimatePassword));
+const passwordStrengthVersions = new WeakMap<HTMLElement, number>();
+const getPasswordStrength = async (password: string) => {
+    const estimate = await loadPasswordEstimator();
+    const score = estimate(password);
     if (score <= 1) {
         return "weak";
     }
@@ -39,23 +42,51 @@ const getPasswordStrength = (password: string) => {
     return "strong";
 };
 
-const updatePasswordStrength = (element: HTMLElement, password: string) => {
+const updatePasswordStrength = async (element: HTMLElement, password: string) => {
+    const version = (passwordStrengthVersions.get(element) || 0) + 1;
+    passwordStrengthVersions.set(element, version);
     if (!password) {
         element.classList.add("fn__none");
         return;
     }
-    const strength = getPasswordStrength(password);
-    element.classList.remove("fn__none");
-    element.setAttribute("data-strength", strength);
-    element.textContent = window.siyuan.languages[`passwordStrength${strength[0].toUpperCase()}${strength.slice(1)}`];
+    try {
+        const strength = await getPasswordStrength(password);
+        if (!element.isConnected || passwordStrengthVersions.get(element) !== version) {
+            return;
+        }
+        element.classList.remove("fn__none");
+        element.setAttribute("data-strength", strength);
+        element.textContent = window.siyuan.languages[`passwordStrength${strength[0].toUpperCase()}${strength.slice(1)}`];
+    } catch (error) {
+        console.error("Load password estimator failed:", error);
+    }
 };
 
-const confirmWeakPassword = (password: string, confirm: () => void) => {
-    if (getPasswordStrength(password) !== "weak") {
-        confirm();
-        return;
+const confirmWeakPassword = async (password: string, confirm: () => void, isCurrent: () => boolean) => {
+    const submit = async () => {
+        try {
+            if (isCurrent()) {
+                await confirm();
+            }
+        } catch (error) {
+            showMessage(String(error));
+        }
+    };
+    try {
+        const strength = await getPasswordStrength(password);
+        if (!isCurrent()) {
+            return;
+        }
+        if (strength !== "weak") {
+            await submit();
+            return;
+        }
+        confirmDialog("⚠️ " + window.siyuan.languages.weakPasswordConfirmTitle, window.siyuan.languages.weakPasswordConfirmTip, () => {
+            void submit();
+        });
+    } catch (error) {
+        showMessage(String(error));
     }
-    confirmDialog("⚠️ " + window.siyuan.languages.weakPasswordConfirmTitle, window.siyuan.languages.weakPasswordConfirmTip, confirm);
 };
 
 const registerAccessAuthGroup = (tab: SettingTabBuilder) => {
@@ -943,13 +974,19 @@ const openEnableEncryptedDialog = (onSuccess: () => void, onCancel: () => void) 
     const passwordStrength = dialog.element.querySelector(".password-strength") as HTMLElement;
     (inputs[0] as HTMLInputElement).focus();
     inputs[0].addEventListener("input", () => updatePasswordStrength(passwordStrength, inputs[0].value));
+    let submitting = false;
     riskCheckbox.addEventListener("change", () => {
-        confirmBtn.disabled = !riskCheckbox.checked;
+        confirmBtn.disabled = submitting || !riskCheckbox.checked;
     });
+    let attemptVersion = 0;
     btnsElement[0].addEventListener("click", () => {
         dialog.destroy();
     });
     confirmBtn.addEventListener("click", () => {
+        if (submitting) {
+            return;
+        }
+        const version = ++attemptVersion;
         const pwd1 = (inputs[0] as HTMLInputElement).value;
         const pwd2 = (inputs[1] as HTMLInputElement).value;
         if (!pwd1) {
@@ -960,14 +997,27 @@ const openEnableEncryptedDialog = (onSuccess: () => void, onCancel: () => void) 
             showMessage(window.siyuan.languages.passwordNoMatch);
             return;
         }
+        const isCurrent = () => dialog.element.isConnected && attemptVersion === version && riskCheckbox.checked &&
+            inputs[0].value === pwd1 && inputs[1].value === pwd2;
         confirmWeakPassword(pwd1, async () => {
-            const response = await fetchSyncPost("/api/notebook/enableEncryptedNotebooks", {password: pwd1});
-            if (response.code === 0) {
-                showMessage(window.siyuan.languages.encryptedNotebookEnabled);
-                dialog.destroy();
-                onSuccess();
+            if (!isCurrent()) {
+                return;
             }
-        });
+            attemptVersion++;
+            submitting = true;
+            confirmBtn.disabled = true;
+            try {
+                const response = await fetchSyncPost("/api/notebook/enableEncryptedNotebooks", {password: pwd1});
+                if (response.code === 0) {
+                    showMessage(window.siyuan.languages.encryptedNotebookEnabled);
+                    dialog.destroy();
+                    onSuccess();
+                }
+            } finally {
+                submitting = false;
+                confirmBtn.disabled = !riskCheckbox.checked;
+            }
+        }, isCurrent);
     });
 };
 
@@ -992,10 +1042,17 @@ const openChangeMasterPasswordDialog = (onChanged?: () => void) => {
     const inputs = dialog.element.querySelectorAll("input");
     const passwordStrength = dialog.element.querySelector(".password-strength") as HTMLElement;
     inputs[1].addEventListener("input", () => updatePasswordStrength(passwordStrength, inputs[1].value));
+    let attemptVersion = 0;
+    let submitting = false;
+    const confirmBtn = btnsElement[1] as HTMLButtonElement;
     btnsElement[0].addEventListener("click", () => {
         dialog.destroy();
     });
-    btnsElement[1].addEventListener("click", () => {
+    confirmBtn.addEventListener("click", () => {
+        if (submitting) {
+            return;
+        }
+        const version = ++attemptVersion;
         const oldPwd = (inputs[0] as HTMLInputElement).value;
         const newPwd = (inputs[1] as HTMLInputElement).value;
         const confirmPwd = (inputs[2] as HTMLInputElement).value;
@@ -1006,18 +1063,31 @@ const openChangeMasterPasswordDialog = (onChanged?: () => void) => {
             showMessage(window.siyuan.languages.passwordNoMatch);
             return;
         }
+        const isCurrent = () => dialog.element.isConnected && attemptVersion === version &&
+            inputs[0].value === oldPwd && inputs[1].value === newPwd && inputs[2].value === confirmPwd;
         confirmWeakPassword(newPwd, async () => {
-            const response = await fetchSyncPost("/api/notebook/changeMasterPassword", {
-                oldPassword: oldPwd,
-                newPassword: newPwd
-            });
-            if (response.code === 0) {
-                showMessage(window.siyuan.languages.changeMasterPasswordSuccessTip);
-                dialog.destroy();
-                onChanged?.();
-            } else {
-                showMessage(response.msg, 6000, "error");
+            if (!isCurrent()) {
+                return;
             }
-        });
+            attemptVersion++;
+            submitting = true;
+            confirmBtn.disabled = true;
+            try {
+                const response = await fetchSyncPost("/api/notebook/changeMasterPassword", {
+                    oldPassword: oldPwd,
+                    newPassword: newPwd
+                });
+                if (response.code === 0) {
+                    showMessage(window.siyuan.languages.changeMasterPasswordSuccessTip);
+                    dialog.destroy();
+                    onChanged?.();
+                } else {
+                    showMessage(response.msg, 6000, "error");
+                }
+            } finally {
+                submitting = false;
+                confirmBtn.disabled = false;
+            }
+        }, isCurrent);
     });
 };

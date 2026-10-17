@@ -61,3 +61,40 @@ test("cell navigation reveals previously frozen cells when freezing is suspended
     exports.cellScrollIntoView(block, cell, false);
     assert.equal(scroll.scrollLeft, 400);
 });
+
+test("grouped frozen columns read current geometry before changing positioning classes", () => {
+    const events: string[] = [];
+    let viewportWidth = 300;
+    const widths = [220, 221, 500];
+    const states: boolean[] = [];
+    const bodies = widths.map((_width, index) => ({
+        querySelector: () => ({getBoundingClientRect: () => {
+            events.push("read:" + index);
+            return {width: widths[index]};
+        }}),
+        classList: {toggle: (_name: string, suspended: boolean) => {
+            events.push("write:" + index);
+            states[index] = suspended;
+        }},
+    }));
+    bodies.push({querySelector: () => null, classList: {toggle: (_name: string, suspended: boolean) => {
+        events.push("write:3");
+        states[3] = suspended;
+    }}});
+    const block = {dataset: {avType: "table"}, querySelector: () => ({get clientWidth() {
+        events.push("viewport");
+        return viewportWidth;
+    }}), querySelectorAll: () => bodies} as unknown as HTMLElement;
+    updateFrozenColumns(block);
+    assert.deepEqual(events, ["viewport", "read:0", "read:1", "read:2", "write:0", "write:1", "write:2", "write:3"]);
+    assert.deepEqual(states, [false, true, true, false]);
+    events.length = 0;
+    viewportWidth = 600;
+    widths[1] = 550;
+    updateFrozenColumns(block);
+    assert.deepEqual(states, [false, true, false, false]);
+    events.length = 0;
+    viewportWidth = 0;
+    updateFrozenColumns(block);
+    assert.deepEqual(events, ["viewport"]);
+});

@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-cream",
+  "author": "SiYuan local customization",
+  "version": "1.0.0",
+  "url": "https://github.com/siyuan-note/siyuan",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "light"
+  ],
+  "displayName": {
+    "default": "Cream Paper",
+    "zh-CN": "奶油纸",
+    "zh-TW": "奶油紙"
+  }
+}

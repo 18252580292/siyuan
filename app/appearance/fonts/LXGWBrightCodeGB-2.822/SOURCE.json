@@ -1,0 +1,20 @@
+{
+  "version": "2.822",
+  "source": "https://github.com/lxgw/LxgwBright-Code",
+  "fonts": [
+    {
+      "file": "LXGWBrightCodeGB-Regular.woff2",
+      "originalSHA256": "651d19d13ad628bbb1e1780fbdc8adab7ef853bd15250de655e5ff92d86535d2",
+      "woff2SHA256": "34dd922549ee74427153f5288cfce88526d9eed81b7f9069e7a3a16ed2592c97",
+      "originalBytes": 14203380,
+      "woff2Bytes": 6182060
+    },
+    {
+      "file": "LXGWBrightCodeGB-Italic.woff2",
+      "originalSHA256": "9b47da58b95c93554f97b8d541a06027d44abf639ea687497e67bee92f0e6604",
+      "woff2SHA256": "0a8d1d250903e39951c047e811301a3b1a18bea5d3f384211103f6b18f97c310",
+      "originalBytes": 15181400,
+      "woff2Bytes": 6407008
+    }
+  ]
+}

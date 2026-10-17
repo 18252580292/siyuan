@@ -257,7 +257,8 @@ export const transactionsMayChangeRootHeadingNumberSetting = (transactions: {
     });
 };
 
-export const operationsMayChangeOutline = (operations: IOperation[] | null = [], headingIDs: Set<string> = new Set()) => {
+export const operationsMayChangeOutline = (operations: IOperation[] | null = [],
+                                           headingIDs: Pick<Set<string>, "has"> = new Set()) => {
     return (operations ?? []).some(operation => {
         if (operationChangesHeadingNumberSetting(operation)) {
             return true;

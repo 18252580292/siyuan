@@ -1,3 +1,5 @@
+const FILE_TREE_RESTORE_CONCURRENCY = 6;
+
 export const restoreFileTreePaths = async (
     filesPaths: {notebookId: string, openPaths: string[]}[],
     load: (notebookId: string, path: string) => Promise<void>,
@@ -15,12 +17,15 @@ export const restoreFileTreePaths = async (
         });
     });
     for (const level of levels) {
-        // 每层完成 DOM 插入后再加载下一层，避免祖先刷新覆盖已展开的子树。
-        await Promise.all(Array.from(level.values(), async ({notebookId, path}) => {
-            try {
-                await load(notebookId, path);
-            } catch (error) {
-                console.error(error);
+        // 每层限制并发数量，完成 DOM 插入后再加载下一层，避免刷新覆盖已展开的子树。
+        const paths = level.values();
+        await Promise.all(Array.from({length: Math.min(FILE_TREE_RESTORE_CONCURRENCY, level.size)}, async () => {
+            for (const {notebookId, path} of paths) {
+                try {
+                    await load(notebookId, path);
+                } catch (error) {
+                    console.error(error);
+                }
             }
         }));
     }

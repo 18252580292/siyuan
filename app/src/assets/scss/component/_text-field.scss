@@ -25,13 +25,13 @@
   font-variant-ligatures: none;
   font-size: 14px;
 
-  &:not(.b3-text-field--text):hover {
+  &:not(.b3-text-field--text):not(:disabled):hover {
     box-shadow: 0 0 0 .6px var(--b3-border-color);
   }
 
   &:not(.b3-text-field--text):focus {
     outline-color: var(--b3-theme-primary-light);
-    box-shadow: 0 0 0 .6px var(--b3-theme-primary-lighter);
+    box-shadow: var(--b3-control-focus-shadow, 0 0 0 .6px var(--b3-theme-primary-lighter));
   }
 
   &[type="color"] {
@@ -51,5 +51,10 @@
   &--text {
     outline: none;
     box-shadow: 0 0 0;
+  }
+
+  &:disabled {
+    opacity: .68;
+    cursor: not-allowed;
   }
 }

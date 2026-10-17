@@ -14,10 +14,14 @@ import {areProtylePluginExtensionsEnabled} from "../runtimeCapabilities";
 import {invalidateFocusFoldRequests} from "./focusFold";
 import {unregisterViewFoldContext} from "./viewFold";
 import {destroyAutoDirection} from "../render/autoDirection";
+import {destroyScrollEvent} from "../scroll/event";
 
 export const destroy = (protyle: IProtyle) => {
     if (!protyle) {
         return;
+    }
+    if (protyle.contentElement) {
+        destroyScrollEvent(protyle.contentElement);
     }
     destroyFoldedRender(protyle);
     destroyListMindmaps(protyle);

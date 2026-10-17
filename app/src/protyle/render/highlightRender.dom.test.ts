@@ -10,11 +10,12 @@ import {ScriptTarget, transpileModule} from "typescript";
 const browserCases = async (source: string) => {
     const check: typeof assert = require("node:assert/strict");
     const {ipcRenderer} = require("electron");
+    let scriptReady = Promise.resolve();
     const api = new Function("Constants", "addScript", "setCodeTheme", "getContenteditableElement",
         "revealTabsForTarget", "isFoldedRenderContent", source + "\nreturn {highlightRender, renderLongTextRuns};")(
-        {PROTYLE_CDN: "", ZWSP: "\u200b"}, () => Promise.resolve(), () => {},
+        {PROTYLE_CDN: "", ZWSP: "\u200b"}, () => scriptReady, () => {},
         (element: Element) => element.querySelector('[contenteditable="true"]'), () => {}, () => false);
-    Object.assign(window, {siyuan: {config: {editor: {codeLineWrap: false, codeLigatures: false,
+    Object.assign(window, {siyuan: {config: {editor: {fontSize: 16, codeLineWrap: false, codeLigatures: false,
         codeSyntaxHighlightLineNum: false}}, languages: {}}});
     const editor = document.createElement("div");
     editor.className = "protyle-wysiwyg";
@@ -99,6 +100,41 @@ const browserCases = async (source: string) => {
     check.equal(getSelection().toString(), selected);
     check.equal(offset(code, getSelection().anchorNode, getSelection().anchorOffset), 8);
     check.equal(offset(code), 2);
+    for (const lineNumbers of [false, true]) {
+        window.siyuan.config.editor.codeLineWrap = true;
+        window.siyuan.config.editor.codeSyntaxHighlightLineNum = lineNumbers;
+        const body = makeCode("printf '" + "readable mixed 中文 text ".repeat(24) + "'\n");
+        editor.style.cssText = "width:320px;font:16px/24px monospace";
+        let finishScript: () => void;
+        scriptReady = new Promise(resolve => { finishScript = resolve; });
+        getSelection().removeAllRanges();
+        api.highlightRender(editor);
+        check.equal(getComputedStyle(body).whiteSpace, "pre-wrap",
+            "saved code wrapping applies while the syntax library is still loading");
+        check.equal(body.previousElementSibling.className, lineNumbers ? "protyle-linenumber__rows" : "fn__none");
+        const height = editor.getBoundingClientRect().height;
+        const original = body.textContent;
+        finishScript();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        check.ok(Math.abs(editor.getBoundingClientRect().height - height) < 1,
+            "delayed highlighting does not shift the following document content");
+        check.equal(body.textContent, original, "early layout preparation preserves code text");
+    }
+    for (const wrap of [false, true]) {
+        window.siyuan.config.editor.codeLineWrap = wrap;
+        window.siyuan.config.editor.codeSyntaxHighlightLineNum = true;
+        const body = makeCode('sss\n<span class="hljs-built_in">cat</span>\n' + "more lines\n".repeat(20));
+        body.parentElement.style.cssText = "max-height:72px;overflow:auto";
+        editor.focus();
+        getSelection().setBaseAndExtent(body.lastChild, 1, body.firstChild, 2);
+        const original = getSelection().toString();
+        const anchor = offset(body, getSelection().anchorNode, getSelection().anchorOffset);
+        const focus = offset(body);
+        await render();
+        check.equal(getSelection().toString(), original, "early line-number layout preserves a selection in scrollable code");
+        check.equal(offset(body, getSelection().anchorNode, getSelection().anchorOffset), anchor);
+        check.equal(offset(body), focus);
+    }
     editor.remove();
     return "Code highlight caret cases passed";
 };
@@ -112,12 +148,19 @@ test("code highlighting preserves the caret after forward deletion at highlighte
     const source = compile(readFileSync(path.join(__dirname, "../util/selectionOffsets.ts"), "utf8")) + "\n" +
         compile(readFileSync(path.join(__dirname, "../wysiwyg/compositionInput.ts"), "utf8")) + "\n" +
         compile(readFileSync(path.join(__dirname, "../util/longTextWrap.ts"), "utf8")) + "\n" +
+        compile(readFileSync(path.join(__dirname, "../../util/escape.ts"), "utf8")) + "\n" +
         compile(readFileSync(path.join(__dirname, "highlightRender.ts"), "utf8"));
     const temporary = mkdtempSync(path.join(tmpdir(), "siyuan-code-highlight-test-"));
     const script = path.join(temporary, "run.cjs");
     const highlightPath = path.resolve(__dirname, "../../../stage/protyle/js/highlight.js/highlight.min.js");
     writeFileSync(script, `const {app, BrowserWindow, ipcMain} = require("electron");
+for (const name of ["home", "appData"]) {
+    const folder = require("node:path").join(${JSON.stringify(temporary)}, name);
+    require("node:fs").mkdirSync(folder, {recursive:true});
+    app.setPath(name, folder);
+}
 app.setPath("userData", ${JSON.stringify(path.join(temporary, "profile"))});
+app.setAsDefaultProtocolClient = () => false;
 app.commandLine.appendSwitch("disable-gpu");
 app.whenReady().then(async () => {
     const win = new BrowserWindow({show: false, webPreferences: {nodeIntegration: true, contextIsolation: false, offscreen: true}});

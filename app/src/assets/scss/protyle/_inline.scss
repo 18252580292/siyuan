@@ -24,11 +24,11 @@
   }
 
   span[data-type~="search-mark"] {
-    background-color: var(--b3-protyle-inline-mark-background);
-    color: var(--b3-protyle-inline-mark-color);
+    background-color: var(--b3-search-highlight-background, var(--b3-protyle-inline-mark-background));
+    color: var(--b3-search-highlight-color, var(--b3-protyle-inline-mark-color));
 
     &.search-mark--hl {
-      background-color: var(--b3-theme-primary-lighter);
+      background-color: var(--b3-search-highlight-current-background, var(--b3-theme-primary-lighter));
       box-shadow: 0 0 0 .5px var(--b3-theme-on-background);
     }
   }

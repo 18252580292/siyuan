@@ -370,6 +370,8 @@ const runGeometryCases = async () => {
     for (const direction of ["up", "down"]) {
         const text = direction === "down" ? `x\n${"long".repeat(200)}\n` : `${"long".repeat(200)}\nx\n`;
         const {code, content, scroller} = setup(text);
+        // 给末行留出系统浮动滚动条的空间，避免滚动条覆盖待检查的光标。
+        scroller.style.paddingBottom = "16px";
         scroller.scrollLeft = 1000;
         assert.equal(focusEditableAtGoalX(code, direction, 40, content), true, `horizontal scroll ${direction}`);
         assert.equal(scroller.scrollLeft, 0);

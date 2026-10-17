@@ -4,6 +4,7 @@ import {onAgentStreamingMarkdownStorageChanged} from "./config/tabs/ai/agentStre
 import {onPageScrollButtonsStorageChanged} from "./protyle/scroll/pageButtons";
 import {onCompactModeStorageChanged, refreshCompactMode} from "./config/tabs/compactMode";
 import {closeNotebookHistoryDialogs} from "./history/notebookDialogs";
+import {invalidateHomeRecentDocs} from "./layout/home";
 import {systemConfig} from "./config/systemConfig";
 import {openStandaloneDatabaseItemByURI} from "./protyle/render/av/openStandaloneDatabaseItem";
 /// #if BROWSER
@@ -223,8 +224,12 @@ export class App {
                                 }
                             });
                             break;
+                        case "mount":
+                            invalidateHomeRecentDocs(data.data.box.id, false);
+                            break;
                         case "closeBox":
                         case "removeBox":
+                            invalidateHomeRecentDocs(data.data.box);
                             closeNotebookHistoryDialogs(data.data.box);
                             removeBlockPanelEditors({notebookId: data.data.box});
                             getAllTabs().forEach((tab) => {

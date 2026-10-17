@@ -6,6 +6,7 @@ import {focusByRange} from "../protyle/util/selectionOffsets";
 import {genSearch, updateConfig} from "./util";
 import type {App} from "../index";
 import {cancelSearchRequest} from "./request";
+import {cancelAssetSearch} from "./assets";
 import {
     hasExplicitSearchScope,
     replaceSearchConfigPath,
@@ -170,6 +171,7 @@ export const openSearch = async (options: SearchOpenOptions & {
                 focusByRange(range);
             }
             cancelSearchRequest(dialog.element.querySelector(".b3-dialog__body"));
+            cancelAssetSearch(dialog.element.querySelector("#searchAssets"));
             dialog.editors.edit.destroy();
             dialog.editors.unRefEdit.destroy();
         },

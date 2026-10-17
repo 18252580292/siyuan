@@ -14,6 +14,119 @@
     background-color: var(--b3-list-hover);
   }
 
+  // 原生按钮语义的文档卡片，同时支持鼠标和键盘激活。
+  &--document {
+    border: 0;
+    font: inherit;
+    text-align: left;
+    color: var(--b3-theme-on-background);
+    min-height: 192px;
+    flex-direction: column;
+    align-items: flex-start;
+    background-color: var(--b3-theme-background);
+    box-shadow: inset 0 0 0 1px var(--b3-border-color);
+    border-radius: var(--b3-border-radius-b);
+
+    &:nth-child(4n + 1) {
+      --b3-document-card-background: color-mix(in srgb, var(--b3-document-card-1, var(--b3-theme-surface-light)) var(--b3-document-card-tint-strength, 100%), var(--b3-theme-background));
+    }
+
+    &:nth-child(4n + 2) {
+      --b3-document-card-background: color-mix(in srgb, var(--b3-document-card-2, var(--b3-theme-surface-light)) var(--b3-document-card-tint-strength, 100%), var(--b3-theme-background));
+    }
+
+    &:nth-child(4n + 3) {
+      --b3-document-card-background: color-mix(in srgb, var(--b3-document-card-3, var(--b3-theme-surface-light)) var(--b3-document-card-tint-strength, 100%), var(--b3-theme-background));
+    }
+
+    &:nth-child(4n + 4) {
+      --b3-document-card-background: color-mix(in srgb, var(--b3-document-card-4, var(--b3-theme-surface-light)) var(--b3-document-card-tint-strength, 100%), var(--b3-theme-background));
+    }
+
+    &:hover,
+    &:focus-visible {
+      background-color: var(--b3-theme-surface-light);
+      box-shadow: inset 0 0 0 1px var(--b3-theme-primary-lighter);
+    }
+
+    .b3-card__img {
+      color: var(--b3-theme-primary);
+      margin: 18px 18px 0;
+    }
+
+    .b3-card__icon {
+      width: 24px;
+      height: 24px;
+      font-size: 24px;
+    }
+
+    .b3-card__info {
+      padding: 16px 18px 18px;
+      min-width: 0;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .b3-card__desc {
+      min-height: 42px;
+      max-height: 42px;
+      line-height: 21px;
+      margin-top: 10px;
+      -webkit-line-clamp: 2;
+      word-break: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .b3-card__title {
+      font-size: var(--b3-document-card-title-size, inherit);
+      line-height: var(--b3-document-card-title-line-height, inherit);
+    }
+  }
+
+  &__cover {
+    width: 100%;
+    height: var(--b3-document-card-cover-height, 64px);
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  &__thumbnail {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: var(--b3-document-card-cover-height, 64px);
+    flex-shrink: 0;
+    background-color: var(--b3-document-card-background, var(--b3-theme-surface-light));
+    color: var(--b3-theme-primary);
+  }
+
+  &__meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 18px;
+    font-size: var(--b3-document-card-meta-size, 11px);
+    font-weight: normal;
+    color: var(--b3-theme-on-surface-light);
+
+    > span:first-child {
+      min-width: 0;
+    }
+
+    > span:last-child {
+      white-space: nowrap;
+    }
+  }
+
+  &__title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
   &s {
     display: grid;
     gap: 16px;

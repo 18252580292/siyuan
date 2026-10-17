@@ -267,3 +267,307 @@
 .b3-text-field::-webkit-calendar-picker-indicator {
     filter: invert(1)
 }
+
+/* 中文字形与 Cursor 当前字体一致；优先本机字体，离线字体用于无字体的设备。 */
+@font-face {
+    font-family: "SkyNote CJK";
+    src: local("LXGWBrightCodeGB-Regular"), url("../../fonts/LXGWBrightCodeGB-2.822/LXGWBrightCodeGB-Regular.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FFFF, U+30000-3FFFF;
+}
+
+@font-face {
+    font-family: "SkyNote CJK";
+    src: local("LXGWBrightCodeGB-Italic"), url("../../fonts/LXGWBrightCodeGB-2.822/LXGWBrightCodeGB-Italic.woff2") format("woff2");
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+    unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FFFF, U+30000-3FFFF;
+}
+
+@font-face {
+    font-family: "SkyNote Cursor Text";
+    src: local("LXGWBrightCodeGB-Regular"), url("../../fonts/LXGWBrightCodeGB-2.822/LXGWBrightCodeGB-Regular.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "SkyNote Cursor Text";
+    src: local("LXGWBrightCodeGB-Italic"), url("../../fonts/LXGWBrightCodeGB-2.822/LXGWBrightCodeGB-Italic.woff2") format("woff2");
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+}
+
+/* 桌面外观：柔和的导航区、独立白纸编辑区与紫色选中状态。 */
+:root[data-frontend="desktop"],
+:root[data-frontend="desktop-window"],
+:root[data-frontend="browser-desktop"] {
+    --b3-font-family-default: var(--b3-font-family-emoji-reset), "SkyNote CJK", -apple-system, BlinkMacSystemFont, "PingFang SC", "PingFang TC", "Hiragino Sans GB", "Microsoft Yahei", sans-serif, emojis;
+    --b3-font-family-protyle: var(--b3-font-family-emoji-reset), "Courier New", "SkyNote Cursor Text", "LXGW Bright Code GB", Menlo, Monaco, var(--b3-font-family), monospace;
+    --b3-font-family-code: var(--b3-font-family-emoji-reset), "Courier New", "SkyNote Cursor Text", "LXGW Bright Code GB", Menlo, Monaco, monospace, emojis;
+    --b3-body-background-gradient: none;
+    /* 中性导航底色与独立阅读纸面，强调色用于当前项和焦点。 */
+    --b3-chrome-background: color-mix(in srgb, var(--b3-theme-surface) 92%, var(--b3-theme-background));
+    --b3-chrome-border: color-mix(in srgb, var(--b3-border-color) 65%, var(--b3-chrome-background));
+    --b3-chrome-editor-shadow: inset 0 0 0 1px var(--b3-chrome-border);
+    --b3-sidebar-selected-background: color-mix(in srgb, var(--b3-theme-primary) 8%, var(--b3-chrome-background));
+    --b3-breadcrumb-background: var(--b3-theme-background);
+    --b3-breadcrumb-shadow: inset 0 -1px 0 color-mix(in srgb, var(--b3-border-color) 55%, transparent);
+    --b3-protyle-cover-radius: 12px;
+    --b3-layout-space: 8px;
+    --b3-layout-space-margin: -8px;
+    --b3-border-radius: 8px;
+    --b3-border-radius-s: 5px;
+    --b3-border-radius-b: 12px;
+    --b3-list-item-min-height: 32px;
+    --b3-sidebar-row-height: 30px;
+    --b3-sidebar-row-margin: 1px 10px;
+    --b3-sidebar-header-height: 48px;
+    --b3-sidebar-header-size: 12px;
+    --b3-sidebar-header-color: var(--b3-theme-on-surface-light);
+    --b3-notebook-weight: 600;
+    --b3-notebook-space: 8px;
+    --b3-notebook-space-top: 10px;
+    --b3-notebook-space-bottom: 4px;
+    --b3-notebook-height: 32px;
+    --b3-nav-button-height: 32px;
+    --b3-nav-button-padding: 6px 12px;
+    --b3-tab-height: 30px;
+    --b3-tab-margin: 5px 3px;
+    --b3-tab-bar-padding: 0 8px;
+    --b3-tab-bar-background: var(--b3-chrome-background);
+    --b3-tab-bar-border: transparent;
+    --b3-tab-bar-border-width: 0px;
+    --b3-tab-font-size: 13px;
+    --b3-tab-separator-content: "";
+    --b3-tab-separator-color: color-mix(in srgb, var(--b3-theme-on-surface-light) 45%, transparent);
+    --b3-tab-max-width: 220px;
+    --b3-tab-active-color: var(--b3-theme-on-background);
+    --b3-tab-active-weight: 600;
+    --b3-tab-text-mask: none;
+    --b3-tab-text-overflow: ellipsis;
+    --b3-tab-text-align: left;
+    --b3-tab-active-accent: inset 0 -1px 0 var(--b3-theme-primary-lighter);
+    --b3-toolbar-item-height: 28px;
+    --b3-toolbar-item-padding: 6px;
+    --b3-dock-width: 44px;
+    --b3-dock-item-padding: 8px;
+    --b3-dock-item-margin: 4px;
+    --b3-breadcrumb-padding: 0 18px;
+    --b3-protyle-title-space: 32px;
+    --b3-protyle-title-size: clamp(1.9em, 2.7vw, 2.25em);
+    --b3-protyle-title-weight: 600;
+    --b3-protyle-title-line-height: 1.3;
+    --b3-protyle-title-letter-spacing: -.025em;
+    --b3-protyle-title-bottom-space: 18px;
+    --b3-protyle-title-divider: none;
+    --b3-protyle-block-spacing: 6px;
+    --b3-protyle-nested-block-spacing: 2px;
+    --b3-protyle-code-block-spacing: 8px;
+    --b3-protyle-code-padding: 2em 1em .85em;
+    --b3-sidebar-search-padding: 2px 12px 8px;
+    --b3-search-button-padding: 7px 10px;
+    --b3-sidebar-section-padding: 14px 20px 4px;
+    --b3-sidebar-section-rule: transparent;
+    --b3-list-selected-font-weight: 500;
+    --b3-protyle-heading-space: 28px;
+    --b3-transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, opacity 120ms ease, box-shadow 120ms ease;
+    --b3-theme-primary: #c2adf5;
+    --b3-theme-primary-light: rgba(194, 173, 245, .60);
+    --b3-theme-primary-lighter: rgba(194, 173, 245, .30);
+    --b3-theme-primary-lightest: rgba(194, 173, 245, .16);
+    --b3-theme-on-primary: #271c40;
+    --b3-theme-background: #252629;
+    --b3-theme-background-light: #36383d;
+    --b3-theme-surface: #1e1f22;
+    --b3-theme-surface-light: #2c2e32;
+    --b3-theme-surface-lighter: #404249;
+    --b3-theme-on-background: #e8e9ed;
+    --b3-theme-on-surface: #b8bbc4;
+    --b3-theme-on-surface-light: #9b9faa;
+    --b3-theme-on-surface-lighter: #6d727e;
+    --b3-body-background: var(--b3-chrome-background);
+    --b3-dock-background: var(--b3-chrome-background);
+    --b3-border-color: #37393f;
+    --b3-list-hover: rgba(220, 224, 235, .055);
+    --b3-list-icon-hover: rgba(220, 224, 235, .10);
+    --b3-toolbar-color: var(--b3-theme-on-surface-light);
+    --b3-toolbar-hover: rgba(220, 224, 235, .08);
+    --b3-scroll-color: rgba(196, 201, 214, .22);
+    --b3-tab-active-background: #303237;
+    --b3-tab-active-shadow: none;
+    --b3-editor-shadow: inset 0 0 0 1px var(--b3-chrome-border);
+    --b3-dialog-shadow: 0 20px 64px rgba(0, 0, 0, .40), 0 4px 16px rgba(0, 0, 0, .20);
+    --b3-search-button-background: color-mix(in srgb, var(--b3-theme-background) 55%, var(--b3-chrome-background));
+    --b3-document-card-1: #342b42;
+    --b3-document-card-2: #29392f;
+    --b3-document-card-3: #3c3327;
+    --b3-document-card-4: #2c3444;
+    --b3-search-button-shadow: inset 0 0 0 1px color-mix(in srgb, var(--b3-border-color) 70%, transparent);
+    --b3-bq-background: color-mix(in srgb, var(--b3-theme-surface-light) 45%, var(--b3-theme-background));
+    --b3-table-even-background: #2b2d31;
+    --b3-protyle-inline-blockref-color: #c2adf5;
+    --b3-list-selected-background: color-mix(in srgb, var(--b3-theme-primary) 8%, var(--b3-chrome-background));
+    --b3-list-selected-shadow: inset 2px 0 0 var(--b3-theme-primary);
+    --b3-protyle-heading-letter-spacing: -.015em;
+    --b3-protyle-heading-first-space: 8px;
+    --b3-protyle-heading-bottom-space: 6px;
+    --b3-protyle-heading-adjacent-space: 8px;
+    --b3-protyle-quote-padding: 1em;
+    --b3-protyle-quote-accent-width: 2px;
+    --b3-protyle-quote-accent: color-mix(in srgb, var(--b3-theme-primary) 32%, var(--b3-border-color));
+    --b3-protyle-table-border: color-mix(in srgb, var(--b3-border-color) 65%, var(--b3-theme-surface-lighter));
+    --b3-protyle-code-shadow: inset 0 0 0 1px color-mix(in srgb, var(--b3-border-color) 65%, transparent);
+    --b3-search-list-padding: 12px 0;
+    --b3-search-result-padding: 6px 10px;
+    --b3-search-result-line-height: 24px;
+    --b3-search-result-meta-spacing: 12px;
+    --b3-search-result-meta-color: var(--b3-theme-on-surface-light);
+    --b3-search-result-graphic-color: var(--b3-theme-on-surface-light);
+    --b3-config-title-size: 16px;
+    --b3-config-row-margin: 0 20px;
+    --b3-label-description-spacing: 6px;
+    --b3-label-description-line-height: 1.65;
+    --b3-config-items-background: color-mix(in srgb, var(--b3-theme-background) 96%, var(--b3-theme-primary));
+    --b3-config-items-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-control-font-weight: 500;
+    --b3-control-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--b3-theme-primary) 16%, transparent);
+    --b3-dialog-entry-scale: .98;
+    --b3-search-highlight-background: color-mix(in srgb, var(--b3-theme-primary) 15%, var(--b3-theme-background));
+    --b3-search-highlight-current-background: color-mix(in srgb, var(--b3-theme-primary) 36%, var(--b3-theme-background));
+    --b3-search-highlight-color: var(--b3-theme-on-background);
+    --b3-sidebar-icon-color: var(--b3-theme-on-surface-light);
+    --b3-av-header-background: color-mix(in srgb, var(--b3-theme-primary) 4%, var(--b3-theme-background));
+    --b3-av-header-weight: 500;
+    --b3-av-group-title-weight: 500;
+    --b3-av-group-background: color-mix(in srgb, var(--b3-theme-primary) 3%, var(--b3-theme-background));
+    --b3-av-cell-focus-color: var(--b3-theme-primary-light);
+    --b3-counter-color: var(--b3-theme-on-surface);
+    --b3-counter-numeric: tabular-nums;
+    --b3-backlink-title-weight: 500;
+    --b3-backlink-counter-color: var(--b3-theme-on-surface);
+    --b3-protyle-title-overflow-wrap: anywhere;
+    /* 代码操作区、附件预览和空状态仅在桌面主题中启用外观细节。 */
+    --b3-code-toolbar-background: color-mix(in srgb, var(--b3-protyle-code-background) 85%, var(--b3-theme-background));
+    --b3-code-toolbar-radius: 6px;
+    --b3-code-toolbar-shadow: inset 0 -1px 0 color-mix(in srgb, var(--b3-border-color) 65%, transparent);
+    --b3-code-language-top: 0px;
+    --b3-code-language-opacity: 1;
+    --b3-code-language-hover-opacity: 1;
+    --b3-code-language-weight: 500;
+    --b3-empty-state-padding: 16px;
+    --b3-empty-state-margin: 12px;
+    --b3-empty-state-align: center;
+    --b3-empty-state-line-height: 1.7;
+    --b3-empty-state-background: var(--b3-theme-surface-light);
+    --b3-empty-state-radius: 12px;
+    --b3-empty-state-wrap: anywhere;
+    --b3-search-empty-size: 14px;
+    --b3-search-empty-padding: 28px 20px;
+    --b3-asset-list-background: var(--b3-theme-background);
+    --b3-asset-list-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-asset-preview-word-break: normal;
+    --b3-asset-preview-wrap: anywhere;
+    --b3-asset-preview-line-height: 1.7;
+    --b3-asset-preview-color: var(--b3-theme-on-surface);
+    --b3-asset-preview-padding: 12px;
+    --b3-asset-preview-radius: 12px;
+    --b3-asset-preview-background: var(--b3-theme-surface-light);
+    --b3-asset-preview-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-pdf-viewer-background: var(--b3-body-background);
+    --b3-pdf-toolbar-background: var(--b3-theme-background);
+    --b3-pdf-toolbar-shadow: inset 0 -1px 0 var(--b3-border-color);
+    --b3-pdf-focus-outline: 2px solid var(--b3-theme-primary);
+    --b3-pdf-focus-offset: -2px;
+    --b3-pdf-thumbnail-selected-shadow: 0 0 0 2px var(--b3-theme-primary);
+    --b3-image-toolbar-background: var(--b3-tooltips-background);
+    --b3-image-toolbar-radius: 12px;
+    --b3-image-toolbar-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16);
+    --b3-image-title-background: var(--b3-tooltips-background);
+    --b3-image-title-color: var(--b3-tooltips-color);
+    --b3-image-title-radius: 6px;
+    --b3-image-title-padding: 4px 8px;
+    --b3-image-title-opacity: 1;
+    --b3-toolbar-icon-size: 16px;
+    --b3-toolbar-title-gap: 6px;
+    --b3-dock-icon-width: 16px;
+    --b3-tab-icon-size: 16px;
+    --b3-tab-bar-active-shadow: inset 0 -1px 0 var(--b3-chrome-border);
+    --b3-tab-passive-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-layout-divider-color: var(--b3-border-color);
+    --b3-layout-divider-hover: var(--b3-theme-primary-lighter);
+    --b3-menu-background: var(--b3-theme-background);
+    --b3-menu-radius: 12px;
+    --b3-menu-border-color: var(--b3-border-color);
+    --b3-menu-shadow: 0 8px 28px rgba(0, 0, 0, .28), 0 1px 4px rgba(0, 0, 0, .16);
+    --b3-menu-items-padding: 0 6px;
+    --b3-menu-item-padding: 0 10px;
+    --b3-menu-icon-spacing: 10px;
+    --b3-menu-separator-margin: 6px 0;
+    --b3-menu-current-shadow: inset 0 0 0 1px var(--b3-theme-primary-lighter);
+    --b3-menu-accelerator-color: var(--b3-theme-on-surface-light);
+    --b3-tooltip-shadow: 0 2px 8px rgba(0, 0, 0, .24);
+    --b3-document-card-tint-strength: 55%;
+    --b3-document-card-cover-height: 56px;
+    --b3-document-card-title-size: 15px;
+    --b3-document-card-title-line-height: 1.5;
+    --b3-document-card-meta-size: 12px;
+    --b3-home-status-padding: 16px;
+    --b3-home-status-background: var(--b3-theme-surface-light);
+    --b3-home-status-radius: 12px;
+    --b3-notification-background: var(--b3-theme-background);
+    --b3-notification-color: var(--b3-theme-on-background);
+    --b3-notification-link-color: var(--b3-theme-primary);
+    --b3-notification-padding: 10px 16px;
+    --b3-notification-line-height: 22px;
+    --b3-notification-icon-top: 12px;
+    --b3-notification-shadow: 0 4px 16px rgba(0, 0, 0, .24), inset 0 0 0 1px var(--b3-border-color);
+    --b3-notification-error-background: color-mix(in srgb, var(--b3-theme-error) 8%, var(--b3-theme-background));
+    --b3-notification-error-shadow: inset 3px 0 0 var(--b3-theme-error), 0 4px 16px rgba(0, 0, 0, .24), inset 0 0 0 1px var(--b3-border-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root[data-frontend="desktop"],
+    :root[data-frontend="desktop-window"],
+    :root[data-frontend="browser-desktop"] {
+        --b3-transition: none;
+        --b3-width-transition: none;
+        --b3-color-transition: none;
+        --b3-background-transition: none;
+        --b3-notification-transition: none;
+        --b3-tooltip-animation-duration: 0ms;
+    }
+}
+
+/* 桌面紧凑模式沿用上游密度尺寸，正文与导出保持原排版。 */
+:root[data-frontend="desktop"][data-ui-density="compact"],
+:root[data-frontend="desktop-window"][data-ui-density="compact"],
+:root[data-frontend="browser-desktop"][data-ui-density="compact"] {
+    --b3-sidebar-row-height: var(--b3-ui-list-height);
+    --b3-menu-item-padding: var(--b3-ui-menu-item-padding);
+    --b3-menu-separator-margin: 4px 0;
+    --b3-search-result-padding: 2px 8px;
+    --b3-search-result-line-height: var(--b3-ui-list-height);
+    --b3-search-list-padding: 8px 0;
+    --b3-config-row-margin: 0 16px;
+    --b3-sidebar-row-margin: 1px 8px;
+    --b3-sidebar-header-height: var(--b3-ui-panel-height);
+    --b3-notebook-height: var(--b3-ui-list-height);
+    --b3-notebook-space-top: 6px;
+    --b3-notebook-space-bottom: 2px;
+    --b3-nav-button-height: 28px;
+    --b3-nav-button-padding: 4px 10px;
+    --b3-tab-height: var(--b3-ui-tab-min-height);
+    --b3-tab-margin: var(--b3-ui-tab-margin);
+    --b3-tab-bar-border-width: 1px;
+    --b3-toolbar-item-height: 26px;
+    --b3-toolbar-item-padding: 5px;
+    --b3-dock-width: var(--b3-ui-dock-width);
+    --b3-dock-item-padding: var(--b3-ui-dock-padding);
+    --b3-dock-item-margin: var(--b3-ui-dock-margin);
+}

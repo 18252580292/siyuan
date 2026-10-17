@@ -84,6 +84,49 @@ body {margin:0; --b3-theme-surface-lighter:#ddd; --b3-font-size-editor:16px; --b
         check.doesNotMatch(html, /data-sy-table-virtual/);
     };
     {
+        const root = document.createElement("div");
+        root.innerHTML = '<div class="test-viewport"><div class="protyle-wysiwyg"><p>Plain document</p></div></div>';
+        document.body.appendChild(root);
+        const viewport = root.firstElementChild as HTMLElement;
+        const editor = viewport.firstElementChild as HTMLElement;
+        const originalStyle = window.getComputedStyle;
+        let reads = 0;
+        window.getComputedStyle = (element, pseudo) => {
+            if (element === editor) {
+                reads++;
+            }
+            return originalStyle(element, pseudo);
+        };
+        const rect = viewport.getBoundingClientRect;
+        viewport.getBoundingClientRect = () => { reads++; return rect.call(viewport); };
+        const virtualizer = new api.LargeTableVirtualizer(root, editor, viewport);
+        try {
+            await tick();
+            viewport.style.width = "520px";
+            root.dispatchEvent(new Event("scroll"));
+            root.dispatchEvent(new WheelEvent("wheel"));
+            await tick();
+            check.equal(reads, 0, "documents without tables do not request table layout or font measurements");
+            const tableFixture = fixture(600);
+            tableFixture.virtualizer.restore();
+            editor.replaceChildren(tableFixture.editor.firstElementChild.cloneNode(true));
+            tableFixture.destroy();
+            await tick();
+            await tick();
+            reduced(editor.querySelector("table"), "tables inserted after initialization still virtualize");
+            editor.replaceChildren(document.createElement("p"));
+            await tick();
+            reads = 0;
+            root.dispatchEvent(new Event("scroll"));
+            await tick();
+            check.equal(reads, 0, "removing the last table restores the layout-free path");
+        } finally {
+            window.getComputedStyle = originalStyle;
+            virtualizer.destroy();
+            root.remove();
+        }
+    }
+    {
         const f = fixture(1000, false, table => {
             const block = table.parentElement.parentElement;
             block.after(block.cloneNode(true), block.cloneNode(true));
@@ -349,7 +392,7 @@ body {margin:0; --b3-theme-surface-lighter:#ddd; --b3-font-size-editor:16px; --b
         const f = fixture();
         await tick();
         reduced(f.table);
-        const owner = {wysiwyg: {element: f.editor}, contentElement: f.viewport, highlight: f.highlight,
+        const owner = {element: f.root, wysiwyg: {element: f.editor}, contentElement: f.viewport, highlight: f.highlight,
             block: {rootID: "root"}} as unknown as IProtyle;
         await new Promise<void>(resolve => api.searchMarkRender(owner, ["Row 1999 cell 4"], undefined, resolve));
         check.equal(f.highlight.ranges.length, 1, "search includes rows outside the virtual window");
@@ -488,7 +531,13 @@ test("large tables retain complete source, editing, selection, search and layout
     const script = path.join(temporary, "run.cjs");
     const lutePath = path.resolve(__dirname, "../../../stage/protyle/js/lute/lute.min.js");
     writeFileSync(script, `const {app, BrowserWindow} = require("electron");
+for (const name of ["home", "appData"]) {
+    const folder = require("node:path").join(${JSON.stringify(temporary)}, name);
+    require("node:fs").mkdirSync(folder, {recursive:true});
+    app.setPath(name, folder);
+}
 app.setPath("userData", ${JSON.stringify(path.join(temporary, "profile"))});
+app.setAsDefaultProtocolClient = () => false;
 app.commandLine.appendSwitch("disable-gpu");
 app.whenReady().then(async () => {
     const win = new BrowserWindow({show:false, width:900, height:700,

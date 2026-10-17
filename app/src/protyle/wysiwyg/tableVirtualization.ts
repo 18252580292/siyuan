@@ -49,18 +49,21 @@ export class LargeTableVirtualizer {
     private font = "";
     private layout = "";
     private resizeTimeout = 0;
+    private tables: HTMLCollectionOf<HTMLTableElement>;
 
     constructor(private root: HTMLElement, private editor: HTMLElement, private viewport: HTMLElement,
                 private blocked: () => boolean = () => false, private virtualCellSelection = true) {
         root.appendChild(this.styleElement);
+        this.tables = editor.getElementsByTagName("table");
         const signal = this.abortController.signal;
         this.observer = new MutationObserver(records => this.onMutations(records));
         this.observer.observe(editor, {childList: true, subtree: true, characterData: true, attributes: true,
             attributeFilter: ["style", "class", "rowspan", "colspan", "custom-pinthead"]});
-        const initialStyle = getComputedStyle(editor);
-        this.font = initialStyle.font;
-        this.layout = [viewport.clientWidth, editor.clientWidth, initialStyle.paddingLeft, initialStyle.paddingRight].join("/");
         this.resizeObserver = new ResizeObserver(() => {
+            // 普通文档不读取字体和尺寸；动态插入表格后由观察器继续测量。
+            if (!this.tables.length && !this.states.size) {
+                return;
+            }
             const style = getComputedStyle(this.editor);
             const layout = [this.viewport.clientWidth, this.editor.clientWidth, style.paddingLeft, style.paddingRight].join("/");
             if (style.font !== this.font) {
@@ -355,6 +358,9 @@ export class LargeTableVirtualizer {
 
     private refresh() {
         this.onMutations(this.observer.takeRecords());
+        if (!this.tables.length && !this.states.size) {
+            return;
+        }
         const selection = getSelection();
         if (this.interacting && !this.dragTable) {
             return;
@@ -381,6 +387,9 @@ export class LargeTableVirtualizer {
                 }
             });
             this.updateStyle();
+        }
+        if (!this.states.size) {
+            return;
         }
         const viewport = this.viewport.getBoundingClientRect();
         const plans = Array.from(this.states.values()).map(state => {

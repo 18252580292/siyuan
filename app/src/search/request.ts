@@ -1,6 +1,7 @@
 interface ISearchRequestTask {
     method: number,
     version: number,
+    abortWhenSuperseded?: boolean,
     run: (signal: AbortSignal, isCurrent: () => boolean) => Promise<unknown> | void,
 }
 
@@ -71,7 +72,7 @@ export const scheduleSearchRequest = (options: {
     if (state.timeout !== undefined) {
         window.clearTimeout(state.timeout);
     }
-    if (state.running?.task.method === 2) {
+    if (state.running?.task.method === 2 || state.running?.task.abortWhenSuperseded) {
         state.running.controller.abort();
     }
     const version = state.version;

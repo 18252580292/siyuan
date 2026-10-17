@@ -1,5 +1,9 @@
 themes/*/custom.css
 themes/*
+!themes/siyuan-cream/
+!themes/siyuan-forest/
+!themes/siyuan-ocean/
+!themes/siyuan-graphite/
 !themes/daylight/
 !themes/midnight/
 

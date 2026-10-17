@@ -14,6 +14,42 @@ const focusCodeByOffset = (element: Element, start: number, end: number) => {
     return range;
 };
 
+const prepareCodeLayout = (block: HTMLElement, isPreview: boolean, zoom: number) => {
+    block.classList.add("hljs");
+    const autoEnter = block.parentElement.getAttribute("linewrap");
+    const ligatures = block.parentElement.getAttribute("ligatures");
+    const lineNumber = block.parentElement.getAttribute("linenumber");
+    const hljsElement = block.lastElementChild ? block.lastElementChild as HTMLElement : block;
+    if (autoEnter === "true" || (autoEnter !== "false" && window.siyuan.config.editor.codeLineWrap)) {
+        hljsElement.style.setProperty("white-space", "pre-wrap");
+        hljsElement.style.setProperty("word-break", "break-word");
+    } else {
+        // https://ld246.com/article/1684031600711 该属性会导致有 tab 后光标跳至末尾，目前无解
+        hljsElement.style.setProperty("white-space", "pre");
+        hljsElement.style.setProperty("word-break", "initial");
+    }
+    if (ligatures === "true" || (ligatures !== "false" && window.siyuan.config.editor.codeLigatures)) {
+        hljsElement.style.fontVariantLigatures = "normal";
+    } else {
+        hljsElement.style.fontVariantLigatures = "none";
+    }
+    if (block.firstElementChild) {
+        if (!isPreview && (lineNumber === "true" || (lineNumber !== "false" && window.siyuan.config.editor.codeSyntaxHighlightLineNum))) {
+            // 需要先添加 class 以防止抖动 https://ld246.com/article/1648116585443
+            block.firstElementChild.className = "protyle-linenumber__rows";
+            block.firstElementChild.setAttribute("contenteditable", "false");
+            lineNumberRender(block, zoom);
+            block.style.display = "";
+        } else {
+            block.firstElementChild.className = "fn__none";
+            block.firstElementChild.innerHTML = "";
+            hljsElement.style.paddingLeft = "";
+            block.style.display = "block";
+        }
+    }
+    return hljsElement;
+};
+
 export const highlightRender = (element: Element, cdn = Constants.PROTYLE_CDN, zoom = 1) => {
     let codeElements: NodeListOf<Element> | Element[];
     let isPreview = false;
@@ -39,6 +75,12 @@ export const highlightRender = (element: Element, cdn = Constants.PROTYLE_CDN, z
     if (codeElements.length === 0) {
         return;
     }
+
+    codeElements.forEach((block: HTMLElement) => {
+        if (block.getAttribute("data-render") !== "true") {
+            prepareCodeLayout(block, isPreview, zoom);
+        }
+    });
 
     setCodeTheme(cdn);
 
@@ -86,39 +128,8 @@ export const highlightRender = (element: Element, cdn = Constants.PROTYLE_CDN, z
                 if (!window.hljs.getLanguage(language)) {
                     language = "plaintext";
                 }
-                block.classList.add("hljs");
-                const autoEnter = block.parentElement.getAttribute("linewrap");
-                const ligatures = block.parentElement.getAttribute("ligatures");
-                const lineNumber = block.parentElement.getAttribute("linenumber");
-                const hljsElement = block.lastElementChild ? block.lastElementChild as HTMLElement : block;
-                if (autoEnter === "true" || (autoEnter !== "false" && window.siyuan.config.editor.codeLineWrap)) {
-                    hljsElement.style.setProperty("white-space", "pre-wrap");
-                    hljsElement.style.setProperty("word-break", "break-word");
-                } else {
-                    // https://ld246.com/article/1684031600711 该属性会导致有 tab 后光标跳至末尾，目前无解
-                    hljsElement.style.setProperty("white-space", "pre");
-                    hljsElement.style.setProperty("word-break", "initial");
-                }
-                if (ligatures === "true" || (ligatures !== "false" && window.siyuan.config.editor.codeLigatures)) {
-                    hljsElement.style.fontVariantLigatures = "normal";
-                } else {
-                    hljsElement.style.fontVariantLigatures = "none";
-                }
+                const hljsElement = prepareCodeLayout(block, isPreview, zoom);
                 const codeText = hljsElement.textContent;
-                if (block.firstElementChild) {
-                    if (!isPreview && (lineNumber === "true" || (lineNumber !== "false" && window.siyuan.config.editor.codeSyntaxHighlightLineNum))) {
-                        // 需要先添加 class 以防止抖动 https://ld246.com/article/1648116585443
-                        block.firstElementChild.className = "protyle-linenumber__rows";
-                        block.firstElementChild.setAttribute("contenteditable", "false");
-                        lineNumberRender(block, zoom);
-                        block.style.display = "";
-                    } else {
-                        block.firstElementChild.className = "fn__none";
-                        block.firstElementChild.innerHTML = "";
-                        hljsElement.style.paddingLeft = "";
-                        block.style.display = "block";
-                    }
-                }
                 hljsElement.innerHTML = window.hljs.highlight(
                     codeText + (codeText.endsWith("\n") ? "" : "\n"), // https://github.com/siyuan-note/siyuan/issues/4609
                     {

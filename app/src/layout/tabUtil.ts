@@ -15,7 +15,6 @@ import {Bookmark} from "./dock/Bookmark";
 import {Tag} from "./dock/Tag";
 import {Search} from "../search";
 import {Custom} from "./dock/Custom";
-import {updateHotkeyTip} from "../protyle/util/compatibility";
 import {openSearch} from "../search/spread";
 import {openRecentDocs} from "../business/openRecentDocs";
 import {openHistory} from "../history/history";
@@ -27,6 +26,7 @@ import {isWindow} from "../util/functions";
 import {Wnd} from "./Wnd";
 import {requestResponsiveDockLayout} from "./dock/responsive";
 import {cloneSearchConfig} from "../search/config";
+import {getHomeHTML, initHomeRecentDocs} from "./home";
 
 export const setTabPosition = (onlyPadding = false, onlyClear = false) => {
     const isWindowMode = isWindow();
@@ -236,6 +236,17 @@ export const resizeTabs = (isSaveLayout = true) => {
             }
         });
         pdfResize();
+        // 面板宽度稳定后沿用页签切换时的定位，避免当前页签留在缩窄区域之外。
+        const layout = isWindow() ? window.siyuan.layout.layout : window.siyuan.layout.centerLayout;
+        if (layout) {
+            const panes: Wnd[] = [];
+            getAllWnds(layout, panes);
+            panes.forEach(pane => {
+                if (pane.headersElement.clientWidth > 0) {
+                    pane.showHeading();
+                }
+            });
+        }
         hideAllElements(["gutter"]);
         if (shouldSaveLayout) {
             saveLayout();
@@ -260,40 +271,9 @@ export const getDockByType = (type: TDock | string) => {
 
 export const newCenterEmptyTab = (app: App) => {
     return new Tab({
-        panel: `<div class="layout__empty">
-    <img class="${!window.siyuan.config.readonly ? "fn__none" : ""}" src="/stage/icon.png" style="width: 256px;margin-top: -48px;">
-    <div class="b3-list" style="margin: 0 auto">
-        <div class="b3-list-item" id="editorEmptySearch">
-            <svg class="b3-list-item__graphic"><use xlink:href="#iconSearch"></use></svg>
-            <span>${window.siyuan.languages.search}</span>
-            <span class="b3-list-item__meta">${updateHotkeyTip(window.siyuan.config.keymap.general.globalSearch.custom)}</span>
-        </div>
-        <div id="editorEmptyRecent" class="b3-list-item">
-            <svg class="b3-list-item__graphic"><use xlink:href="#iconRecentDocs"></use></svg>
-            <span>${window.siyuan.languages.recentDocs}</span>
-            <span class="b3-list-item__meta">${updateHotkeyTip(window.siyuan.config.keymap.general.recentDocs.custom)}</span>
-        </div>
-        <div id="editorEmptyHistory" class="b3-list-item${window.siyuan.config.readonly ? " fn__none" : ""}">
-            <svg class="b3-list-item__graphic"><use xlink:href="#iconHistory"></use></svg>
-            <span>${window.siyuan.languages.dataHistory}</span>
-            <span class="b3-list-item__meta">${updateHotkeyTip(window.siyuan.config.keymap.general.dataHistory.custom)}</span>
-        </div>
-        <div class="b3-list-item${window.siyuan.config.readonly ? " fn__none" : ""}" id="editorEmptyFile">
-            <svg class="b3-list-item__graphic"><use xlink:href="#iconAddDoc"></use></svg>
-            <span>${window.siyuan.languages.newFile}</span>
-            <span class="b3-list-item__meta">${updateHotkeyTip(window.siyuan.config.keymap.general.newFile.custom)}</span>
-        </div>
-        <div class="b3-list-item${window.siyuan.config.readonly ? " fn__none" : ""}" id="editorEmptyNewNotebook">
-            <svg class="b3-list-item__graphic"><use xlink:href="#iconNewNoteBook"></use></svg>
-            <span>${window.siyuan.languages.newNotebook}</span>
-        </div>
-        <div class="b3-list-item${window.siyuan.config.readonly ? " fn__none" : ""}" id="editorEmptyHelp">
-            <svg class="b3-list-item__graphic"><use xlink:href="#iconHelp"></use></svg>
-            <span>${window.siyuan.languages.userGuide}</span>
-        </div>
-    </div>
-</div>`,
+        panel: getHomeHTML(),
         callback(tab: Tab) {
+            initHomeRecentDocs(app, tab.panelElement);
             tab.panelElement.addEventListener("click", (event) => {
                 let target = event.target as HTMLElement;
                 while (target && !target.isEqualNode(tab.panelElement)) {

@@ -4,14 +4,22 @@ import {isMobile} from "../../util/functions";
 import {stickyRow} from "../render/av/row";
 import {trimAVRowsSync} from "../render/av/virtualScroll";
 import {isDocumentBoundaryLoaded} from "../util/documentRange";
-import {getVisibleRootBlockID, isScrolledToBottom} from "./viewport";
+import {getVisibleRootBlockIDFromElements, isScrolledToBottom} from "./viewport";
 
-let getIndexTimeout: number;
-const avScrollPending = new WeakSet<HTMLElement>();
+const scrollCleanups = new WeakMap<HTMLElement, () => void>();
+export const destroyScrollEvent = (element: HTMLElement) => {
+    scrollCleanups.get(element)?.();
+    scrollCleanups.delete(element);
+};
+
 export const scrollEvent = (protyle: IProtyle, element: HTMLElement) => {
-    element.addEventListener("scroll", () => {
-        const elementRect = element.getBoundingClientRect();
+    destroyScrollEvent(element);
+    let getIndexTimeout: number;
+    let avScrollFrame: number;
+    const avElements = protyle.wysiwyg.element.getElementsByClassName("av");
+    const onScroll = () => {
         if (!protyle.toolbar.element.classList.contains("fn__none")) {
+            const elementRect = element.getBoundingClientRect();
             const initY = protyle.toolbar.element.getAttribute("data-inity").split(Constants.ZWSP);
             const top = parseInt(initY[0]) + (parseInt(initY[1]) - element.scrollTop);
             if (top < elementRect.top - protyle.toolbar.toolbarHeight || top > elementRect.bottom - protyle.toolbar.toolbarHeight) {
@@ -22,23 +30,23 @@ export const scrollEvent = (protyle: IProtyle, element: HTMLElement) => {
             }
         }
 
-        protyle.wysiwyg.element.querySelectorAll(".av").forEach((item: HTMLElement) => {
-            if (item.dataset.render !== "true") {
-                return;
-            }
-            // stickyRow 与 trimAVRows 合并到每块每帧一个 rAF：先 stickyRow（读布局为主），
-            // 再 trimAVRowsSync（增删行）。合并避免两个独立 rAF 跨回调读写交错触发重排；
-            // 先读后写避免 trim 的 DOM 写入让 sticky 的几何读取成为强制重排。
-            if (avScrollPending.has(item)) {
-                return;
-            }
-            avScrollPending.add(item);
-            requestAnimationFrame(() => {
-                avScrollPending.delete(item);
-                stickyRow(item, element, "all");
-                trimAVRowsSync(item, elementRect);
+        // 每个编辑器每帧扫描一次数据库，使用执行时的节点和视口，保留逐块先吸顶再裁剪的顺序。
+        if (avElements.length > 0 && avScrollFrame === undefined) {
+            avScrollFrame = requestAnimationFrame(() => {
+                avScrollFrame = undefined;
+                if (!element.isConnected) {
+                    return;
+                }
+                Array.from(avElements).forEach((item: HTMLElement) => {
+                    if (item.dataset.render !== "true" || !item.isConnected) {
+                        return;
+                    }
+                    const elementRect = element.getBoundingClientRect();
+                    stickyRow(item, element, "all");
+                    trimAVRowsSync(item, elementRect);
+                });
             });
-        });
+        }
 
         if (!protyle.element.classList.contains("block__edit") && !isMobile()) {
             protyle.contentElement.setAttribute("data-scrolltop", element.scrollTop.toString());
@@ -51,6 +59,9 @@ export const scrollEvent = (protyle: IProtyle, element: HTMLElement) => {
         if (protyle.scroll && !protyle.scroll.element.classList.contains("fn__none")) {
             clearTimeout(getIndexTimeout);
             getIndexTimeout = window.setTimeout(() => {
+                if (!element.isConnected) {
+                    return;
+                }
                 if (element.scrollTop <= 1 && isDocumentBoundaryLoaded(protyle.wysiwyg.element, "before")) {
                     protyle.scroll.setCurrentIndex(protyle, 1, true);
                     return;
@@ -60,15 +71,9 @@ export const scrollEvent = (protyle: IProtyle, element: HTMLElement) => {
                     protyle.scroll.setCurrentIndex(protyle, protyle.block.blockCount, true);
                     return;
                 }
-                const visibleBlockID = getVisibleRootBlockID(
-                    Array.from(protyle.wysiwyg.element.children).map((item) => {
-                        const rect = item.getBoundingClientRect();
-                        return {
-                            id: item.getAttribute("data-node-id"),
-                            top: rect.top,
-                            bottom: rect.bottom,
-                        };
-                    }),
+                const elementRect = element.getBoundingClientRect();
+                const visibleBlockID = getVisibleRootBlockIDFromElements(
+                    protyle.wysiwyg.element.children,
                     elementRect.top + 10,
                     elementRect.bottom,
                 );
@@ -119,9 +124,18 @@ export const scrollEvent = (protyle: IProtyle, element: HTMLElement) => {
             protyle.scroll.loadDynamic(protyle, 2);
         }
         protyle.scroll.lastScrollTop = Math.max(element.scrollTop, 0);
-    }, {
+    };
+    element.addEventListener("scroll", onScroll, {
         capture: false,
         passive: true,
         once: false
+    });
+    scrollCleanups.set(element, () => {
+        clearTimeout(getIndexTimeout);
+        element.removeEventListener("scroll", onScroll);
+        if (avScrollFrame !== undefined) {
+            cancelAnimationFrame(avScrollFrame);
+            avScrollFrame = undefined;
+        }
     });
 };

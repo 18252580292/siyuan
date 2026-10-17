@@ -144,6 +144,37 @@ describe("search request scheduling", () => {
         await idle.promise;
     });
 
+    it("cancels superseded read-only requests when the task opts in", async () => {
+        const element = {isConnected: true} as Element;
+        const firstStarted = deferred();
+        const secondStarted = deferred();
+        const idle = deferred();
+        let firstSignal: AbortSignal;
+        scheduleSearchRequest({
+            element, delay: 0, onIdle: idle.resolve,
+            createTask(version) {
+                return {
+                    method: 0, version, abortWhenSuperseded: true,
+                    run(signal) {
+                        firstSignal = signal;
+                        firstStarted.resolve();
+                        return new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), {once: true}));
+                    },
+                };
+            },
+        });
+        await firstStarted.promise;
+        scheduleSearchRequest({
+            element, delay: 0, onIdle: idle.resolve,
+            createTask(version) {
+                return {method: 0, version, run: () => secondStarted.resolve()};
+            },
+        });
+        assert.equal(firstSignal.aborted, true);
+        await secondStarted.promise;
+        await idle.promise;
+    });
+
     it("aborts the active request and drops the queued request when canceled", async () => {
         const element = {isConnected: true} as Element;
         const firstStarted = deferred();

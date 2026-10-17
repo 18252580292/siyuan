@@ -3,9 +3,9 @@
 
 .b3-menu {
   position: fixed;
-  border-radius: var(--b3-border-radius-b);
-  box-shadow: var(--b3-dialog-shadow);
-  border: 1px solid var(--b3-theme-surface-lighter);
+  border-radius: var(--b3-menu-radius, var(--b3-border-radius-b));
+  box-shadow: var(--b3-menu-shadow, var(--b3-dialog-shadow));
+  border: 1px solid var(--b3-menu-border-color, var(--b3-theme-surface-lighter));
   background-color: var(--b3-menu-background);
   padding: var(--b3-ui-menu-padding, 8px 0);
   box-sizing: border-box;
@@ -374,11 +374,11 @@
 
   &__items {
     overflow: auto;
-    padding: 0 8px;
+    padding: var(--b3-menu-items-padding, 0 8px);
   }
 
   &__item {
-    padding: var(--b3-ui-menu-item-padding, 0 8px);
+    padding: var(--b3-menu-item-padding, var(--b3-ui-menu-item-padding, 0 8px));
     border-radius: var(--b3-border-radius);
     user-select: none;
     display: flex;
@@ -450,6 +450,7 @@
 
     &--current.b3-menu__item:not(.b3-menu__item--readonly) {
       background-color: var(--b3-list-hover);
+      box-shadow: var(--b3-menu-current-shadow, none);
 
       & > .b3-menu__action {
         opacity: 1;
@@ -529,7 +530,7 @@
     height: 16px;
     width: 16px;
     line-height: 16px;
-    margin-right: 8px;
+    margin-right: var(--b3-menu-icon-spacing, 8px);
     flex-shrink: 0;
     color: var(--b3-menu-icon-color);
     font-variant-emoji: emoji;
@@ -582,7 +583,7 @@
   &__separator {
     background-color: var(--b3-theme-surface-lighter);
     height: 1px;
-    margin: 4px 0;
+    margin: var(--b3-menu-separator-margin, 4px 0);
     display: block;
     border: 0;
     width: 100%;
@@ -594,12 +595,12 @@
   &__submenu {
     overflow: auto;
     display: none;
-    border: 1px solid var(--b3-theme-surface-lighter);
-    border-radius: var(--b3-border-radius-b);
+    border: 1px solid var(--b3-menu-border-color, var(--b3-theme-surface-lighter));
+    border-radius: var(--b3-menu-radius, var(--b3-border-radius-b));
     background-color: var(--b3-menu-background);
     padding: 8px 0;
     position: fixed;
-    box-shadow: var(--b3-dialog-shadow);
+    box-shadow: var(--b3-menu-shadow, var(--b3-dialog-shadow));
     z-index: 1;
     cursor: default;
   }
@@ -607,7 +608,7 @@
   &__accelerator {
     font-size: .75rem;
     margin-left: 16px;
-    color: var(--b3-theme-on-surface);
+    color: var(--b3-menu-accelerator-color, var(--b3-theme-on-surface));
     font-family: var(--b3-font-family-kbd);
     font-variant-emoji: text;
   }

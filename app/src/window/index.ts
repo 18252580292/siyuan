@@ -1,5 +1,6 @@
 import {onWindowWorkspaceStorageChanged} from "./workspace";
 import {closeNotebookHistoryDialogs} from "../history/notebookDialogs";
+import {invalidateHomeRecentDocs} from "../layout/home";
 import {Constants} from "../constants";
 import {refreshSettingConfig} from "../config/setting/sync";
 import {onAgentStreamingMarkdownStorageChanged} from "../config/tabs/ai/agentStreamingMarkdown";
@@ -179,8 +180,12 @@ class App {
                                     }
                                 });
                                 break;
+                            case "mount":
+                                invalidateHomeRecentDocs(data.data.box.id, false);
+                                break;
                             case "closeBox":
                             case "removeBox":
+                                invalidateHomeRecentDocs(data.data.box);
                                 closeNotebookHistoryDialogs(data.data.box);
                                 removeBlockPanelEditors({notebookId: data.data.box});
                                 getAllTabs().forEach((tab) => {

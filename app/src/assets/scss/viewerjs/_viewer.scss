@@ -279,6 +279,9 @@
 
   &-toolbar {
     & > ul {
+      background-color: var(--b3-image-toolbar-background, transparent);
+      border-radius: var(--b3-image-toolbar-radius, 0);
+      box-shadow: var(--b3-image-toolbar-shadow, none);
       display: inline-block;
       margin: 0 auto 5px;
       overflow: hidden;
@@ -360,14 +363,17 @@
   }
 
   &-title {
-    color: var(--b3-theme-on-background);
+    color: var(--b3-image-title-color, var(--b3-theme-on-background));
+    background-color: var(--b3-image-title-background, transparent);
+    border-radius: var(--b3-image-title-radius, 0);
+    padding: var(--b3-image-title-padding, 0);
     display: inline-block;
     font-size: 12px;
     line-height: 1.2;
     margin: 5px 5%;
     max-width: 90%;
     min-height: 14px;
-    opacity: 0.8;
+    opacity: var(--b3-image-title-opacity, 0.8);
     overflow: hidden;
     text-overflow: ellipsis;
     transition: opacity 0.15s;

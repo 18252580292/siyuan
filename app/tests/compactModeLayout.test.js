@@ -57,8 +57,8 @@ const browserCases = ({css, desktop, community}) => {
     ].map(([key, selector]) => [key, {height: height(selector), font: getComputedStyle(find(selector)).fontSize}]));
     const normal = snapshot();
     if (desktop && !community) {
-        for (const [key, expected] of Object.entries({toolbar: 32, tabs: 42, panel: 42, breadcrumb: 42,
-            list: 28, menu: 28, dialog: 43})) {
+        for (const [key, expected] of Object.entries({toolbar: 32, tabs: 40, panel: 48, breadcrumb: 42,
+            list: 30, menu: 28, dialog: 43})) {
             near(normal[key].height, expected, `${key} retains the default size`);
         }
     }

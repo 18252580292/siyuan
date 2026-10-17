@@ -7,7 +7,7 @@ import {test} from "node:test";
 import {promisify} from "node:util";
 import {ScriptTarget, transpileModule} from "typescript";
 
-const browserCases = async (source: string, luteSource: string, renameSource: string) => {
+const browserCases = async (source: string, luteSource: string, renameSource: string, css: string) => {
     const check: typeof assert = require("node:assert/strict");
     new Function(luteSource)();
     const lute = Lute.New();
@@ -32,7 +32,9 @@ const browserCases = async (source: string, luteSource: string, renameSource: st
             renamed.push({path: body.oldPath, name: body.newName});
             return {code: 0, data: {newPath: "assets/renamed.png"}};
         }, (): {asset: {path: string}[]} => ({asset: []}), (): {reload: (value: boolean) => void}[] => []);
-    const render = new Function(...Object.keys(dependencies), "renameAsset", source + "\nreturn renderImageDisplay;")(...Object.values(dependencies), renameAsset);
+    const displayAPI = new Function(...Object.keys(dependencies), "renameAsset", source +
+        "\nreturn {render:renderImageDisplay, dimensions:imageDimensions};")(...Object.values(dependencies), renameAsset);
+    const render = displayAPI.render;
     const root = document.createElement("div");
     root.className = "protyle-wysiwyg";
     root.innerHTML = lute.Md2BlockDOM('![description](assets/example-20260930090000-abcdefg.png "caption")');
@@ -89,6 +91,56 @@ const browserCases = async (source: string, luteSource: string, renameSource: st
     restoredName.click();
     check.equal(opens, 3, "restored image names open the rename dialog");
     check.equal(restoredName.querySelector("input"), null);
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.append(style);
+    config.editor.displayImgAlt = false;
+    config.editor.displayImgName = false;
+    const canvas = document.createElement("canvas");
+    canvas.width = 480;
+    canvas.height = 240;
+    const data = URL.createObjectURL(await new Promise<Blob>(resolve => canvas.toBlob(resolve)));
+    root.innerHTML = lute.Md2BlockDOM("![layout](assets/layout.png)");
+    const firstImage = root.querySelector("img");
+    firstImage.src = data;
+    await firstImage.decode();
+    render(root);
+    check.equal(firstImage.getAttribute("data-ui-image-width"), "480px");
+    const loadedHeight = firstImage.getBoundingClientRect().height;
+    check.ok(loadedHeight > 0);
+    root.innerHTML = lute.Md2BlockDOM("![layout](assets/layout.png)");
+    const secondImage = root.querySelector("img");
+    secondImage.src = data;
+    const sourceBeforeLayout = lute.BlockDOM2StdMd(root.innerHTML);
+    render(root);
+    check.ok(Math.abs(secondImage.getBoundingClientRect().height - loadedHeight) < 1,
+        "a pending image reserves the dimensions learned from its previous successful load");
+    check.equal(lute.BlockDOM2StdMd(root.innerHTML), sourceBeforeLayout, "layout cache attributes do not enter Markdown");
+    secondImage.src = data;
+    await secondImage.decode();
+    check.ok(Math.abs(secondImage.getBoundingClientRect().height - loadedHeight) < 1);
+    secondImage.style.width = "120px";
+    secondImage.style.height = "75px";
+    render(root);
+    check.equal(secondImage.getBoundingClientRect().width, 120, "explicit image sizing wins over cached geometry");
+    check.equal(secondImage.getBoundingClientRect().height, 75);
+    secondImage.removeAttribute("style");
+    secondImage.parentElement.style.width = "160px";
+    render(root);
+    check.equal(secondImage.getBoundingClientRect().width, 160, "drag-resized image containers keep their width");
+    check.ok(Math.abs(secondImage.getBoundingClientRect().height - 80) < 1);
+    for (let i = 0; i < 260; i++) {
+        secondImage.src = data + "#" + i;
+        await secondImage.decode();
+        render(root);
+    }
+    check.equal(displayAPI.dimensions.size, 256, "image geometry cache has a fixed entry budget");
+    secondImage.src = data + "#" + "x".repeat(4097);
+    await secondImage.decode();
+    render(root);
+    check.equal(secondImage.hasAttribute("data-ui-image-width"), false, "large embedded URLs do not remain in the cache");
+    check.ok([...displayAPI.dimensions.keys()].every((key: string) => key.length <= 4096));
+    URL.revokeObjectURL(data);
     return "Image display cases passed";
 };
 
@@ -106,9 +158,16 @@ test("image names open a rename dialog that updates references only after confir
     const temporary = mkdtempSync(path.join(tmpdir(), "siyuan-image-display-test-"));
     const script = path.join(temporary, "run.cjs");
     const code = "const __name = value => value; (" + browserCases.toString() + ")(" +
-        JSON.stringify(source) + "," + JSON.stringify(luteSource) + "," + JSON.stringify(renameSource) + ")";
+        JSON.stringify(source) + "," + JSON.stringify(luteSource) + "," + JSON.stringify(renameSource) + "," +
+        JSON.stringify(require("sass").compile("src/assets/scss/component/_typography.scss", {logger: require("sass").Logger.silent}).css) + ")";
     writeFileSync(script, `const {app, BrowserWindow} = require("electron");
+for (const name of ["home", "appData"]) {
+    const folder = require("node:path").join(${JSON.stringify(temporary)}, name);
+    require("node:fs").mkdirSync(folder, {recursive:true});
+    app.setPath(name, folder);
+}
 app.setPath("userData", ${JSON.stringify(path.join(temporary, "profile"))});
+app.setAsDefaultProtocolClient = () => false;
 app.whenReady().then(async () => {
     const win = new BrowserWindow({show: false, webPreferences: {nodeIntegration: true, contextIsolation: false}});
     try {

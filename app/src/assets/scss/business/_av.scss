@@ -1100,6 +1100,10 @@
       }
     }
 
+    &--header {
+      background-color: var(--b3-av-header-background, var(--b3-parent-background));
+    }
+
     &--util {
       display: flex;
 
@@ -1654,7 +1658,7 @@
         right: 2px;
         bottom: 2px;
         border-radius: var(--b3-border-radius-s);
-        box-shadow: 0 0 0 2px var(--b3-theme-primary-lighter);
+        box-shadow: 0 0 0 2px var(--b3-av-cell-focus-color, var(--b3-theme-primary-lighter));
         pointer-events: none;
       }
     }
@@ -1665,6 +1669,7 @@
 
     &--header {
       padding: 5px 8px;
+      font-weight: var(--b3-av-header-weight, inherit);
       display: flex;
       align-items: center;
       overflow: inherit; // 保证列宽和顺序调整的拖拽点样式
@@ -2334,6 +2339,7 @@
       padding: 16px 0 8px 0;
       display: flex;
       align-items: center;
+      font-weight: var(--b3-av-group-title-weight, inherit);
 
       .b3-chip {
         padding: 0 6px;
@@ -2460,6 +2466,7 @@
     &-group {
       width: var(--b3-av-card-width, 260px);
       padding: 8px;
+      background-color: var(--b3-av-group-background, transparent);
       border-radius: var(--b3-border-radius);
       position: relative;
       flex-shrink: 0;

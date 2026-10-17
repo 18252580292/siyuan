@@ -29,6 +29,8 @@ import type {App} from "../../index";
 import {
     assetFilterMenu,
     assetInputEvent,
+    cancelAssetSearch,
+    resumeAssetSearch,
     assetMethodMenu,
     assetMoreMenu,
     renderNextAssetMark,
@@ -718,6 +720,7 @@ const initSearchEvent = (app: App, element: Element, config: Config.IUILayoutTab
                 event.preventDefault();
                 break;
             } else if (type === "goSearch") {
+                cancelAssetSearch(assetsElement);
                 assetsElement.classList.add("fn__none");
                 unRefElement.classList.add("fn__none");
                 event.stopPropagation();
@@ -928,6 +931,7 @@ export const popSearch = (app: App, searchConfig?: Config.IUILayoutTabSearchConf
             destroySearchEvent?.();
             activeBlur(true);
             cancelSearchRequest(document.getElementById("modelMain"));
+            cancelAssetSearch(document.getElementById("searchAssetsPanel"));
         },
         bindEvent(element) {
             document.querySelector("#toolbarSearchNew").addEventListener("click", () => {
@@ -960,6 +964,9 @@ export const popSearch = (app: App, searchConfig?: Config.IUILayoutTabSearchConf
 const goAsset = () => {
     const assetsElement = document.querySelector("#searchAssetsPanel");
     assetsElement.classList.remove("fn__none");
+    if (resumeAssetSearch(assetsElement)) {
+        return;
+    }
     const listElement = assetsElement.querySelector("#searchAssetList");
     if (listElement.innerHTML) {
         return;

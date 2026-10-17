@@ -2,7 +2,8 @@
   margin-left: 4px;
   line-height: 22px;
   padding: 0 8px;
-  color: var(--b3-theme-on-surface-light);
+  color: var(--b3-counter-color, var(--b3-theme-on-surface-light));
+  font-variant-numeric: var(--b3-counter-numeric, normal);
   border-radius: var(--b3-border-radius);
   font-size: 12px;
   user-select: none;

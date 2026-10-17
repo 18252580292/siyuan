@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-forest",
+  "author": "SiYuan local customization",
+  "version": "1.0.0",
+  "url": "https://github.com/siyuan-note/siyuan",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "light"
+  ],
+  "displayName": {
+    "default": "Forest Green",
+    "zh-CN": "森林绿",
+    "zh-TW": "森林綠"
+  }
+}

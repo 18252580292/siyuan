@@ -39,6 +39,7 @@ import type {App} from "../index";
 import {
     assetFilterMenu,
     assetInputEvent,
+    cancelAssetSearch,
     assetMethodMenu,
     assetMoreMenu,
     openSearchAsset,
@@ -649,6 +650,7 @@ export const genSearch = (app: App, config: Config.IUILayoutTabSearchConfig, ele
                 break;
             } else if (target.id === "searchAssetClose") {
                 window.siyuan.menus.menu.remove();
+                cancelAssetSearch(assetsElement);
                 assetsElement.classList.add("fn__none");
                 assetsElement.previousElementSibling.classList.remove("fn__none");
                 searchInputElement.select();

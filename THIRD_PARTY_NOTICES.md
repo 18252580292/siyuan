@@ -96,6 +96,7 @@ Minified files that contain their own bundled-license blocks retain those blocks
 |---|---|---|---|---|
 | JetBrains Mono | 2.304 | OFL-1.1 | [upstream](https://github.com/JetBrains/JetBrainsMono) | app/appearance/fonts/JetBrainsMono-2.304/LICENSE |
 | LXGW WenKai GB Lite | 1.521 | OFL-1.1 | [upstream](https://github.com/lxgw/LxgwWenkaiGB-Lite) | app/appearance/fonts/LxgwWenKaiGB-Lite-1.521/LICENSE |
+| LXGW Bright Code GB | 2.822 | OFL-1.1 | [upstream](https://github.com/lxgw/LxgwBright-Code) | app/appearance/fonts/LXGWBrightCodeGB-2.822/OFL.txt |
 | Noto COLRv1 Emoji | 2.051 | OFL-1.1 | [upstream](https://github.com/googlefonts/noto-emoji) | app/appearance/fonts/Noto-COLRv1-2.051/LICENSE |
 
 ## Go standard library and runtime

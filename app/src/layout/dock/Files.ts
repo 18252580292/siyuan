@@ -19,6 +19,9 @@ import {
 } from "../../protyle/util/publishAccess";
 import {fetchPost, fetchSyncPost} from "../../util/fetch";
 import {restoreFileTreePaths} from "../../util/fileTreeRestore";
+import {getNotebookOpenPaths} from "../../util/fileTreeOpenPaths";
+import {refreshFileTreeRows} from "../../util/fileTreeRefresh";
+import {getFileTreeRenderContext} from "../../util/fileTreeContext";
 import {openEmojiPanel} from "../../emoji";
 import {
     getFileTreeDefaultIconAttr,
@@ -26,7 +29,7 @@ import {
     syncFileTreeItemDefaultIcon,
     updateFileTreeItemIcon,
 } from "../../emoji/fileTreeIcon";
-import {importNotebook, newEncryptedNotebook, newNotebook, openEncryptedNotebook} from "../../util/mount";
+import {importNotebook, newDailyNote, newEncryptedNotebook, newNotebook, openEncryptedNotebook} from "../../util/mount";
 import {isNotCtrl, isOnlyMeta, isPhablet, setStorageVal, updateHotkeyAfterTip} from "../../protyle/util/compatibility";
 import {openFileById} from "../../editor/util";
 import {
@@ -81,6 +84,8 @@ import {getHostCapabilities} from "../../util/hostCapabilities";
 import {PinnedDocs} from "./PinnedDocs";
 import {selectFileTreeRange} from "./fileTreeSelection";
 import {ParentDocClick} from "./parentDocClick";
+import {openSearch} from "../../search/spread";
+import {openRecentDocs} from "../../business/openRecentDocs";
 
 export class Files extends Model {
     public element: HTMLElement;
@@ -104,7 +109,7 @@ export class Files extends Model {
         });
         options.tab.panelElement.classList.add("fn__flex-column", "file-tree", "sy__file", "dockPanel");
         options.tab.panelElement.innerHTML = `<div class="block__icons">
-    <div class="block__logo fn__flex-1">${window.siyuan.languages.fileTree}</div>
+    <div class="block__logo block__logo--stacked fn__flex-1"><span>${window.siyuan.languages.siyuanNote}</span><small>${window.siyuan.languages.workspace}</small></div>
     <span data-type="focus" class="block__icon ariaLabel" data-position="north" aria-label="${window.siyuan.languages.selectOpen1}${updateHotkeyAfterTip(window.siyuan.config.keymap.general.selectOpen1.custom)}"><svg><use xlink:href='#iconFocus'></use></svg></span>
     <span class="fn__space"></span>
     <span data-type="collapse" class="block__icon ariaLabel" data-position="north" aria-label="${window.siyuan.languages.collapse}${updateHotkeyAfterTip(window.siyuan.config.keymap.editor.general.collapse.custom)}">
@@ -117,6 +122,18 @@ export class Files extends Model {
     <span class="fn__space"></span>
     <span data-type="min" class="block__icon ariaLabel" data-position="north" aria-label="${window.siyuan.languages.min}${updateHotkeyAfterTip(window.siyuan.config.keymap.general.closeTab.custom)}"><svg><use xlink:href='#iconMin'></use></svg></span>
 </div>
+<div class="file-tree__quick-search">
+    <button class="b3-button b3-button--search fn__flex-1" type="button" data-type="quick-search">
+        <svg><use xlink:href="#iconSearch"></use></svg>
+        <span class="fn__ellipsis fn__flex-1">${window.siyuan.languages.globalSearch}</span>
+        <span class="b3-button__shortcut">${updateHotkeyAfterTip(window.siyuan.config.keymap.general.globalSearch.custom)}</span>
+    </button>
+</div>
+<div class="file-tree__quick-navigation">
+    <button class="b3-button b3-button--nav" type="button" data-type="quick-recent"><svg><use xlink:href="#iconRecentDocs"></use></svg><span>${window.siyuan.languages.recentDocs}</span></button>
+    <button class="b3-button b3-button--nav${window.siyuan.config.readonly ? " fn__none" : ""}" type="button" data-type="quick-daily"><svg><use xlink:href="#iconCalendarPlus"></use></svg><span>${window.siyuan.languages.dailyNote}</span></button>
+</div>
+<div class="file-tree__section-label">${window.siyuan.languages.fileTree}</div>
 <div class="file-tree__items fn__flex-1" style="padding-top: 2px;"></div>
 <ul class="b3-list fn__flex-column" style="min-height: auto;height:30px;border-top: 1px solid var(--b3-border-color);transition: height  .2s cubic-bezier(0, 0, .2, 1) 0ms">
     <li class="b3-list-item" data-type="toggle">
@@ -129,8 +146,17 @@ export class Files extends Model {
     <ul class="fn__none fn__flex-1"></ul>
 </ul>`;
         this.actionsElement = options.tab.panelElement.firstElementChild as HTMLElement;
-        this.element = this.actionsElement.nextElementSibling as HTMLElement;
+        this.element = options.tab.panelElement.querySelector(".file-tree__items");
         this.closeElement = options.tab.panelElement.lastElementChild as HTMLElement;
+        options.tab.panelElement.querySelector('[data-type="quick-search"]').addEventListener("click", () => {
+            openSearch({app: options.app, hotkey: Constants.DIALOG_GLOBALSEARCH});
+        });
+        options.tab.panelElement.querySelector('[data-type="quick-recent"]').addEventListener("click", () => openRecentDocs());
+        options.tab.panelElement.querySelector('[data-type="quick-daily"]').addEventListener("click", () => {
+            if (!window.siyuan.config.readonly) {
+                newDailyNote(options.app);
+            }
+        });
         this.pinnedDocs = new PinnedDocs(options.app, this.element, (id) => {
             openFileById({app: options.app, id, action: [Constants.CB_GET_FOCUS, Constants.CB_GET_SCROLL]});
         }, false, this.parentDocClick);
@@ -1891,43 +1917,13 @@ data-type="navigation-root" data-path="/" data-count="${item.subFileCount || 0}"
         if (!liElement) {
             return;
         }
-        let fileHTML = "";
-        data.files.forEach((item: IFile) => {
-            fileHTML += this.genFileHTML(item);
-        });
         const effectiveSortMode = getResponseEffectiveSortMode(data, data.box);
         let nextElement = liElement.nextElementSibling;
         if (nextElement && nextElement.tagName === "UL") {
             // 文件展开时，刷新
-            const tempElement = document.createElement("template");
-            tempElement.innerHTML = fileHTML;
-            const focusedIDs = Array.from(nextElement.querySelectorAll(":scope > .b3-list-item--focus")).map((item) =>
-                item.getAttribute("data-node-id")
-            );
-            const lastSelectedID = nextElement.contains(this.lastSelectedElement) ?
-                this.lastSelectedElement.getAttribute("data-node-id") : "";
-            focusedIDs.forEach((id) => {
-                Array.from(tempElement.content.children).find((item) =>
-                    item.getAttribute("data-node-id") === id
-                )?.classList.add("b3-list-item--focus");
-            });
-            // 保持文件夹展开状态
-            nextElement.querySelectorAll(":scope > .b3-list-item > .b3-list-item__toggle> .b3-list-item__arrow--open").forEach(item => {
-                const openLiElement = hasClosestByClassName(item, "b3-list-item");
-                if (openLiElement) {
-                    const tempOpenLiElement = tempElement.content.querySelector(`.b3-list-item[data-node-id="${openLiElement.getAttribute("data-node-id")}"]`);
-                    if (tempOpenLiElement) {
-                        tempOpenLiElement.after(openLiElement.nextElementSibling);
-                        tempOpenLiElement.querySelector(".b3-list-item__arrow").classList.add("b3-list-item__arrow--open");
-                    }
-                }
-            });
-            nextElement.innerHTML = tempElement.innerHTML;
-            if (lastSelectedID) {
-                this.lastSelectedElement = Array.from(nextElement.querySelectorAll("[data-node-id]")).find((item) =>
-                    item.getAttribute("data-node-id") === lastSelectedID
-                ) || null;
-            }
+            this.lastSelectedElement = refreshFileTreeRows(nextElement, data.files,
+                getFileTreeRenderContext(this.element.classList.contains("file-tree__publish-access--active")),
+                item => this.genFileHTML(item), this.lastSelectedElement);
             nextElement.setAttribute(FILE_TREE_EFFECTIVE_SORT_MODE, effectiveSortMode.toString());
             this.restoreMovedExpandedItems(nextElement, data.box);
             if (typeof scrollTop === "number") {
@@ -1937,8 +1933,11 @@ data-type="navigation-root" data-path="/" data-count="${item.subFileCount || 0}"
             return;
         }
         liElement.querySelector(".b3-list-item__arrow").classList.add("b3-list-item__arrow--open");
-        liElement.insertAdjacentHTML("afterend", `<ul ${FILE_TREE_EFFECTIVE_SORT_MODE}="${effectiveSortMode}">${fileHTML}</ul>`);
+        liElement.insertAdjacentHTML("afterend", `<ul ${FILE_TREE_EFFECTIVE_SORT_MODE}="${effectiveSortMode}"></ul>`);
         nextElement = liElement.nextElementSibling;
+        refreshFileTreeRows(nextElement, data.files,
+            getFileTreeRenderContext(this.element.classList.contains("file-tree__publish-access--active")),
+            item => this.genFileHTML(item));
         this.restoreMovedExpandedItems(nextElement, data.box);
         expandFileTree(nextElement as HTMLElement, () => {
             if (typeof scrollTop === "number") {
@@ -2121,27 +2120,8 @@ data-type="navigation-root" data-path="/" data-count="${item.subFileCount || 0}"
                 notebookId: item.getAttribute("data-url"),
                 openPaths: []
             };
-            item.querySelectorAll(".b3-list-item__arrow--open").forEach((openItem) => {
-                const liElement = hasClosestByTag(openItem, "LI");
-                if (liElement) {
-                    notebookPaths.openPaths.push(liElement.getAttribute("data-path"));
-                }
-            });
+            notebookPaths.openPaths = getNotebookOpenPaths(item);
             if (notebookPaths.openPaths.length > 0) {
-                for (let i = 0; i < notebookPaths.openPaths.length; i++) {
-                    for (let j = i + 1; j < notebookPaths.openPaths.length; j++) {
-                        if (notebookPaths.openPaths[j].startsWith(notebookPaths.openPaths[i].replace(".sy", ""))) {
-                            notebookPaths.openPaths.splice(i, 1);
-                            j--;
-                        }
-                    }
-                }
-                notebookPaths.openPaths.forEach((openPath, index) => {
-                    const nextPath = this.element.querySelector(`[data-url="${notebookPaths.notebookId}"] li[data-path="${openPath}"]`)?.nextElementSibling?.firstElementChild?.getAttribute("data-path");
-                    if (nextPath) {
-                        notebookPaths.openPaths[index] = nextPath;
-                    }
-                });
                 filesPaths.push(notebookPaths);
             }
         });

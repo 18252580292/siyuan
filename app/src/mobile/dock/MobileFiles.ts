@@ -1,5 +1,5 @@
 import {config as configApi} from "../../config/util/configApi";
-import {hasClosestByClassName, hasClosestByTag, hasTopClosestByTag} from "../../protyle/util/hasClosest";
+import {hasTopClosestByTag} from "../../protyle/util/hasClosest";
 import {escapeHtml, escapeHtmlTextAndAttr} from "../../util/escape";
 import {getTreeItemTailHTML} from "../../util/treeItemTail";
 import {Model} from "../../layout/Model";
@@ -14,6 +14,9 @@ import {
 } from "../../protyle/util/publishAccess";
 import {fetchPost, fetchSyncPost} from "../../util/fetch";
 import {restoreFileTreePaths} from "../../util/fileTreeRestore";
+import {getNotebookOpenPaths} from "../../util/fileTreeOpenPaths";
+import {refreshFileTreeRows} from "../../util/fileTreeRefresh";
+import {getFileTreeRenderContext} from "../../util/fileTreeContext";
 import {reorderSortedFileTree} from "../../util/fileTreeReorder";
 import {genUUID} from "../../util/genID";
 import {openMobileFileById} from "../editor";
@@ -1385,36 +1388,13 @@ export class MobileFiles extends Model {
         if (!liElement) {
             return;
         }
-        let fileHTML = "";
-        data.files.forEach((item: IFile) => {
-            fileHTML += this.genFileHTML(item);
-        });
         const effectiveSortMode = getResponseEffectiveSortMode(data, data.box);
         let nextElement = liElement.nextElementSibling;
         if (nextElement && nextElement.tagName === "UL") {
             // 文件展开时，刷新
-            const tempElement = document.createElement("template");
-            tempElement.innerHTML = fileHTML;
-            const focusedIDs = Array.from(nextElement.querySelectorAll(":scope > .b3-list-item--focus")).map((item) =>
-                item.getAttribute("data-node-id")
-            );
-            focusedIDs.forEach((id) => {
-                Array.from(tempElement.content.children).find((item) =>
-                    item.getAttribute("data-node-id") === id
-                )?.classList.add("b3-list-item--focus");
-            });
-            // 保持文件夹展开状态
-            nextElement.querySelectorAll(":scope > .b3-list-item > .b3-list-item__toggle> .b3-list-item__arrow--open").forEach(item => {
-                const openLiElement = hasClosestByClassName(item, "b3-list-item");
-                if (openLiElement) {
-                    const tempOpenLiElement = tempElement.content.querySelector(`.b3-list-item[data-node-id="${openLiElement.getAttribute("data-node-id")}"]`);
-                    if (tempOpenLiElement) {
-                        tempOpenLiElement.after(openLiElement.nextElementSibling);
-                        tempOpenLiElement.querySelector(".b3-list-item__arrow").classList.add("b3-list-item__arrow--open");
-                    }
-                }
-            });
-            nextElement.innerHTML = tempElement.innerHTML;
+            refreshFileTreeRows(nextElement, data.files,
+                getFileTreeRenderContext(this.actionsElement.querySelector('[data-type="publish-access"]').classList.contains("block__icon--active")),
+                this.genFileHTML);
             nextElement.setAttribute(FILE_TREE_EFFECTIVE_SORT_MODE, effectiveSortMode.toString());
             this.restoreMovedExpandedItems(nextElement, data.box);
             if (typeof scrollTop === "number") {
@@ -1424,8 +1404,11 @@ export class MobileFiles extends Model {
             return;
         }
         liElement.querySelector(".b3-list-item__arrow").classList.add("b3-list-item__arrow--open");
-        liElement.insertAdjacentHTML("afterend", `<ul ${FILE_TREE_EFFECTIVE_SORT_MODE}="${effectiveSortMode}">${fileHTML}</ul>`);
+        liElement.insertAdjacentHTML("afterend", `<ul ${FILE_TREE_EFFECTIVE_SORT_MODE}="${effectiveSortMode}"></ul>`);
         nextElement = liElement.nextElementSibling;
+        refreshFileTreeRows(nextElement, data.files,
+            getFileTreeRenderContext(this.actionsElement.querySelector('[data-type="publish-access"]').classList.contains("block__icon--active")),
+            this.genFileHTML);
         this.restoreMovedExpandedItems(nextElement, data.box);
         expandFileTree(nextElement as HTMLElement, () => {
             if (typeof scrollTop === "number") {
@@ -1701,27 +1684,8 @@ export class MobileFiles extends Model {
                 notebookId: item.getAttribute("data-url"),
                 openPaths: []
             };
-            item.querySelectorAll(".b3-list-item__arrow--open").forEach((openItem) => {
-                const liElement = hasClosestByTag(openItem, "LI");
-                if (liElement) {
-                    notebookPaths.openPaths.push(liElement.getAttribute("data-path"));
-                }
-            });
+            notebookPaths.openPaths = getNotebookOpenPaths(item);
             if (notebookPaths.openPaths.length > 0) {
-                for (let i = 0; i < notebookPaths.openPaths.length; i++) {
-                    for (let j = i + 1; j < notebookPaths.openPaths.length; j++) {
-                        if (notebookPaths.openPaths[j].startsWith(notebookPaths.openPaths[i].replace(".sy", ""))) {
-                            notebookPaths.openPaths.splice(i, 1);
-                            j--;
-                        }
-                    }
-                }
-                notebookPaths.openPaths.forEach((openPath, index) => {
-                    const nextPath = this.element.querySelector(`[data-url="${notebookPaths.notebookId}"] li[data-path="${openPath}"]`)?.nextElementSibling?.firstElementChild?.getAttribute("data-path");
-                    if (nextPath) {
-                        notebookPaths.openPaths[index] = nextPath;
-                    }
-                });
                 filesPaths.push(notebookPaths);
             }
         });

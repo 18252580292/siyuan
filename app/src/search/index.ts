@@ -7,6 +7,7 @@ import type {App} from "../index";
 import {clearOBG} from "../layout/dock/util";
 import {cancelSearchRequest} from "./request";
 import {isPhablet} from "../protyle/util/compatibility";
+import {cancelAssetSearch} from "./assets";
 
 export class Search extends Model {
     public element: HTMLElement;
@@ -55,6 +56,7 @@ export class Search extends Model {
 
     public destroy() {
         cancelSearchRequest(this.element);
+        cancelAssetSearch(this.element.querySelector("#searchAssets"));
         this.editors.edit.destroy();
         this.editors.unRefEdit.destroy();
     }

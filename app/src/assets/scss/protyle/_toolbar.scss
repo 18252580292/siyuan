@@ -108,9 +108,9 @@
 
   &-hint {
     position: fixed;
-    border-radius: var(--b3-border-radius-b);
-    box-shadow: var(--b3-dialog-shadow);
-    border: 1px solid var(--b3-theme-surface-lighter);
+    border-radius: var(--b3-menu-radius, var(--b3-border-radius-b));
+    box-shadow: var(--b3-menu-shadow, var(--b3-dialog-shadow));
+    border: 1px solid var(--b3-menu-border-color, var(--b3-theme-surface-lighter));
     background-color: var(--b3-menu-background);
     z-index: 7;
     overflow: auto;
@@ -126,9 +126,9 @@
   &-util {
     font-size: var(--b3-font-size);
     position: fixed;
-    border-radius: var(--b3-border-radius-b);
-    box-shadow: var(--b3-dialog-shadow);
-    border: 1px solid var(--b3-theme-surface-lighter);
+    border-radius: var(--b3-menu-radius, var(--b3-border-radius-b));
+    box-shadow: var(--b3-menu-shadow, var(--b3-dialog-shadow));
+    border: 1px solid var(--b3-menu-border-color, var(--b3-theme-surface-lighter));
     background-color: var(--b3-menu-background);
     padding: 8px 0;
     max-height: 80vh;

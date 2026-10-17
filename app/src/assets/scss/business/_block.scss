@@ -2,10 +2,10 @@
   &__popover {
     background-color: var(--b3-theme-background);
     position: absolute;
-    box-shadow: var(--b3-dialog-shadow);
+    box-shadow: var(--b3-menu-shadow, var(--b3-dialog-shadow));
     width: 60vw;
     word-break: break-word;
-    border-radius: var(--b3-border-radius-b);
+    border-radius: var(--b3-menu-radius, var(--b3-border-radius-b));
     opacity: 0;
     transition: opacity 75ms linear;
     top: -100px;
@@ -13,7 +13,7 @@
     flex-direction: column;
     min-height: 197px;
     z-index: -1;
-    border: 1px solid var(--b3-theme-surface-lighter);
+    border: 1px solid var(--b3-menu-border-color, var(--b3-theme-surface-lighter));
     max-width: 1024px;
 
     &--open {
@@ -21,7 +21,7 @@
     }
 
     & > .block__icons {
-      border-radius: var(--b3-border-radius-b) var(--b3-border-radius-b) 0 0;
+      border-radius: var(--b3-menu-radius, var(--b3-border-radius-b)) var(--b3-menu-radius, var(--b3-border-radius-b)) 0 0;
 
       & > .resize__move {
         height: var(--b3-ui-panel-height, 42px);
@@ -34,7 +34,7 @@
     overflow: auto;
     display: flex;
     flex-direction: column;
-    border-radius: 0 0 var(--b3-border-radius-b) var(--b3-border-radius-b);
+    border-radius: 0 0 var(--b3-menu-radius, var(--b3-border-radius-b)) var(--b3-menu-radius, var(--b3-border-radius-b));
     flex: 1;
   }
 
@@ -78,7 +78,7 @@
     padding: 0 8px;
     display: flex;
     align-items: center;
-    min-height: var(--b3-ui-panel-height, 42px);
+    min-height: var(--b3-block-header-height, var(--b3-ui-panel-height, 42px));
     flex-shrink: 0;
 
     &--menu {
@@ -175,7 +175,22 @@
     display: flex;
     align-items: center;
     font-weight: 600;
-    color: var(--b3-theme-on-background);
+    color: var(--b3-block-header-color, var(--b3-theme-on-background));
+    font-size: var(--b3-block-header-size, inherit);
+
+    &--stacked {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 3px;
+      font-size: 16px;
+      color: var(--b3-theme-on-background);
+
+      small {
+        font-size: 11px;
+        font-weight: normal;
+        color: var(--b3-theme-on-surface-light);
+      }
+    }
 
     > .counter {
       font-weight: normal;

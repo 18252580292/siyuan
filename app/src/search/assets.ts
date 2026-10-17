@@ -11,6 +11,37 @@ import {addClearButton} from "../util/addClearButton";
 import {saveAssetKeyList} from "./toggleHistory";
 import {genAssetSearchResultItemHTML, IAssetSearchResultItem} from "./assetsResult";
 import {getHostCapabilities} from "../util/hostCapabilities";
+import {cancelSearchRequest, scheduleSearchRequest} from "./request";
+import {escapeHtmlTextAndAttr} from "../util/escape";
+
+interface IAssetReadTask {
+    pending: boolean;
+    resume: () => void;
+}
+
+const assetReadTasks = new WeakMap<Element, IAssetReadTask>();
+const assetPreviewTasks = new WeakMap<Element, IAssetReadTask>();
+const pausedAssetPanels = new WeakSet<Element>();
+
+// 仅恢复隐藏前未完成的读取，已完成的结果与当前页保持不变。
+export const resumeAssetSearch = (element: Element) => {
+    if (!pausedAssetPanels.delete(element)) {
+        return false;
+    }
+    const task = assetReadTasks.get(element);
+    if (task?.pending) {
+        task.pending = false;
+        task.resume();
+        return true;
+    }
+    const preview = assetPreviewTasks.get(element.querySelector("#searchAssetPreview"));
+    if (preview?.pending) {
+        preview.pending = false;
+        preview.resume();
+        return true;
+    }
+    return false;
+};
 
 export const openSearchAsset = (element: HTMLElement, isStick: boolean) => {
     /// #if !MOBILE
@@ -18,6 +49,7 @@ export const openSearchAsset = (element: HTMLElement, isStick: boolean) => {
     element.previousElementSibling.classList.add("fn__none");
     element.classList.remove("fn__none");
     if (element.innerHTML) {
+        resumeAssetSearch(element);
         (element.querySelector("#searchAssetInput") as HTMLInputElement).select();
         return;
     }
@@ -53,7 +85,7 @@ export const openSearchAsset = (element: HTMLElement, isStick: boolean) => {
             <svg data-menu="true" class="b3-form__icon-icon"><use xlink:href="#iconSearch"></use></svg>
             <svg class="search__arrowdown"><use xlink:href="#iconDown"></use></svg>
         </span>
-        <input spellcheck="false" id="searchAssetInput" value="${localSearch.k}" class="b3-text-field b3-text-field--text" placeholder="${window.siyuan.languages.keyword}">
+        <input spellcheck="false" id="searchAssetInput" value="${escapeHtmlTextAndAttr(localSearch.k)}" class="b3-text-field b3-text-field--text" placeholder="${window.siyuan.languages.keyword}">
     </div>
     <div class="block__icons">
         <span data-type="assetRefresh" aria-label="${window.siyuan.languages.refresh}" class="block__icon block__icon--show ariaLabel" data-position="9south">
@@ -165,83 +197,144 @@ export const openSearchAsset = (element: HTMLElement, isStick: boolean) => {
     /// #endif
 };
 
-let inputTimeout: number;
+export const cancelAssetSearch = (element: Element | null) => {
+    if (!element) {
+        return;
+    }
+    pausedAssetPanels.add(element);
+    cancelSearchRequest(element);
+    const previewElement = element.querySelector("#searchAssetPreview");
+    if (previewElement) {
+        cancelSearchRequest(previewElement);
+    }
+    element.parentElement?.querySelector(".fn__loading")?.classList.add("fn__none");
+};
+
 export const assetInputEvent = (element: Element, localSearch?: ISearchAssetOption, page = 1) => {
+    pausedAssetPanels.delete(element);
+    const previewElement = element.querySelector("#searchAssetPreview");
+    cancelSearchRequest(previewElement);
+    const preview = assetPreviewTasks.get(previewElement);
+    if (preview) {
+        preview.pending = false;
+    }
+    const task: IAssetReadTask = {pending: true, resume: () => assetInputEvent(element, localSearch, page)};
+    assetReadTasks.set(element, task);
     const loadingElement = element.parentElement.querySelector(".fn__loading") as HTMLElement;
     loadingElement.classList.remove("fn__none");
     loadingElement.style.top = "84px";
-    clearTimeout(inputTimeout);
-    inputTimeout = window.setTimeout(() => {
-        if (!localSearch) {
-            localSearch = window.siyuan.storage[Constants.LOCAL_SEARCHASSET] as ISearchAssetOption;
-        }
-        const previousElement = element.querySelector('[data-type="assetPrevious"]');
-        if (page > 1) {
-            previousElement.removeAttribute("disabled");
-        } else {
-            previousElement.setAttribute("disabled", "disabled");
-        }
-        const searchInputElement = element.querySelector("#searchAssetInput") as HTMLInputElement;
-        fetchPost("/api/search/fullTextSearchAssetContent", {
-            page,
-            query: searchInputElement.value,
-            types: localSearch.types,
-            method: localSearch.method,
-            orderBy: localSearch.sort
-        }, (response) => {
-            loadingElement.classList.add("fn__none");
-            const nextElement = element.querySelector('[data-type="assetNext"]');
-            if (page < response.data.pageCount) {
-                nextElement.removeAttribute("disabled");
-            } else {
-                nextElement.setAttribute("disabled", "disabled");
+    scheduleSearchRequest({
+        element,
+        delay: Constants.TIMEOUT_INPUT,
+        onIdle: () => {
+            task.pending = false;
+            if (element.isConnected) {
+                loadingElement.classList.add("fn__none");
             }
-            let resultHTML = "";
-            response.data.assetContents.forEach((item: IAssetSearchResultItem, index: number) => {
-                resultHTML += genAssetSearchResultItemHTML(item, index);
-            });
-            const previewElement = element.querySelector("#searchAssetPreview");
-            if (response.data.assetContents.length > 0) {
-                previewElement.classList.remove("fn__none");
-                element.querySelector(".search__drag")?.classList.remove("fn__none");
-                renderPreview(previewElement, response.data.assetContents[0].id, searchInputElement.value, localSearch.method);
-            } else {
-                previewElement.classList.add("fn__none");
-                element.querySelector(".search__drag")?.classList.add("fn__none");
+        },
+        createTask(version) {
+            if (!localSearch) {
+                localSearch = window.siyuan.storage[Constants.LOCAL_SEARCHASSET] as ISearchAssetOption;
             }
-            element.querySelector("#searchAssetResult").innerHTML = `<span class="fn__flex-center">${page}/${response.data.pageCount || 1}</span><span class="fn__space"></span>
+            const previousElement = element.querySelector('[data-type="assetPrevious"]');
+            if (page > 1) {
+                previousElement.removeAttribute("disabled");
+            } else {
+                previousElement.setAttribute("disabled", "disabled");
+            }
+            const searchInputElement = element.querySelector("#searchAssetInput") as HTMLInputElement;
+            const query = searchInputElement.value;
+            const queryMethod = localSearch.method;
+            const request = {
+                page,
+                query,
+                types: Object.assign({}, localSearch.types),
+                method: queryMethod,
+                orderBy: localSearch.sort
+            };
+            return {
+                method: 0,
+                version,
+                abortWhenSuperseded: true,
+                run(signal, isCurrent) {
+                    return fetchPost("/api/search/fullTextSearchAssetContent", request, (response) => {
+                        if (!isCurrent()) {
+                            return;
+                        }
+                        const nextElement = element.querySelector('[data-type="assetNext"]');
+                        if (page < response.data.pageCount) {
+                            nextElement.removeAttribute("disabled");
+                        } else {
+                            nextElement.setAttribute("disabled", "disabled");
+                        }
+                        let resultHTML = "";
+                        response.data.assetContents.forEach((item: IAssetSearchResultItem, index: number) => {
+                            resultHTML += genAssetSearchResultItemHTML(item, index);
+                        });
+                        const previewElement = element.querySelector("#searchAssetPreview");
+                        if (response.data.assetContents.length > 0) {
+                            previewElement.classList.remove("fn__none");
+                            element.querySelector(".search__drag")?.classList.remove("fn__none");
+                            renderPreview(previewElement, response.data.assetContents[0].id, query, queryMethod);
+                        } else {
+                            previewElement.classList.add("fn__none");
+                            element.querySelector(".search__drag")?.classList.add("fn__none");
+                        }
+                        element.querySelector("#searchAssetResult").innerHTML = `<span class="fn__flex-center">${page}/${response.data.pageCount || 1}</span><span class="fn__space"></span>
 <span class="ft__on-surface">${window.siyuan.languages.total} ${response.data.matchedAssetCount}</span>`;
-            element.querySelector("#searchAssetList").innerHTML = resultHTML || `<div class="search__empty">
+                        element.querySelector("#searchAssetList").innerHTML = resultHTML || `<div class="search__empty">
     ${window.siyuan.languages.emptyContent}
 </div>`;
-        });
-    }, Constants.TIMEOUT_INPUT);
+                    }, undefined, undefined, signal);
+                }
+            };
+        }
+    });
 };
 
 export const renderPreview = (element: Element, id: string, query: string, queryMethod: number) => {
-    fetchPost("/api/search/getAssetContent", {id, query, queryMethod}, (response) => {
-        if (!response.data.assetContent) {
-            element.replaceChildren();
-            return;
-        }
-        const previewElement = document.createElement("p");
-        previewElement.style.whiteSpace = "pre-wrap";
-        // 仅保留 mark/br 白名单元素并移除属性,其余元素降级为文本节点,避免 innerHTML 注入执行脚本
-        const doc = new DOMParser().parseFromString(response.data.assetContent.content, "text/html");
-        doc.body.querySelectorAll("*").forEach((childElement) => {
-            if (["MARK", "BR"].includes(childElement.tagName)) {
-                Array.from(childElement.attributes).forEach((attribute) => childElement.removeAttribute(attribute.name));
-            } else {
-                childElement.replaceWith(...childElement.childNodes);
-            }
-        });
-        previewElement.append(...doc.body.childNodes);
-        element.replaceChildren(previewElement);
-        const matchElement = element.querySelector("mark");
-        if (matchElement) {
-            matchElement.classList.add("mark--hl");
-            const contentRect = element.getBoundingClientRect();
-            element.scrollTop = element.scrollTop + matchElement.getBoundingClientRect().top - contentRect.top - contentRect.height / 2;
+    const task: IAssetReadTask = {pending: true, resume: () => renderPreview(element, id, query, queryMethod)};
+    assetPreviewTasks.set(element, task);
+    scheduleSearchRequest({
+        element,
+        delay: 0,
+        onIdle: () => { task.pending = false; },
+        createTask(version) {
+            return {
+                method: 0,
+                version,
+                abortWhenSuperseded: true,
+                run(signal, isCurrent) {
+                    return fetchPost("/api/search/getAssetContent", {id, query, queryMethod}, (response) => {
+                        if (!isCurrent()) {
+                            return;
+                        }
+                        if (!response.data.assetContent) {
+                            element.replaceChildren();
+                            return;
+                        }
+                        const previewElement = document.createElement("p");
+                        previewElement.style.whiteSpace = "pre-wrap";
+                        // 仅保留 mark/br 白名单元素并移除属性，其余元素降级为文本节点。
+                        const doc = new DOMParser().parseFromString(response.data.assetContent.content, "text/html");
+                        doc.body.querySelectorAll("*").forEach((childElement) => {
+                            if (["MARK", "BR"].includes(childElement.tagName)) {
+                                Array.from(childElement.attributes).forEach((attribute) => childElement.removeAttribute(attribute.name));
+                            } else {
+                                childElement.replaceWith(...childElement.childNodes);
+                            }
+                        });
+                        previewElement.append(...doc.body.childNodes);
+                        element.replaceChildren(previewElement);
+                        const matchElement = element.querySelector("mark");
+                        if (matchElement) {
+                            matchElement.classList.add("mark--hl");
+                            const contentRect = element.getBoundingClientRect();
+                            element.scrollTop = element.scrollTop + matchElement.getBoundingClientRect().top - contentRect.top - contentRect.height / 2;
+                        }
+                    }, undefined, undefined, signal);
+                }
+            };
         }
     });
 };

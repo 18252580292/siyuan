@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-graphite",
+  "author": "SiYuan local customization",
+  "version": "1.0.0",
+  "url": "https://github.com/siyuan-note/siyuan",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "dark"
+  ],
+  "displayName": {
+    "default": "Graphite",
+    "zh-CN": "石墨黑",
+    "zh-TW": "石墨黑"
+  }
+}

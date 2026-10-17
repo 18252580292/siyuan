@@ -144,10 +144,15 @@
   }
 
   &__list {
+    --b3-list-item-padding: var(--b3-search-result-padding, 0 4px);
+    --b3-list-item-line-height: var(--b3-search-result-line-height, var(--b3-ui-list-height, 28px));
+    --b3-list-item-meta-spacing: var(--b3-search-result-meta-spacing, 8px);
+    --b3-list-item-meta-color: var(--b3-search-result-meta-color, var(--b3-theme-on-surface));
+    --b3-list-item-graphic-color: var(--b3-search-result-graphic-color, inherit);
     position: relative;
     flex: 1;
     overflow: auto;
-    padding: 8px 0;
+    padding: var(--b3-search-list-padding, 8px 0);
     background-color: var(--b3-theme-background);
     min-width: 88px;
     min-height: 32px;
@@ -198,8 +203,13 @@
 
   &__empty {
     text-align: center;
-    font-size: 17px;
-    padding: 32px;
+    font-size: var(--b3-search-empty-size, 17px);
+    padding: var(--b3-search-empty-padding, 32px);
+    margin: var(--b3-empty-state-margin, 0);
+    line-height: var(--b3-empty-state-line-height, inherit);
+    background-color: var(--b3-empty-state-background, transparent);
+    border-radius: var(--b3-empty-state-radius, 0);
+    overflow-wrap: var(--b3-empty-state-wrap, inherit);
     color: var(--b3-theme-on-surface);
   }
 }
@@ -234,6 +244,9 @@
     flex-direction: column;
     overflow-x: hidden;
     overflow-y: auto;
+    background-color: var(--b3-asset-list-background, transparent);
+    border-radius: var(--b3-asset-preview-radius, 0);
+    box-shadow: var(--b3-asset-list-shadow, none);
   }
 
   &__preview {
@@ -241,7 +254,15 @@
     align-items: center;
     justify-content: center;
     overflow: auto;
-    word-break: break-all;
+    word-break: var(--b3-asset-preview-word-break, break-all);
+    overflow-wrap: var(--b3-asset-preview-wrap, inherit);
+    line-height: var(--b3-asset-preview-line-height, inherit);
+    color: var(--b3-asset-preview-color, inherit);
+    box-sizing: border-box;
+    padding: var(--b3-asset-preview-padding, 0);
+    border-radius: var(--b3-asset-preview-radius, 0);
+    background-color: var(--b3-asset-preview-background, transparent);
+    box-shadow: var(--b3-asset-preview-shadow, none);
 
     img {
       max-width: 100%;

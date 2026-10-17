@@ -325,6 +325,7 @@
   bottom: 0;
   left: 0;
   outline: none;
+  background-color: var(--b3-pdf-viewer-background, transparent);
 }
 
 #viewerContainer:not(.pdfPresentationMode) {
@@ -351,6 +352,8 @@
   padding-left: 8px;
   box-sizing: border-box;
   align-items: center;
+  background-color: var(--b3-pdf-toolbar-background, transparent);
+  box-shadow: var(--b3-pdf-toolbar-shadow, none);
 }
 
 #toolbarViewer #numPages {
@@ -513,6 +516,11 @@
     background-color: var(--b3-list-icon-hover);
   }
 
+  &:focus-visible:not([disabled]) {
+    outline: var(--b3-pdf-focus-outline, revert);
+    outline-offset: var(--b3-pdf-focus-offset, revert);
+  }
+
   & > svg {
     height: 16px;
     width: 16px;
@@ -573,6 +581,7 @@
 }
 
 .toolbarField.pageNumber {
+  font-variant-numeric: var(--b3-counter-numeric, normal);
   min-width: 16px;
   text-align: right;
   width: 48px;
@@ -657,6 +666,7 @@ a:focus > .thumbnail > .thumbnailSelectionRing,
 }
 
 .thumbnail.selected > .thumbnailSelectionRing {
+  box-shadow: var(--b3-pdf-thumbnail-selected-shadow, 0 0 1px 1px var(--b3-theme-surface-lighter));
   background-color: var(--b3-list-hover);
   background-clip: padding-box;
   color: rgba(255, 255, 255, 1);

@@ -375,6 +375,7 @@ const runSearchCases = async (dialogSource, focusSource, searchSource, mobileSou
     let rejectPath;
     let ios = true;
     let mobileOpened = false;
+    const canceledAssets = [];
     window.webkit = {messageHandlers: {finishKeyboardComposition: {postMessage: async () => true}}};
     const modules = {
         "../util/genID": {genUUID: () => String(Math.random())},
@@ -395,13 +396,14 @@ const runSearchCases = async (dialogSource, focusSource, searchSource, mobileSou
         "../util/pathName": {getNotebookName: () => "Notebook", pathPosix: () => ({join: (...parts) => parts.join("/")})},
         "./config": {hasExplicitSearchScope: () => true, setSearchConfigTemporaryPath() {}},
         "./request": {cancelSearchRequest() {}},
+        "./assets": {cancelAssetSearch: element => canceledAssets.push(element)},
         // 当前用例只覆盖搜索入口，不应访问其他命令或复用窗口的路径更新。
         ...Object.fromEntries(["./path", "../protyle/render/av/addToDatabase", "../protyle/util/hasClosest",
             "../protyle/hint/extend"].map(name => [name, new Proxy({}, {get: (_target, key) => {
             throw new Error(`Unexpected search fixture dependency: ${name}.${String(key)}`);
         }})])),
         "./util": {genSearch: (_app, _config, element) => {
-            element.innerHTML = '<input id="searchInput" value="previous query"><div id="searchList"></div>';
+            element.innerHTML = '<input id="searchInput" value="previous query"><div id="searchList"></div><div id="searchAssets"></div>';
             return {edit: {destroy() {}}, unRefEdit: {destroy() {}}};
         }},
         "../boot/globalEvent/command/global": {globalCommand: () => false},
@@ -464,8 +466,10 @@ const runSearchCases = async (dialogSource, focusSource, searchSource, mobileSou
     await pending;
     const dialog = window.siyuan.dialogs[0];
     assert.ok(dialog.element.contains(document.activeElement));
+    const assetPanel = dialog.element.querySelector("#searchAssets");
     dialog.destroy();
     await tick();
+    assert.deepEqual(canceledAssets, [assetPanel]);
     assert.equal(document.activeElement, editor);
     assert.equal(getSelection().anchorOffset, 7);
     assert.equal(editor.textContent, "before after");
