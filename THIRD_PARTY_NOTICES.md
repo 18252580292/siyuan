@@ -44,6 +44,7 @@ The component list is informational and does not replace the license terms. Copy
 | NNFX highlight.js themes | Bundled snapshot | CC-BY-SA-4.0 | [upstream](https://github.com/highlightjs/highlight.js) | app/stage/protyle/js/highlight.js/styles/nnfx-*.min.css |
 | Stack Overflow highlight.js themes | Bundled snapshot | MIT | [upstream](https://github.com/StackExchange/Stacks) | app/stage/protyle/js/highlight.js/styles/stackoverflow-*.min.css |
 | Tokyo Night highlight.js themes | Bundled snapshot | MIT | [upstream](https://github.com/enkia/tokyo-night-vscode-theme) | app/stage/protyle/js/highlight.js/styles/tokyo-night-*.min.css |
+| Catppuccin Latte and Mocha palettes | SiYuan theme adaptation 1.0.0 | MIT, Copyright (c) 2021 Catppuccin | [upstream](https://github.com/catppuccin/catppuccin) | app/appearance/themes/siyuan-catppuccin-latte/ and siyuan-catppuccin-mocha/; each package includes LICENSE |
 | KaTeX | 0.19.0 | MIT | [upstream](https://github.com/KaTeX/KaTeX) | app/stage/protyle/js/katex/ |
 | KaTeX fonts | 0.19.0 | OFL-1.1 | [upstream](https://github.com/KaTeX/KaTeX/tree/v0.19.0/fonts) | app/stage/protyle/js/katex/fonts/ |
 | MathJax | 4.1.3 | Apache-2.0 | [upstream](https://github.com/mathjax/MathJax-src) | app/stage/protyle/js/mathjax/ |

@@ -1,7 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const bundledThemeNames = ["siyuan-cream", "siyuan-forest", "siyuan-ocean", "siyuan-graphite"];
+const bundledThemeNames = ["siyuan-cream", "siyuan-forest", "siyuan-ocean", "siyuan-graphite",
+    "siyuan-catppuccin-latte", "siyuan-catppuccin-mocha"];
 
 // 将随应用提供的配色作为普通主题安装，保留已存在的同名包和用户修改。
 const installBundledThemes = (resources, workspace) => {
@@ -23,7 +24,11 @@ const installBundledThemes = (resources, workspace) => {
         fs.mkdirSync(targetRoot, {recursive: true});
         const temporary = fs.mkdtempSync(path.join(targetRoot, ".siyuan-theme-"));
         try {
-            for (const file of ["theme.json", "theme.css"]) {
+            const files = ["theme.json", "theme.css"];
+            if (fs.existsSync(path.join(source, "LICENSE"))) {
+                files.push("LICENSE");
+            }
+            for (const file of files) {
                 fs.copyFileSync(path.join(source, file), path.join(temporary, file));
             }
             fs.renameSync(temporary, target);

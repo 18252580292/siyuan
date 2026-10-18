@@ -19,6 +19,11 @@ test("bundled themes install complete packages without replacing existing custom
             assert.equal(JSON.parse(fs.readFileSync(path.join(themes, name, "theme.json"), "utf8")).name, name);
             assert.equal(fs.readFileSync(path.join(themes, name, "theme.css"), "utf8"),
                 fs.readFileSync(path.join(resources, "appearance", "themes", name, "theme.css"), "utf8"));
+            const license = path.join(resources, "appearance", "themes", name, "LICENSE");
+            if (fs.existsSync(license)) {
+                assert.equal(fs.readFileSync(path.join(themes, name, "LICENSE"), "utf8"),
+                    fs.readFileSync(license, "utf8"));
+            }
         }
         assert.deepEqual(installBundledThemes(resources, workspace), []);
         assert.deepEqual(fs.readdirSync(themes).sort(), [...bundledThemeNames].sort());

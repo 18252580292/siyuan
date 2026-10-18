@@ -3,6 +3,7 @@ const {mkdtempSync, mkdirSync, readFileSync, rmSync} = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const sass = require("sass");
+const {bundledThemeNames} = require("../electron/bundledThemes");
 
 if (process.versions.electron && process.type === "browser") {
     const {app, BrowserWindow} = require("electron");
@@ -22,9 +23,11 @@ if (process.versions.electron && process.type === "browser") {
             }).css;
             const themeCSS = name => readFileSync(path.join(__dirname, "../appearance/themes", name, "theme.css"), "utf8")
                 .replace(/@import[^;]+;/g, "");
-            for (const theme of ["daylight", "midnight", "siyuan-cream", "siyuan-forest", "siyuan-ocean", "siyuan-graphite"]) {
-                const base = ["midnight", "siyuan-ocean", "siyuan-graphite"].includes(theme) ? "midnight" : "daylight";
-                await win.loadURL("data:text/html,<html><head></head><body></body></html>");
+            for (const theme of ["daylight", "midnight", ...bundledThemeNames]) {
+                const dark = theme === "midnight" || (theme !== "daylight" && JSON.parse(readFileSync(
+                    path.join(__dirname, "../appearance/themes", theme, "theme.json"), "utf8")).modes.includes("dark"));
+                const base = dark ? "midnight" : "daylight";
+                await win.loadURL("data:text/html,<html data-frontend='desktop'><head></head><body></body></html>");
                 await win.webContents.executeJavaScript(`(() => {
                     const style = document.createElement("style");
                     style.textContent = ${JSON.stringify(css + themeCSS(base) + (theme === base ? "" : themeCSS(theme)))};
@@ -83,7 +86,7 @@ if (process.versions.electron && process.type === "browser") {
                 assert.equal(focus.style, "solid");
                 win.webContents.debugger.detach();
             }
-            console.log("Shared controls preserve disabled, read-only and keyboard-focus states in six themes");
+            console.log("Shared controls preserve disabled, read-only and keyboard-focus states in all bundled themes");
         } catch (error) {
             console.error(error);
             status = 1;

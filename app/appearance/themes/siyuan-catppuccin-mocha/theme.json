@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-catppuccin-mocha",
+  "author": "SiYuan local customization; palette by Catppuccin",
+  "version": "1.0.0",
+  "url": "https://github.com/catppuccin/catppuccin",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "dark"
+  ],
+  "displayName": {
+    "default": "Catppuccin Mocha",
+    "zh-CN": "Catppuccin Mocha · 摩卡深色",
+    "zh-TW": "Catppuccin Mocha · 摩卡深色"
+  }
+}

@@ -4,7 +4,8 @@ const os = require("node:os");
 const path = require("node:path");
 const sass = require("sass");
 
-const themes = ["daylight", "midnight", "siyuan-cream", "siyuan-forest", "siyuan-ocean", "siyuan-graphite"];
+const {bundledThemeNames} = require("../electron/bundledThemes");
+const themes = ["daylight", "midnight", ...bundledThemeNames];
 
 // 检查选中层下真实绘制的文字像素，避免内容仍在 DOM 中却被实色覆盖的回归。
 const pixelRange = (picture) => {
@@ -46,7 +47,8 @@ if (process.versions.electron && process.type === "browser") {
             const themeCSS = name => readFileSync(path.join(__dirname, "../appearance/themes", name, "theme.css"), "utf8")
                 .replace(/@import[^;]+;/g, "");
             for (const theme of themes) {
-                const dark = ["midnight", "siyuan-ocean", "siyuan-graphite"].includes(theme);
+                const dark = theme === "midnight" || (theme !== "daylight" && JSON.parse(readFileSync(
+                    path.join(__dirname, "../appearance/themes", theme, "theme.json"), "utf8")).modes.includes("dark"));
                 const base = dark ? "midnight" : "daylight";
                 const palette = themeCSS(base) + (theme === base ? "" : themeCSS(theme));
                 await win.loadURL("data:text/html,<html data-frontend='desktop'><head></head><body></body></html>");
@@ -102,7 +104,7 @@ if (process.versions.electron && process.type === "browser") {
                     }
                 }
             }
-            console.log("Selected block text stays visible in six themes");
+            console.log("Selected block text stays visible in all bundled themes");
         } catch (error) {
             console.error(error);
             status = 1;
@@ -122,7 +124,7 @@ if (process.versions.electron && process.type === "browser") {
         try {
             const {stdout} = await require("node:util").promisify(require("node:child_process").execFile)(
                 require("electron"), [__filename, folder], {env, timeout: 85000, windowsHide: true});
-            assert.match(stdout, /Selected block text stays visible in six themes/);
+            assert.match(stdout, /Selected block text stays visible in all bundled themes/);
         } finally {
             assert.equal(path.dirname(path.resolve(folder)), path.resolve(os.tmpdir()));
             assert.ok(path.basename(folder).startsWith("siyuan-selection-visibility-"));

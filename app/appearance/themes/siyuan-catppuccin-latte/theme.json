@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-catppuccin-latte",
+  "author": "SiYuan local customization; palette by Catppuccin",
+  "version": "1.0.0",
+  "url": "https://github.com/catppuccin/catppuccin",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "light"
+  ],
+  "displayName": {
+    "default": "Catppuccin Latte",
+    "zh-CN": "Catppuccin Latte · 拿铁浅色",
+    "zh-TW": "Catppuccin Latte · 拿鐵淺色"
+  }
+}

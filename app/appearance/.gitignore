@@ -4,6 +4,8 @@ themes/*
 !themes/siyuan-forest/
 !themes/siyuan-ocean/
 !themes/siyuan-graphite/
+!themes/siyuan-catppuccin-latte/
+!themes/siyuan-catppuccin-mocha/
 !themes/daylight/
 !themes/midnight/
 
