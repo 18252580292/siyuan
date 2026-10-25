@@ -1,6 +1,6 @@
 import {escapeHtmlTextAndAttr} from "../../util/escape";
 import {fetchPost, fetchSyncPost} from "../../util/fetch";
-import * as dayjs from "dayjs";
+import dayjs from "dayjs";
 import {restoreInlineElementBoundaryHTML} from "../util/inlineElementBoundary";
 import {getEditorTransaction} from "../util/transactionContract";
 import {
@@ -23,6 +23,7 @@ import {
     getTopAloneElement
 } from "./getBlock";
 import {Constants} from "../../constants";
+import {CALLOUT_PRESETS, type ICalloutPreset} from "./calloutType";
 import {blockRender} from "../render/blockRender";
 import {renderBlockDirection, syncBlockDirection} from "../render/blockDirection";
 import {renderEmbedHeadings} from "../render/embedHeading";
@@ -1530,7 +1531,7 @@ export const onTransaction = (protyle: IProtyle, operations: IOperation[], isUnd
         if (["addAttrViewCol", "updateAttrViewCol", "updateAttrViewColOptions",
             "updateAttrViewColOption", "updateAttrViewCell", "updateAttrViewCells", "sortAttrViewRow", "sortAttrViewCol", "setAttrViewColHidden",
             "setAttrViewColWrap", "setAttrViewColWidth", "setAttrViewColsWidth", "setAttrViewColAlign", "removeAttrViewColOption", "setAttrViewName", "setAttrViewFilters",
-            "setAttrViewSorts", "setAttrViewNewItemTemplates", "setAttrViewAutomations", "setAttrViewCustomColors", "setAttrViewColCalc", "removeAttrViewCol", "updateAttrViewColNumberFormat", "setAttrViewColDateFormat", "removeAttrViewBlock",
+            "setAttrViewSorts", "setAttrViewNewItemTemplates", "setAttrViewAutomations", "collectAttrViewBlocks", "setAttrViewCustomColors", "setAttrViewColCalc", "removeAttrViewCol", "updateAttrViewColNumberFormat", "setAttrViewColDateFormat", "removeAttrViewBlock",
             "replaceAttrViewBlock", "updateAttrViewColTemplate", "setAttrViewColPin", "addAttrViewView", "setAttrViewColIcon",
             "removeAttrViewView", "setAttrViewViewName", "setAttrViewViewIcon", "duplicateAttrViewView", "duplicateAttrViewRow", "sortAttrViewView",
             "updateAttrViewColRelation", "setAttrViewColRelationFilters", "setAttrViewPageSize", "updateAttrViewColRollup",
@@ -1597,6 +1598,7 @@ export const turnsIntoOneTransaction = async (options: {
     getOperations?: boolean,
     parentID?: string,
     widthSourceElement?: HTMLElement,
+    callout?: ICalloutPreset,
 }) => {
     let parentElement: Element;
     let widthSourceOldStyle: string;
@@ -1623,12 +1625,13 @@ export const turnsIntoOneTransaction = async (options: {
         parentElement.setAttribute("data-type", "NodeBlockquote");
         parentElement.innerHTML = `<div class="protyle-attr" contenteditable="false">${Constants.ZWSP}</div>`;
     } else if (options.type === "Blocks2Callout") {
+        const preset = options.callout || CALLOUT_PRESETS[0];
         parentElement = document.createElement("div");
         parentElement.classList.add("callout");
         parentElement.setAttribute("data-node-id", id);
         parentElement.setAttribute("data-type", "NodeCallout");
-        parentElement.setAttribute("data-subtype", "NOTE");
-        parentElement.innerHTML = `<div class="callout-info" contenteditable="false"><span class="callout-icon">✏️</span><span contenteditable="true" spellcheck="${window.siyuan.config.editor.spellcheck}" class="callout-title">Note</span></div><div class="callout-content"></div><div class="protyle-attr" contenteditable="false">${Constants.ZWSP}</div>`;
+        parentElement.setAttribute("data-subtype", preset.type);
+        parentElement.innerHTML = `<div class="callout-info" contenteditable="false"><span class="callout-icon">${preset.icon}</span><span contenteditable="true" spellcheck="${window.siyuan.config.editor.spellcheck}" class="callout-title">${preset.title}</span></div><div class="callout-content"></div><div class="protyle-attr" contenteditable="false">${Constants.ZWSP}</div>`;
     } else if (options.type.endsWith("Ls")) {
         parentElement = document.createElement("div");
         parentElement.classList.add("list");
@@ -1757,7 +1760,7 @@ export const turnsIntoOneTransaction = async (options: {
     hideElements(["gutter"], options.protyle);
 };
 
-export const insertEmptyBlockquote = (protyle: IProtyle, previousElement: HTMLElement, options?: {
+const insertEmptyQuoteBlock = (protyle: IProtyle, previousElement: HTMLElement, options?: {
     updateElement: HTMLElement,
     oldHTML: string,
     undoContext?: Record<string, string>,
@@ -1765,13 +1768,13 @@ export const insertEmptyBlockquote = (protyle: IProtyle, previousElement: HTMLEl
         doOperations: IOperation[],
         undoOperations: IOperation[],
     },
-}) => {
+}, callout?: ICalloutPreset) => {
     const range = getEditorRange(protyle.wysiwyg.element);
     const undoFocusContext = getUndoFocusContext(protyle.wysiwyg.element, range, true);
     const template = document.createElement("template");
-    template.innerHTML = protyle.lute.SpinBlockDOM(">" + Lute.Caret);
+    template.innerHTML = protyle.lute.SpinBlockDOM(callout ? `> [!${callout.type}]\n> ${Lute.Caret}` : ">" + Lute.Caret);
     const blockquoteElement = template.content.firstElementChild as HTMLElement;
-    if (!blockquoteElement || blockquoteElement.getAttribute("data-type") !== "NodeBlockquote") {
+    if (!blockquoteElement || blockquoteElement.getAttribute("data-type") !== (callout ? "NodeCallout" : "NodeBlockquote")) {
         return;
     }
 
@@ -1786,7 +1789,8 @@ export const insertEmptyBlockquote = (protyle: IProtyle, previousElement: HTMLEl
         id,
         data: blockquoteElement.outerHTML,
         previousID: previousElement.getAttribute("data-node-id"),
-        parentID: previousElement.parentElement.getAttribute("data-node-id"),
+        parentID: previousElement.parentElement.getAttribute("data-node-id") ||
+            getParentBlock(previousElement).getAttribute("data-node-id"),
     }];
     const undoOperations: IOperation[] = [{
         action: "delete",
@@ -1819,6 +1823,15 @@ export const insertEmptyBlockquote = (protyle: IProtyle, previousElement: HTMLEl
     transaction(protyle, doOperations, undoOperations);
     focusByWbr(blockquoteElement, range);
     hideElements(["gutter"], protyle);
+};
+
+export const insertEmptyBlockquote = (protyle: IProtyle, previousElement: HTMLElement,
+                                     options?: Parameters<typeof insertEmptyQuoteBlock>[2]) => {
+    insertEmptyQuoteBlock(protyle, previousElement, options);
+};
+
+export const insertEmptyCallout = (protyle: IProtyle, previousElement: HTMLElement, preset: ICalloutPreset) => {
+    insertEmptyQuoteBlock(protyle, previousElement, undefined, preset);
 };
 
 export const wrapBlockInBlockquote = async (protyle: IProtyle, blockElement: HTMLElement, options?: {
@@ -1869,6 +1882,7 @@ export const turnsIntoGroupsTransaction = async (options: {
     protyle: IProtyle,
     selectsElementGroups: Element[][],
     type: Exclude<TTurnIntoOne, "BlocksMergeSuperBlock">,
+    callout?: ICalloutPreset,
 }) => {
     const firstElement = options.selectsElementGroups[0]?.[0];
     if (!firstElement) {
@@ -1885,6 +1899,7 @@ export const turnsIntoGroupsTransaction = async (options: {
             protyle: options.protyle,
             selectsElement,
             type: options.type,
+            callout: options.callout,
             getOperations: true,
         });
         doOperations.push(...groupOperations.doOperations);
@@ -2318,6 +2333,7 @@ export const turnsOneInto = async (options: {
     id: string,
     type: string,
     level?: number,
+    callout?: Pick<ICalloutPreset, "type" | "title" | "icon">,
     undoElement?: {
         id: string,
         html: string,
@@ -2413,6 +2429,15 @@ export const turnsOneInto = async (options: {
             listMindmapConversionSource(options.nodeElement).outerHTML : cleanListMindmapHTML(options.nodeElement.outerHTML);
         // @ts-ignore
         newHTML = listHTML ?? options.protyle.lute[options.type](sourceHTML, options.level);
+    }
+    if (options.type === "Blockquote2Callout" && options.callout) {
+        const template = document.createElement("template");
+        template.innerHTML = newHTML;
+        const calloutElement = template.content.firstElementChild as HTMLElement;
+        calloutElement.dataset.subtype = options.callout.type;
+        calloutElement.querySelector(".callout-title").textContent = options.callout.title;
+        calloutElement.querySelector(".callout-icon").textContent = options.callout.icon;
+        newHTML = calloutElement.outerHTML;
     }
     const cancelListOperations = options.type === "CancelList" &&
         options.nodeElement.getAttribute("data-type") === "NodeList" ? buildCancelListOperations(options.nodeElement, {

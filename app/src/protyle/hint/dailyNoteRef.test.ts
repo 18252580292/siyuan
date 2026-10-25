@@ -10,7 +10,9 @@ const source = createSourceFile("extend.ts", readFileSync(join(__dirname, "exten
 const declaration = source.statements.find(node => isVariableStatement(node) &&
     node.declarationList.declarations.some(item => item.name.getText(source) === "hintRef"));
 assert.ok(declaration);
-const code = transpileModule(declaration.getText(source).replace("export ", "") + "\nhintRef;", {
+const searchRefSource = readFileSync(join(__dirname, "searchRef.ts"), "utf8")
+    .replace(/^import .*;\r?\n/gm, "").replace("export ", "");
+const code = transpileModule(searchRefSource + "\n" + declaration.getText(source).replace("export ", "") + "\nhintRef;", {
     compilerOptions: {target: ScriptTarget.ES2020},
 }).outputText;
 
@@ -41,7 +43,8 @@ test("typing a slash in reference search does not run title replacement or show 
 });
 
 test("closing a reference resolves exact titles before daily notes or configured creation and rejects stale results", async () => {
-    for (const scenario of ["document", "daily", "create", "subdoc", "stale", "error", "ordinary"]) {
+    const scenarios = ["document", "daily", "create", "subdoc", "stale", "error", "ordinary"];
+    for (const [splitChar, scenario] of ["[[", "【【"].flatMap(split => scenarios.map(scenario => [split, scenario]))) {
         const block = {getAttribute: () => "block"};
         const closeContext = {range: "original"};
         const commits: string[] = [];
@@ -62,7 +65,7 @@ test("closing a reference resolves exact titles before daily notes or configured
         });
         const protyle = {notebookId: "box", element: {clientWidth: 320}, block: {rootID: "root"},
             wysiwyg: {element: {}}, hint: {
-                splitChar: "[[", closeKeyTyped: scenario !== "ordinary", genLoading() {},
+                splitChar, closeKeyTyped: scenario !== "ordinary", genLoading() {},
                 getRefCloseContext: () => closeContext,
                 isRefCloseContextCurrent: () => scenario !== "stale",
                 prepareCreateTarget: () => ({promise: Promise.resolve(scenario === "subdoc"), isCurrent: () => true}),
@@ -70,7 +73,7 @@ test("closing a reference resolves exact titles before daily notes or configured
                     assert.equal(original, closeContext);
                     commits.push(value);
                 },
-                genHTML: () => { rendered = true; },
+                genHTML: (data: IHintData[]) => { rendered = data.length > 0; },
             }};
         hintRef("Title", protyle, "hint");
         await setImmediate();

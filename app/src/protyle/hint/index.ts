@@ -19,6 +19,7 @@ import {
 } from "../util/selection";
 import {focusByRange, getSelectionOffset} from "../util/selectionOffsets";
 import {genHintItemHTML, hintEmbed, hintRef, hintSlash, hintTag} from "./extend";
+import {searchRef} from "./searchRef";
 import {getSlashEntryKey, TSlashMenuItem} from "./slashMenu";
 import {getFrequentSlashItems, recordSlashExecution} from "./frequentSlashStorage";
 import {escapeAttr} from "../../util/escape";
@@ -40,7 +41,6 @@ import {setPosition} from "../../util/setPosition";
 import {getContenteditableElement, hasNextSibling, hasPreviousSibling} from "../wysiwyg/getBlock";
 import {transaction, updateTransaction} from "../wysiwyg/transaction";
 import {insertHTML} from "../util/insertHTML";
-import * as dayjs from "dayjs";
 import {highlightRender} from "../render/highlightRender";
 import {renderIFrameResize} from "../render/iframeResize";
 import {spinListMindmapDOM} from "../render/listMindmap/create";
@@ -59,6 +59,7 @@ import {
 } from "../../emoji";
 import {blockRender} from "../render/blockRender";
 import {getUploadInsertRange, uploadFiles} from "../upload";
+import {canPickIOSPhotos, pickIOSPhotos} from "../upload/iosPhotos";
 import {showMessage} from "../../dialog/message";
 import {captureUploadDocument, createUploadInsertPosition, isUploadDocumentAvailable} from "../upload/insertPosition";
 /// #if !MOBILE
@@ -138,7 +139,7 @@ export class Hint {
     // 当前查询末尾是否包含完整闭合符（如 ]]）
     public closeKeyTyped = false;
     private refBracketRange?: Range;
-    private refBracketOrigin?: {notebookID: string; rootID: string; blockID: string; prefix: string};
+    private refBracketOrigin?: {notebookID: string; rootID: string; blockID: string; prefix: string; splitChar: string};
     private refCloseContext?: {range: Range; text: string; notebookID: string; rootID: string};
     // 选中候选项时是否一并替换光标后自动补全的闭合符
     private consumeCloseKey = false;
@@ -151,6 +152,7 @@ export class Hint {
     private emojiPanel?: EmojiPanelController;
     private emojiBrowseMode = false;
     private loadingAnimation?: Animation;
+    private loadingID = 0;
     private bindingDismissController?: AbortController;
 
     constructor(protyle: IProtyle) {
@@ -208,6 +210,7 @@ export class Hint {
     }
 
     public destroy() {
+        this.loadingID++;
         this.bindingDismissController?.abort();
         this.cancelLoadingAnimation();
         this.destroyEmojiPanel();
@@ -401,22 +404,56 @@ export class Hint {
         });
     }
 
-    // 输入 [[ 后在光标后补全 ]]，光标保持在括号内
+    // 输入引用触发符后补全对应闭合符，保留输入法已补全的括号，光标保持在括号内
     public autoCloseRefBrackets(protyle: IProtyle, range: Range) {
         const context = this.getRefBracketContext(protyle, range);
-        if (context && shouldAutoCloseRefBrackets(context.textBeforeCaret, context.textAfterCaret)) {
-            context.textNode.insertData(range.startOffset, "]]");
+        const splitChar = context && ["[[", "【【"].find(key => context.textBeforeCaret.endsWith(key));
+        if (splitChar && (shouldAutoCloseRefBrackets(context.textBeforeCaret, context.textAfterCaret, splitChar) ||
+            splitChar === "【【")) {
+            const closeKey = Constants.BLOCK_HINT_CLOSE_KEYS[splitChar];
+            const suppliedLength = splitChar === "【【" ?
+                (context.textAfterCaret.startsWith(closeKey) ? 2 : context.textAfterCaret.startsWith("】") ? 1 : 0) : 0;
+            context.textNode.insertData(range.startOffset, closeKey.substring(suppliedLength));
             this.refBracketRange = range.cloneRange();
             this.refBracketRange.setStart(context.textNode, range.startOffset - 2);
             this.refBracketRange.setEnd(context.textNode, range.startOffset + 2);
             this.refBracketOrigin = {notebookID: protyle.notebookId, rootID: protyle.block.rootID,
                 blockID: (hasClosestBlock(range.startContainer) || undefined)?.getAttribute("data-node-id"),
-                prefix: context.textBeforeCaret};
+                prefix: context.textBeforeCaret, splitChar};
             this.refCloseContext = undefined;
+            this.enableExtend = true;
         }
     }
 
-    // 输入 ] 时跳过已补全的闭合符，跳过第二个 ] 后完成引用；在空括号对之间退格时删除整个括号对
+    // 输入法提交闭合符后移除重复输入，并沿用跳过闭合符的流程，组合输入期间不修改候选文本
+    public handleRefBracketInput(protyle: IProtyle, range: Range, data: string) {
+        if (data && /^】{1,2}$/.test(data)) {
+            if (this.getRefCloseContext(protyle)) {
+                return true;
+            }
+            const context = this.getRefBracketContext(protyle, range, data.length);
+            const pair = this.refBracketRange;
+            const remaining = pair && pair.endOffset - range.startOffset;
+            if (context && pair?.startContainer === context.textNode && pair.endContainer === context.textNode &&
+                pair.toString().startsWith("【【") && pair.toString().endsWith("】】") &&
+                remaining >= data.length && remaining <= 2 && context.textBeforeCaret.endsWith(data) &&
+                this.splitChar === "【【" && this.canResumeBlockHint(protyle, range)) {
+                const offset = range.startOffset - data.length;
+                context.textNode.deleteData(offset, data.length);
+                range.setStart(context.textNode, offset);
+                range.collapse(true);
+                focusByRange(range);
+                return this.handleRefBracketBeforeInput(protyle,
+                    new InputEvent("beforeinput", {inputType: "insertText", data}));
+            }
+        }
+        if (data?.endsWith("[") || data?.endsWith("【") || data === "【】") {
+            this.autoCloseRefBrackets(protyle, range);
+        }
+        return false;
+    }
+
+    // 输入闭合符时跳过已补全的括号，全部跳过后完成引用；在空括号对之间退格时删除整个括号对
     // 返回 true 表示已处理并需要阻止默认输入
     public handleRefBracketBeforeInput(protyle: IProtyle, event: InputEvent) {
         if (event.isComposing || getSelection().rangeCount === 0) {
@@ -425,14 +462,17 @@ export class Hint {
         const range = getSelection().getRangeAt(0);
         const context = this.getRefBracketContext(protyle, range);
         const pair = this.refBracketRange;
+        const splitChar = this.refBracketOrigin?.splitChar;
+        const closeKey = Constants.BLOCK_HINT_CLOSE_KEYS[splitChar];
         if (!context || !pair || pair.startContainer !== context.textNode || pair.endContainer !== context.textNode ||
-            !pair.toString().startsWith("[[") || !pair.toString().endsWith("]]")) {
+            !splitChar || !pair.toString().startsWith(splitChar) || !pair.toString().endsWith(closeKey)) {
             return false;
         }
-        if (event.inputType === "insertText" && event.data === "]" && context.textAfterCaret.startsWith("]") &&
-            range.startOffset >= pair.endOffset - 2 && range.startOffset < pair.endOffset &&
-            this.splitChar === "[[" && this.canResumeBlockHint(protyle, range)) {
-            range.setStart(context.textNode, range.startOffset + 1);
+        if (["insertText", "insertReplacementText"].includes(event.inputType) && event.data &&
+            (event.data === closeKey || event.data === closeKey[0]) && context.textAfterCaret.startsWith(event.data) &&
+            range.startOffset >= pair.endOffset - 2 && range.startOffset + event.data.length <= pair.endOffset &&
+            this.splitChar === splitChar && this.canResumeBlockHint(protyle, range)) {
+            range.setStart(context.textNode, range.startOffset + event.data.length);
             range.collapse(true);
             focusByRange(range);
             if (range.startOffset === pair.endOffset) {
@@ -443,7 +483,7 @@ export class Hint {
             }
             return true;
         }
-        if (event.inputType === "deleteContentBackward" && pair.toString() === "[[]]" &&
+        if (event.inputType === "deleteContentBackward" && pair.toString() === splitChar + closeKey &&
             range.startOffset === pair.startOffset + 2) {
             const block = hasClosestBlock(range.startContainer);
             if (!block) {
@@ -501,8 +541,8 @@ export class Hint {
             range.endContainer.parentNode?.normalize();
             if (range.endContainer.nodeType === 3 && range.endContainer.textContent.startsWith(closeKey, range.endOffset)) {
                 range.setEnd(range.endContainer, range.endOffset + closeKey.length);
-            } else if (this.splitChar === "[[" && this.refBracketRange?.endContainer === range.endContainer &&
-                this.refBracketRange.toString().endsWith("]]") &&
+            } else if (["[[", "【【"].includes(this.splitChar) && this.refBracketRange?.endContainer === range.endContainer &&
+                this.refBracketRange.toString().endsWith(closeKey) &&
                 range.endOffset === this.refBracketRange.endOffset - 1) {
                 range.setEnd(range.endContainer, this.refBracketRange.endOffset);
             }
@@ -512,7 +552,7 @@ export class Hint {
         this.refCloseContext = undefined;
     }
 
-    private getRefBracketContext(protyle: IProtyle, range: Range) {
+    private getRefBracketContext(protyle: IProtyle, range: Range, insertedCloseLength = 0) {
         if (!window.siyuan.config.editor?.autoCloseRefBrackets || protyle.disabled ||
             window.siyuan.config.readonly || window.siyuan.isPublish || !range.collapsed ||
             range.startContainer.nodeType !== 3 || !protyle.wysiwyg.element.contains(range.startContainer) ||
@@ -533,11 +573,13 @@ export class Hint {
             protyle.notebookId === origin.notebookID && protyle.block.rootID === origin.rootID &&
             (hasClosestBlock(textNode) || undefined)?.getAttribute("data-node-id") === origin.blockID &&
             textNode.data.startsWith(origin.prefix)) {
-            const end = textNode.data.indexOf("]]", origin.prefix.length);
-            if (end > -1 && range.startOffset >= origin.prefix.length && range.startOffset <= end + 2) {
+            const end = textNode.data.indexOf(Constants.BLOCK_HINT_CLOSE_KEYS[origin.splitChar], origin.prefix.length);
+            const pairEnd = end + 2 + insertedCloseLength;
+            if (end > -1 && pairEnd <= textNode.length && range.startOffset >= origin.prefix.length &&
+                range.startOffset <= pairEnd) {
                 this.refBracketRange = range.cloneRange();
                 this.refBracketRange.setStart(textNode, origin.prefix.length - 2);
-                this.refBracketRange.setEnd(textNode, end + 2);
+                this.refBracketRange.setEnd(textNode, pairEnd);
             }
         }
         return {
@@ -624,6 +666,9 @@ export class Hint {
     }
 
     public genLoading(protyle: IProtyle, delay = 0, source = this.source) {
+        const loadingID = ++this.loadingID;
+        const context = getCreateTargetContext(protyle);
+        const rootID = protyle.block.rootID;
         this.source = source;
         this.bindingDismissController?.abort();
         if (source === "av" && getAVBindingCell(protyle.toolbar.range)?.dataset.rowId) {
@@ -676,6 +721,11 @@ export class Hint {
                 {visibility: "hidden"},
             ], {duration: delay});
         }
+        const loadingElement = this.element.querySelector(".fn__loading");
+        // 仅允许当前文档中仍可见的本次加载更新候选，避免旧请求影响后续面板。
+        return () => this.loadingID === loadingID && isSameCreateTargetContext(context, protyle) &&
+            protyle.block.rootID === rootID && this.element.isConnected &&
+            !this.element.classList.contains("fn__none") && this.element.contains(loadingElement);
     }
 
     public bindUploadEvent(protyle: IProtyle, element: HTMLElement) {
@@ -695,9 +745,38 @@ export class Hint {
             };
             let insertPosition = captureInsertPosition();
             let uploadDocument = captureUploadDocument(protyle);
-            item.addEventListener("click", () => {
+            item.addEventListener("click", event => {
                 insertPosition = captureInsertPosition();
                 uploadDocument = captureUploadDocument(protyle);
+                if ((item as HTMLInputElement).dataset.nativePhotos === "true" && canPickIOSPhotos()) {
+                    event.preventDefault();
+                    const position = insertPosition;
+                    const target = uploadDocument;
+                    hideElements(["hint", "toolbar"], protyle);
+                    void pickIOSPhotos().then(({files, pairs}) => {
+                        if (files.length === 0) {
+                            return;
+                        }
+                        const range = isUploadDocumentAvailable(protyle, target) ? getUploadInsertRange(protyle, position) : undefined;
+                        if (!range || protyle.disabled || window.siyuan.isPublish ||
+                            protyle.options.history?.created || protyle.options.history?.snapshot) {
+                            showMessage(window.siyuan.languages.uploadInsertTargetUnavailable);
+                            return;
+                        }
+                        range.deleteContents();
+                        range.collapse(true);
+                        uploadFiles(protyle, files, undefined, undefined, undefined, {
+                            document: target,
+                            insertPosition: createUploadInsertPosition(range,
+                                getUndoFocusContext(protyle.wysiwyg.element, range, true)),
+                            livePhotoPairs: pairs,
+                            allowedInputKinds: ["files"],
+                            requiredFileCount: files.length,
+                            source: "file-picker",
+                            target: "editor",
+                        });
+                    }).catch(() => showMessage(window.siyuan.languages.uploadError));
+                }
             });
             item.addEventListener("change", (event: InputEvent & { target: HTMLInputElement }) => {
                 if (event.target.files.length === 0) {
@@ -853,27 +932,33 @@ export class Hint {
         if (isEncryptedBox(protyle.notebookId)) {
             searchParam.notebook = protyle.notebookId;
         }
-        fetchPost("/api/search/searchRefBlock", searchParam, (response) => {
-            createTarget.promise.then((hideConfiguredCreate) => {
+        searchRef(searchParam).then((response) => {
+            if (!response) {
+                if (createTarget.isCurrent()) {
+                    this.genHTML([], protyle, true, source);
+                }
+                return;
+            }
+            return createTarget.promise.then((hideConfiguredCreate) => {
                 if (!createTarget.isCurrent()) {
                     return;
                 }
                 let searchHTML = "";
-                if (response.data.newDoc && !hideConfiguredCreate) {
-                    const blockRefText = `((newFile "${oldValue}"${Constants.ZWSP}'${response.data.k}${Lute.Caret}'))`;
-                    searchHTML += `<button style="width: calc(100% - 16px)" class="b3-list-item b3-list-item--two${response.data.blocks.length === 0 ? " b3-list-item--focus" : ""}" data-value="${encodeURIComponent(blockRefText)}"><div class="b3-list-item__first"><svg class="b3-list-item__graphic"><use xlink:href="#iconFile"></use></svg>
-<span class="b3-list-item__text">${window.siyuan.languages.newFile} <mark>${response.data.k}</mark></span></div></button>`;
+                if (response.newDoc && !hideConfiguredCreate) {
+                    const blockRefText = `((newFile "${oldValue}"${Constants.ZWSP}'${response.k}${Lute.Caret}'))`;
+                    searchHTML += `<button style="width: calc(100% - 16px)" class="b3-list-item b3-list-item--two${response.blocks.length === 0 ? " b3-list-item--focus" : ""}" data-value="${encodeURIComponent(blockRefText)}"><div class="b3-list-item__first"><svg class="b3-list-item__graphic"><use xlink:href="#iconFile"></use></svg>
+<span class="b3-list-item__text">${window.siyuan.languages.newFile} <mark>${response.k}</mark></span></div></button>`;
                 }
-                if (response.data.newDoc) {
-                    const newFileName = Lute.UnEscapeHTMLStr(response.data.k);
+                if (response.newDoc) {
+                    const newFileName = Lute.UnEscapeHTMLStr(response.k);
                     const subDocRefText = `((newSubDoc "${oldValue}"${Constants.ZWSP}'${newFileName}${Lute.Caret}'))`;
-                    searchHTML += `<button style="width: calc(100% - 16px)" class="b3-list-item b3-list-item--two${hideConfiguredCreate && response.data.blocks.length === 0 ? " b3-list-item--focus" : ""}" data-value="${encodeURIComponent(subDocRefText)}"><div class="b3-list-item__first"><svg class="b3-list-item__graphic"><use xlink:href="#iconFile"></use></svg>
-<span class="b3-list-item__text">${window.siyuan.languages.newSubDoc} <mark>${response.data.k}</mark></span></div></button>`;
+                    searchHTML += `<button style="width: calc(100% - 16px)" class="b3-list-item b3-list-item--two${hideConfiguredCreate && response.blocks.length === 0 ? " b3-list-item--focus" : ""}" data-value="${encodeURIComponent(subDocRefText)}"><div class="b3-list-item__first"><svg class="b3-list-item__graphic"><use xlink:href="#iconFile"></use></svg>
+<span class="b3-list-item__text">${window.siyuan.languages.newSubDoc} <mark>${response.k}</mark></span></div></button>`;
                     const pathRefText = `((newFileAtPath "${oldValue}"${Constants.ZWSP}'${newFileName}${Lute.Caret}'))`;
                     searchHTML += `<button style="width: calc(100% - 16px)" class="b3-list-item b3-list-item--two" data-value="${encodeURIComponent(pathRefText)}"><div class="b3-list-item__first"><svg class="b3-list-item__graphic"><use xlink:href="#iconFolder"></use></svg>
-<span class="b3-list-item__text">${window.siyuan.languages.newFileAtPath} <mark>${response.data.k}</mark></span></div></button>`;
+<span class="b3-list-item__text">${window.siyuan.languages.newFileAtPath} <mark>${response.k}</mark></span></div></button>`;
                 }
-                response.data.blocks.forEach((item: IBlock, index: number) => {
+                response.blocks.forEach((item: IBlock, index: number) => {
                     let blockRefHTML;
                     if (source === "av") {
                         // av 搜索时需要获取值 https://github.com/siyuan-note/siyuan/issues/12020
@@ -895,6 +980,10 @@ ${genHintItemHTML(item)}
                 this.element.lastElementChild.innerHTML = searchHTML;
                 setPosition(this.element, parseInt(this.element.style.left), parseInt(this.element.style.right));
             });
+        }).catch(() => {
+            if (createTarget.isCurrent()) {
+                this.genHTML([], protyle, true, source);
+            }
         });
     }
 
@@ -1307,10 +1396,6 @@ ${genHintItemHTML(item)}
                 range.deleteContents();
                 AIChat(protyle, nodeElement);
                 return;
-            } else if (value === Constants.ZWSP + 7) {
-                // 用当前时间替换斜杠命令文本
-                insertHTML(dayjs().format("HH:mm"), protyle, false, true, false, undefined, undoContext);
-                return;
             } else if (Constants.INLINE_TYPE.includes(value)) {
                 range.deleteContents();
                 focusByRange(range);
@@ -1345,6 +1430,25 @@ ${genHintItemHTML(item)}
                 });
                 return;
             } else {
+                if (!range.collapsed && hasClosestBlock(range.endContainer) !== nodeElement && value.startsWith("|")) {
+                    const template = document.createElement("template");
+                    template.innerHTML = protyle.lute.SpinBlockDOM(value);
+                    const table = template.content.firstElementChild;
+                    if (template.content.childElementCount === 1 && table?.getAttribute("data-type") === "NodeTable") {
+                        table.querySelectorAll<HTMLElement>("colgroup col").forEach(item => {
+                            item.style.minWidth = "60px";
+                        });
+                        // 跨块替换使用完整事务，保留所有受影响块的内容与撤销位置。
+                        insertHTML(template.innerHTML, protyle, true, true, false, undefined, undoContext);
+                        const insertedTable = protyle.wysiwyg.element.querySelector(
+                            `[data-node-id="${table.getAttribute("data-node-id")}"]`);
+                        if (insertedTable) {
+                            focusBlock(insertedTable);
+                            this.openNewTableCell(protyle);
+                        }
+                        return;
+                    }
+                }
                 range.deleteContents();
                 if (value !== "![]()") {
                     this.fixImageCursor(range);
@@ -1568,7 +1672,11 @@ ${genHintItemHTML(item)}
                 }
             }
         }
-        // 新建表格后直接接管当前单元格，后续输入与鼠标点击进入编辑使用相同的限制。
+        this.openNewTableCell(protyle);
+    }
+
+    // 新建表格后直接接管当前单元格，后续输入与鼠标点击进入编辑使用相同的限制。
+    private openNewTableCell(protyle: IProtyle) {
         const selection = getSelection();
         const focus = selection?.focusNode;
         const focusElement = focus instanceof Element ? focus : focus?.parentElement;

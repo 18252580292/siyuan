@@ -23,10 +23,22 @@ const browserCases = ({css, desktop, community}) => {
             <div class="toolbar__item toolbar__item--close"><svg><use href="#iconClose"></use></svg></div></div>
         <div class="dock" id="dockLeft"><span class="dock__item"><svg><use href="#iconFiles"></use></svg></span></div>
         <div class="layout__dockl"><div class="block__icons">Files</div><ul class="b3-list" id="navigation">${item}</ul></div>
-        <div class="layout__wnd--center"><ul class="layout-tab-bar fn__flex" id="tabs"><li class="item">
+        <div class="layout__wnd--center"><div data-type="wnd"><div class="fn__flex"><ul class="layout-tab-bar fn__flex" id="tabs"><li class="item">
             <span class="item__icon">📄</span><span class="item__text">Document</span>
-            <span class="item__close"><svg><use href="#iconClose"></use></svg></span></li></ul></div>
+            <span class="item__close"><svg><use href="#iconClose"></use></svg></span></li></ul>
+            <ul class="layout-tab-bar layout-tab-bar--readonly fn__flex-1" id="tab-actions"><li class="item item--readonly">
+                <span class="block__icon block__icon--show"><svg><use href="#iconAdd"></use></svg></span>
+                <span class="fn__flex-1"></span>
+                <span class="block__icon block__icon--show"><svg><use href="#iconDown"></use></svg></span>
+            </li></ul></div></div></div>
         <div class="protyle-breadcrumb">Notebook / Document</div>
+        <div id="status" class="status fn__flex">
+            <div id="barDock" class="toolbar__item"><svg><use href="#iconDock"></use></svg></div>
+            <div class="status__msg">Ready</div><div class="fn__flex-1"></div>
+            <div class="status__backgroundtask">Indexing</div><div class="status__counter">100 words</div>
+            <div id="statusHelp" class="toolbar__item"><svg><use href="#iconHelp"></use></svg></div>
+            <div id="plugin-status" class="toolbar__item"><svg><use href="#iconPlugin"></use></svg></div>
+        </div>
         <div class="protyle-wysiwyg" style="font-size:32px"><div data-node-id="sample" data-type="NodeParagraph">Editor body</div>
             <div data-type="NodeAttributeView" class="av"><div class="av__row"><div class="av__cell">Database cell</div></div></div>
             <ul class="b3-list" id="content-list">${item}</ul></div>
@@ -50,15 +62,34 @@ const browserCases = ({css, desktop, community}) => {
         `${label}: ${actual} / ${expected}`);
     const settle = () => document.getAnimations().filter(animation => animation instanceof CSSTransition)
         .forEach(animation => animation.finish());
+    const checkTabEdge = () => {
+        const tabs = find("#tabs");
+        for (const width of [280, 800]) {
+            tabs.parentElement.style.width = width + "px";
+            for (const count of [1, 5]) {
+                while (tabs.children.length < count) tabs.append(tabs.firstElementChild.cloneNode(true));
+                tabs.scrollLeft = tabs.scrollWidth;
+                const edge = tabs.lastElementChild.getBoundingClientRect().right;
+                const actions = find("#tab-actions").getBoundingClientRect();
+                // 滚动范围按整数像素取整，容许末端出现不足半个像素的测量误差。
+                check.ok(edge <= actions.left + 0.5, `tab actions must not cover the last tab at width ${width}: ${edge} / ${actions.left}`);
+            }
+            while (tabs.children.length > 1) tabs.lastElementChild.remove();
+        }
+        tabs.parentElement.style.width = "";
+        tabs.scrollLeft = 0;
+    };
     const snapshot = () => Object.fromEntries([
         ["toolbar", ".toolbar"], ["tabs", "#tabs"], ["panel", ".block__icons"], ["breadcrumb", ".protyle-breadcrumb"],
         ["list", "#navigation .b3-list-item"], ["menu", ".b3-menu__item"], ["dialog", ".b3-dialog__header"],
+        ["status", "#status"],
         ["editor", ".protyle-wysiwyg"], ["database", ".av__cell"], ["content", "#content-list"], ["preview", "#preview-list"],
     ].map(([key, selector]) => [key, {height: height(selector), font: getComputedStyle(find(selector)).fontSize}]));
     const normal = snapshot();
     if (desktop && !community) {
-        for (const [key, expected] of Object.entries({toolbar: 32, tabs: 40, panel: 48, breadcrumb: 42,
-            list: 30, menu: 28, dialog: 43})) {
+        checkTabEdge();
+        for (const [key, expected] of Object.entries({toolbar: 32, tabs: 42, panel: 42, breadcrumb: 42,
+            list: 28, menu: 28, dialog: 43, status: 32})) {
             near(normal[key].height, expected, `${key} retains the default size`);
         }
     }
@@ -74,16 +105,36 @@ const browserCases = ({css, desktop, community}) => {
     }
     for (const key of Object.keys(normal)) check.equal(compact[key].font, normal[key].font, `${key} keeps its font size`);
     if (!community) {
-        for (const key of ["toolbar", "tabs", "panel", "breadcrumb", "list", "menu", "dialog"]) {
+        checkTabEdge();
+        for (const key of ["toolbar", "tabs", "panel", "breadcrumb", "list", "menu", "dialog", "status"]) {
             check.ok(compact[key].height < normal[key].height, `${key} becomes smaller: ${JSON.stringify({normal, compact})}`);
         }
         near(compact.toolbar.height, 28, "toolbar height");
+        near(compact.status.height, 28, "status bar height");
+        near(number("#status", "lineHeight"), 28, "status bar line height");
+        const statusRect = find("#status").getBoundingClientRect();
+        for (const selector of ["#barDock", "#statusHelp", "#plugin-status", ".status__msg", ".status__counter", ".status__backgroundtask"]) {
+            const rect = find(selector).getBoundingClientRect();
+            check.ok(rect.top >= statusRect.top && rect.bottom <= statusRect.bottom, `${selector} fits the compact status bar`);
+            near((rect.top + rect.bottom) / 2, (statusRect.top + statusRect.bottom) / 2, `${selector} stays vertically centered`);
+        }
+        near(height("#statusHelp svg"), 15.5, "status icon size is preserved");
+        near(number(".status__counter", "fontSize"), 12, "status text size is preserved");
+        document.documentElement.setAttribute("data-ios-window-controls", "");
+        document.documentElement.style.setProperty("--ios-window-safe-bottom", "20px");
+        near(height("#status"), 48, "compact status bar retains the iOS safe area");
+        document.documentElement.removeAttribute("data-ui-density");
+        near(height("#status"), 52, "normal status bar retains the iOS safe area");
+        document.documentElement.setAttribute("data-ui-density", "compact");
+        document.documentElement.removeAttribute("data-ios-window-controls");
+        document.documentElement.style.removeProperty("--ios-window-safe-bottom");
         near(compact.panel.height, 34, "panel height");
         near(compact.list.height, 24, "list height");
         near(compact.menu.height, 26, "menu height");
         near(find(".dock").getBoundingClientRect().width, 34, "dock width");
         document.body.classList.add("body--toolbar-hide");
         settle();
+        checkTabEdge();
         near(height(".toolbar"), height("#tabs"), "fused toolbar aligns with tabs");
         near(number(".layout__dockl", "marginTop"), height(".toolbar"), "side panel offset follows fused toolbar");
         near(number("#dockLeft", "marginTop"), height(".toolbar"), "dock offset follows fused toolbar");
@@ -122,11 +173,12 @@ const browserCases = ({css, desktop, community}) => {
     if (!community) {
         // 根变量和既有组件选择器都能覆盖内置尺寸，即使主题样式先于基础样式加载。
         const theme = document.createElement("style");
-        theme.textContent = ":root{--b3-ui-list-height:36px}.b3-menu__item{line-height:38px}";
+        theme.textContent = ":root{--b3-ui-list-height:36px;--b3-ui-status-height:36px}.b3-menu__item{line-height:38px}";
         document.head.prepend(theme);
         document.documentElement.setAttribute("data-ui-density", "compact");
         settle();
         near(height("#navigation .b3-list-item"), 36, "theme root variable wins");
+        near(height("#status"), 36, "theme status height variable wins");
         near(height(".b3-menu__item"), 26, "same-specificity early component style follows source order");
         document.head.append(theme);
         near(height(".b3-menu__item"), 38, "existing component theme override wins in the normal load order");

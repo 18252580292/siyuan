@@ -23,11 +23,21 @@
 .workspace-storage {
   &__header {
     flex-wrap: wrap;
+    // 未查看时头部下方没有内容，间距由各内容元素自行提供
+    padding-bottom: 0;
   }
 
   &__time {
     flex: 1 0 100%;
     text-align: right;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  &__status:empty {
+    margin-top: 0;
   }
 
   &__content {
@@ -35,6 +45,7 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 16px;
+    margin-top: 16px;
     line-height: 1.5;
   }
 
@@ -58,6 +69,7 @@
 
   &__placeholder {
     position: relative;
+    margin-top: 16px;
   }
 
   &__total {
@@ -171,6 +183,12 @@
   > .fn__flex-1 {
     min-width: 0;
   }
+
+  > label {
+    // 与输入框顶部对齐，避免提示文本出现后整行变高导致文案随之居中下移
+    align-self: flex-start;
+    padding-top: 4px;
+  }
 }
 
 .config-sync-form {
@@ -183,10 +201,18 @@
 }
 
 @media screen and (max-width: 750px) {
-  .config-sync-field > .fn__flex-1 {
-    flex: none;
-    width: 100%;
-    margin-top: 8px;
+  .config-sync-field {
+    > label {
+      // 窄屏下输入框整行落到文案下方，恢复默认的垂直居中
+      align-self: auto;
+      padding-top: 0;
+    }
+
+    > .fn__flex-1 {
+      flex: none;
+      width: 100%;
+      margin-top: 8px;
+    }
   }
 }
 
@@ -1135,6 +1161,11 @@
           flex-shrink: 0;
           font-size: 12px;
           line-height: 20px;
+        }
+
+        &-type {
+          color: var(--b3-theme-on-surface);
+          margin-left: 4px;
         }
 
         &-list {

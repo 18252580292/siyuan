@@ -29,17 +29,14 @@ func AIOCRAsset(ctx context.Context, path string) (string, error) {
 }
 
 func aiOCRAsset(ctx context.Context, path string, value conf.OCR, automatic bool) (_ string, resultErr error) {
-	defer func() {
-		if !automatic || automaticOCRMatches(value) {
-			recordOCRFailure(path, resultErr)
-		}
-	}()
+	path = strings.SplitN(strings.TrimSpace(path), "#", 2)[0]
+	attempt := beginOCRRequest(path)
+	defer func() { attempt.finish(value, automatic, resultErr) }()
 	confAISnapshot := Conf.LoadAI()
 
 	if util.IsDisabledFeature("ai") {
 		return "", errors.New(Conf.Language(380))
 	}
-	path = strings.SplitN(strings.TrimSpace(path), "#", 2)[0]
 	if IsEncryptedOCRAsset(path) {
 		return "", errors.New(Conf.Language(380))
 	}
@@ -55,7 +52,7 @@ func aiOCRAsset(ctx context.Context, path string, value conf.OCR, automatic bool
 	}
 	protocol := strings.ToLower(strings.TrimSpace(provider.Protocol))
 	if protocol != "" && protocol != util.OpenAIProtocolChatCompletions &&
-		protocol != util.OpenAIProtocolResponses && protocol != util.AnthropicProtocolMessages {
+		protocol != util.OpenAIProtocolResponses && protocol != util.AnthropicProtocolMessages && protocol != util.GeminiProtocolInteractions {
 		return "", fmt.Errorf("unsupported OCR provider protocol: %s", provider.Protocol)
 	}
 	absPath, err := GetAssetAbsPathInBox(path, "")
@@ -123,10 +120,9 @@ func aiOCRAsset(ctx context.Context, path string, value conf.OCR, automatic bool
 		return "", errors.New(Conf.Language(413))
 	}
 	text := strings.ReplaceAll(response.Choices[0].Message.Content, "\r\n", "\n")
-	if automatic && !canSaveAutomaticOCR(value, path) {
+	if !attempt.save(text, value, automatic) {
 		return "", context.Canceled
 	}
-	SetOCRAssetText(path, text)
 	return text, nil
 }
 

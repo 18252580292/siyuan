@@ -1,11 +1,9 @@
 import {onWindowWorkspaceStorageChanged} from "./workspace";
 import {closeNotebookHistoryDialogs} from "../history/notebookDialogs";
 import {invalidateHomeRecentDocs} from "../layout/home";
+import {closeNotebookLivePhotos} from "../protyle/preview/livePhoto";
 import {Constants} from "../constants";
 import {refreshSettingConfig} from "../config/setting/sync";
-import {onAgentStreamingMarkdownStorageChanged} from "../config/tabs/ai/agentStreamingMarkdown";
-import {onPageScrollButtonsStorageChanged} from "../protyle/scroll/pageButtons";
-import {onCompactModeStorageChanged, refreshCompactMode} from "../config/tabs/compactMode";
 import {systemConfig} from "../config/systemConfig";
 import {Menus} from "../menus";
 import {Model} from "../layout/Model";
@@ -66,7 +64,7 @@ class App {
             type: "main",
             callback: () => {
                 if (window.siyuan.isReady) {
-                    void refreshCompactMode().catch(error => console.error("Could not refresh compact mode", error));
+                    void refreshSettingConfig().catch(error => console.error("Could not refresh settings", error));
                 }
             },
             msgCallback: (data) => {
@@ -80,7 +78,7 @@ class App {
                                 appearanceConfigApi.apply(data.data);
                                 break;
                             case "settingChanged":
-                                void refreshSettingConfig(data.data.namespace);
+                                void refreshSettingConfig(data.data.namespace, data.data.revision);
                                 break;
                             case "refreshAppearance":
                                 void refreshAppearance(data.data);
@@ -136,34 +134,22 @@ class App {
                             case "setLocalStorageVal":
                                 if (window.siyuan.storage) {
                                     window.siyuan.storage[data.data.key] = data.data.val;
-                                    onAgentStreamingMarkdownStorageChanged(data.data.key);
-                                    onPageScrollButtonsStorageChanged(data.data.key);
-                                    onCompactModeStorageChanged(data.data.key);
                                     onWindowWorkspaceStorageChanged(data.data.key);
                                 }
                                 break;
                             case "setLocalStorageVals":
                                 Object.keys(data.data.keyVals).forEach((k) => {
                                     window.siyuan.storage[k] = data.data.keyVals[k];
-                                    onAgentStreamingMarkdownStorageChanged(k);
-                                    onPageScrollButtonsStorageChanged(k);
-                                    onCompactModeStorageChanged(k);
                                     onWindowWorkspaceStorageChanged(k);
                                 });
                                 break;
                             case "removeLocalStorageVal":
                                 delete window.siyuan.storage[data.data.key];
-                                onAgentStreamingMarkdownStorageChanged(data.data.key);
-                                onPageScrollButtonsStorageChanged(data.data.key);
-                                onCompactModeStorageChanged(data.data.key);
                                 onWindowWorkspaceStorageChanged(data.data.key);
                                 break;
                             case "removeLocalStorageVals":
                                 data.data.keys.forEach((k: string) => {
                                     delete window.siyuan.storage[k];
-                                    onAgentStreamingMarkdownStorageChanged(k);
-                                    onPageScrollButtonsStorageChanged(k);
-                                    onCompactModeStorageChanged(k);
                                     onWindowWorkspaceStorageChanged(k);
                                 });
                                 break;
@@ -187,6 +173,7 @@ class App {
                             case "removeBox":
                                 invalidateHomeRecentDocs(data.data.box);
                                 closeNotebookHistoryDialogs(data.data.box);
+                                closeNotebookLivePhotos(data.data.box);
                                 removeBlockPanelEditors({notebookId: data.data.box});
                                 getAllTabs().forEach((tab) => {
                                     if (tab.headElement) {

@@ -151,6 +151,7 @@ export const loadAssets = async (appearance: Config.IAppearance) => {
     const themeMode = getThemeMode();
     htmlElement.setAttribute("lang", window.siyuan.config.appearance.lang);
     applyCompactMode();
+    // data-frontend 也会由 applyPlatformClasses 提前写入，此处保持为外观刷新时的权威来源
     htmlElement.setAttribute("data-frontend", getFrontend()); // https://github.com/siyuan-note/siyuan/issues/12549
     htmlElement.setAttribute("data-backend", getBackend());
     htmlElement.setAttribute("data-theme-mode", themeMode);
@@ -220,8 +221,8 @@ export const loadAssets = async (appearance: Config.IAppearance) => {
     getAllModels().graph.forEach(item => {
         item.searchGraph();
     });
-    const pdfTheme = window.siyuan.config.appearance.mode === 0 ? window.siyuan.storage[Constants.LOCAL_PDFTHEME].light :
-        window.siyuan.storage[Constants.LOCAL_PDFTHEME].dark;
+    const pdfTheme = window.siyuan.config.appearance.mode === 0 ? window.siyuan.config.appearance.pdfTheme.light :
+        window.siyuan.config.appearance.pdfTheme.dark;
     document.querySelectorAll(".pdf__outer").forEach(item => {
         const darkElement = item.querySelector("#pdfDark");
         const lightElement = item.querySelector("#pdfLight");

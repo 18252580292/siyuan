@@ -7,6 +7,7 @@ $compact-sizes: (
   "menu-item-padding": 0 6px,
   "tab-min-height": 25px,
   "tab-margin": 4px 3px,
+  "tab-actions-margin-left": -7px,
   "tab-icon-padding": 2px 0 2px 6px,
   "tab-text-padding": 0 6px,
   "tab-close-padding": 5px 6px 4px 0,
@@ -15,6 +16,7 @@ $compact-sizes: (
   "dock-margin": 4px,
   "dock-split-height": 13px,
   "toolbar-height": 28px,
+  "status-height": 28px,
   "browser-titlebar-height": 27px,
   "toolbar-control-height": 27.5px,
   "toolbar-control-padding": 7px,
@@ -38,7 +40,8 @@ $compact-sizes: (
 }
 
 // 编辑器及预览正文内复用的控件保持内容布局，浮层菜单仍使用界面密度。
-:where(.protyle-wysiwyg, .b3-typography) {
+:where(.protyle-wysiwyg),
+:where(.b3-typography) {
   @each $name, $value in $compact-sizes {
     --b3-ui-#{$name}: initial;
   }

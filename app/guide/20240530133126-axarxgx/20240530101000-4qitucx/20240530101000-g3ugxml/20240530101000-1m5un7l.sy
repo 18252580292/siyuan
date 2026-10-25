@@ -7,7 +7,7 @@
 		"id": "20240530101000-1m5un7l",
 		"title": "アセット",
 		"type": "doc",
-		"updated": "20261014140201"
+		"updated": "20261018221152"
 	},
 	"Children": [
 		{
@@ -17,7 +17,7 @@
 			"Properties": {
 				"ID": "20240530101000-you29ty",
 				"id": "20240530101000-penh301",
-				"updated": "20260820133158"
+				"updated": "20261016111305"
 			},
 			"Children": [
 				{
@@ -101,13 +101,38 @@
 			]
 		},
 		{
+			"ID": "20261016111305-bmxf6if",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261016111305-bmxf6if",
+				"updated": "20261016111305"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "ファイルの内容や OCR テキストの検索については、"
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "block-ref",
+					"TextMarkBlockRefID": "20240530101000-5k5d5i3",
+					"TextMarkBlockRefSubtype": "s",
+					"TextMarkTextContent": "アセットの内容検索"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "を参照してください。"
+				}
+			]
+		},
+		{
 			"ID": "20240530101000-m11xu1w",
 			"Type": "NodeHeading",
 			"HeadingLevel": 2,
 			"Properties": {
 				"ID": "20240530101000-o6et1uc",
 				"id": "20240530101000-m11xu1w",
-				"updated": "20261012014930"
+				"updated": "20261016202856"
 			},
 			"Children": [
 				{
@@ -138,7 +163,7 @@
 			"Properties": {
 				"ID": "20240530101000-d60jz2e",
 				"id": "20240530101000-5cag8jh",
-				"updated": "20250115152709"
+				"updated": "20261016202856"
 			},
 			"Children": [
 				{
@@ -151,7 +176,7 @@
 					"Properties": {
 						"ID": "20240530101000-mdon5fr",
 						"id": "20240530101000-fizmlwu",
-						"updated": "20250115152703"
+						"updated": "20261016202856"
 					},
 					"Children": [
 						{
@@ -159,7 +184,7 @@
 							"Type": "NodeParagraph",
 							"Properties": {
 								"id": "20240530101000-9muhrpx",
-								"updated": "20250115152703"
+								"updated": "20261016202856"
 							},
 							"Children": [
 								{
@@ -182,7 +207,7 @@
 								},
 								{
 									"Type": "NodeText",
-									"Data": "​ です。"
+									"Data": "​ です"
 								}
 							]
 						}
@@ -198,7 +223,7 @@
 					"Properties": {
 						"ID": "20240530101000-gmhitsq",
 						"id": "20240530101000-1783z3v",
-						"updated": "20250115152709"
+						"updated": "20261016202856"
 					},
 					"Children": [
 						{
@@ -206,7 +231,7 @@
 							"Type": "NodeParagraph",
 							"Properties": {
 								"id": "20240530101000-g0g7vya",
-								"updated": "20250115152709"
+								"updated": "20261016202856"
 							},
 							"Children": [
 								{
@@ -256,7 +281,7 @@
 								},
 								{
 									"Type": "NodeText",
-									"Data": "​ キーを押しながらドラッグ＆ドロップします。"
+									"Data": "​ キーを押しながらドラッグ＆ドロップします"
 								}
 							]
 						}
@@ -369,7 +394,7 @@
 			"Type": "NodeParagraph",
 			"Properties": {
 				"id": "20260930092043-zd8vt2u",
-				"updated": "20260930092043"
+				"updated": "20261016013311"
 			},
 			"Children": [
 				{
@@ -385,6 +410,15 @@
 					"Type": "NodeTextMark",
 					"TextMarkType": "kbd",
 					"TextMarkTextContent": "エディタ"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " - "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "画像"
 				},
 				{
 					"Type": "NodeText",
@@ -406,7 +440,7 @@
 			"Type": "NodeParagraph",
 			"Properties": {
 				"id": "20260930092955-e9bzngv",
-				"updated": "20260930092955"
+				"updated": "20261016013311"
 			},
 			"Children": [
 				{
@@ -422,6 +456,15 @@
 					"Type": "NodeTextMark",
 					"TextMarkType": "kbd",
 					"TextMarkTextContent": "エディタ"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " - "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "画像"
 				},
 				{
 					"Type": "NodeText",
@@ -449,6 +492,72 @@
 				{
 					"Type": "NodeText",
 					"Data": "画像にマウスを合わせると、タイトルがなくてもファイル名、形式、読み込み済み画像の元のサイズ、タイトル、ツールチップテキストを確認できます。ローカルワークスペースの画像では、取得できる場合にファイルサイズも表示されます。ネットワーク画像と暗号化ノートブックの画像ではファイルサイズは表示されません。"
+				}
+			]
+		},
+		{
+			"ID": "20261018221152-s6uge4s",
+			"Type": "NodeHeading",
+			"Properties": {
+				"id": "20261018221152-s6uge4s",
+				"updated": "20261018221152"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Live Photos"
+				}
+			],
+			"HeadingLevel": 3
+		},
+		{
+			"ID": "20261018221152-6f3mr7h",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261018221152-6f3mr7h",
+				"updated": "20261018221152"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "iOS クライアントでは、エディターの "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "画像を挿入"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " を使用して写真ライブラリから Live Photos を選択できます。元の写真とペアの動画、および元のメタデータが保持されます。"
+				}
+			]
+		},
+		{
+			"ID": "20261018221152-g7c8fdh",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261018221152-g7c8fdh",
+				"updated": "20261018221152"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "各クライアントで画像プレビューを開き、Live Photo ボタンを押すと再生できます。元の動画を直接再生できない場合は、必要に応じて互換プレビューが生成されます。初回は時間がかかることがありますが、以降はローカルキャッシュが再利用されます。キャッシュは同期されません。互換プレビューは非可逆変換ですが、元のファイルは変更されません。"
+				}
+			]
+		},
+		{
+			"ID": "20261018221152-pjjd5rh",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261018221152-pjjd5rh",
+				"updated": "20261018221152"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "HDR や一部の特殊なエンコード形式は、現在、互換プレビューに変換できません。静止画像と元のファイルは保持されます。Android のモーションフォトの読み込み、および書き出したファイルからシステムの Live Photo を復元する機能は、まだサポートされていません。"
 				}
 			]
 		},
@@ -1079,7 +1188,7 @@
 			"Properties": {
 				"ID": "20240530101000-5bix8t1",
 				"id": "20240530101000-9evyuhr",
-				"updated": "20261014140201"
+				"updated": "20261016202856"
 			},
 			"Children": [
 				{
@@ -1190,7 +1299,7 @@
 			"Properties": {
 				"ID": "20240530101000-mbaa8ar",
 				"id": "20240530101000-qmvr8rd",
-				"updated": "20261012014859"
+				"updated": "20261016202856"
 			},
 			"Children": [
 				{
@@ -1203,7 +1312,7 @@
 					"Properties": {
 						"ID": "20240530101000-lw8ri1k",
 						"id": "20240530101000-vuyib46",
-						"updated": "20261001013550"
+						"updated": "20261016202856"
 					},
 					"Children": [
 						{
@@ -1212,7 +1321,7 @@
 							"Properties": {
 								"ID": "20240530101000-9ucri2d",
 								"id": "20240530101000-ciyew7k",
-								"updated": "20261001013550"
+								"updated": "20261016202856"
 							},
 							"Children": [
 								{
@@ -1253,7 +1362,7 @@
 								},
 								{
 									"Type": "NodeText",
-									"Data": "​ を設定してください。"
+									"Data": "​ を設定してください"
 								}
 							]
 						}
@@ -1269,7 +1378,7 @@
 					"Properties": {
 						"ID": "20240530101000-xjhk4ih",
 						"id": "20240530101000-yp8d881",
-						"updated": "20261001013550"
+						"updated": "20261016202856"
 					},
 					"Children": [
 						{
@@ -1278,7 +1387,7 @@
 							"Properties": {
 								"ID": "20240530101000-04xwhm0",
 								"id": "20240530101000-juctxsf",
-								"updated": "20261001013550"
+								"updated": "20261016202856"
 							},
 							"Children": [
 								{
@@ -1364,7 +1473,7 @@
 								},
 								{
 									"Type": "NodeText",
-									"Data": "​)。"
+									"Data": "​)"
 								}
 							]
 						}
@@ -1588,7 +1697,7 @@
 			"Properties": {
 				"ID": "20240530101000-aefldsk",
 				"id": "20240530101000-cpod2qy",
-				"updated": "20261014140201"
+				"updated": "20261016202856"
 			},
 			"Children": [
 				{
@@ -1708,12 +1817,49 @@
 			"Properties": {
 				"ID": "20240530101000-ys1z20f",
 				"id": "20240530101000-rq0etyj",
-				"updated": "20261001013550"
+				"updated": "20261016202856"
 			},
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "画像の結果編集画面で保存すると検索インデックスが自動更新されます。SiYuan の外部で JSON ファイルを編集した場合は、アセットコンテンツインデックスを手動で再構築してください"
+					"Data": "画像の結果編集画面で保存すると検索インデックスが自動更新されます。SiYuan の外部で JSON ファイルを編集した場合は、アセットコンテンツインデックスを手動で再構築してください。"
+				}
+			]
+		},
+		{
+			"ID": "20261014150710-r6p45ak",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261014150710-r6p45ak",
+				"updated": "20261014150710"
+			},
+			"Children": [
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "画像メニュー"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " - "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "OCR"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " - "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "OCR テキストを消去"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " で、アセットの OCR テキストをワンクリックで消去できます。同じアセットを参照するすべての画像に反映され、検索インデックスも更新されます。空の結果が保持されるため、自動 OCR はそのアセットをスキップします。テキストを復元するには、画像メニューから手動で OCR を再実行してください。"
 				}
 			]
 		},
