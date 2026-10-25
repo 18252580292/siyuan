@@ -1,0 +1,56 @@
+/* 珍珠白 · 海湾青配色，沿用拿铁浅色的柔和面色层级与思源基础布局。
+ * 原始配色 #f5f2e9，CMYK 5/5/10/0。
+ * 原始配色 #006e63，CMYK 88/49/66/6。
+ */
+@import url("../daylight/theme.css");
+
+:root,
+:root[data-frontend="desktop"],
+:root[data-frontend="desktop-window"],
+:root[data-frontend="browser-desktop"] {
+    --b3-theme-primary: #006e63;
+    --b3-theme-on-primary: #ffffff;
+    --b3-theme-primary-light: rgba(0, 110, 99, .54);
+    --b3-theme-primary-lighter: rgba(0, 110, 99, .26);
+    --b3-theme-primary-lightest: rgba(0, 110, 99, .12);
+    --b3-theme-background: #f5f2e9;
+    --b3-theme-background-light: #ffffff;
+    --b3-theme-surface: #eae8df;
+    --b3-theme-surface-light: #ffffff;
+    --b3-theme-surface-lighter: #cfd1c9;
+    --b3-theme-on-background: #354b47;
+    --b3-theme-on-surface: #4e615c;
+    --b3-theme-on-surface-light: #4e615c;
+    --b3-theme-on-surface-lighter: #99a29b;
+    --b3-body-background: var(--b3-chrome-background);
+    --b3-dock-background: var(--b3-chrome-background);
+    --b3-border-color: #cfd1c9;
+    --b3-list-hover: rgba(0, 110, 99, .065);
+    --b3-list-icon-hover: rgba(0, 110, 99, .13);
+    --b3-toolbar-color: #4e615c;
+    --b3-toolbar-hover: rgba(0, 110, 99, .10);
+    --b3-scroll-color: rgba(0, 110, 99, .24);
+    --b3-menu-background: #f5f2e9;
+    --b3-menu-icon-color: #4e615c;
+    --b3-tab-active-color: #006e63;
+    --b3-tab-active-background: #ffffff;
+    --b3-tab-active-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-editor-shadow: var(--b3-chrome-editor-shadow);
+    --b3-search-button-background: var(--b3-theme-background);
+    --b3-search-button-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-table-even-background: color-mix(in srgb, var(--b3-theme-primary) 3%, var(--b3-theme-background));
+    --b3-protyle-inline-blockref-color: #006e63;
+    --b3-protyle-inline-link-color: #006e63;
+    --b3-document-card-1: #ceddd4;
+    --b3-document-card-2: #e1e7de;
+    --b3-document-card-3: #e1e7de;
+    --b3-document-card-4: #ebede4;
+    --b3-pair-accent: #006e63;
+    --b3-empty-color: #4e615c;
+    --b3-tab-active-accent: inset 0 -2px 0 var(--b3-theme-primary-lighter);
+    --b3-list-selected-background: color-mix(in srgb, var(--b3-pair-accent) 13%, var(--b3-chrome-background));
+    --b3-sidebar-selected-background: var(--b3-list-selected-background);
+    --b3-list-selected-shadow: inset 2px 0 0 var(--b3-theme-primary);
+    --b3-bq-background: color-mix(in srgb, var(--b3-pair-accent) 6%, var(--b3-theme-background));
+    --b3-protyle-quote-accent: color-mix(in srgb, var(--b3-theme-primary) 45%, var(--b3-pair-accent));
+}

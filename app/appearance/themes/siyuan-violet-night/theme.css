@@ -1,0 +1,56 @@
+/* 紫夜配色，沿用拿铁浅色的柔和面色层级与思源基础布局。
+ * 原始配色 #c98fff，CMYK 37/48/0/0。
+ * 原始配色 #030921，CMYK 100/98/70/63。
+ */
+@import url("../daylight/theme.css");
+
+:root,
+:root[data-frontend="desktop"],
+:root[data-frontend="desktop-window"],
+:root[data-frontend="browser-desktop"] {
+    --b3-theme-primary: #030921;
+    --b3-theme-on-primary: #ffffff;
+    --b3-theme-primary-light: rgba(3, 9, 33, .54);
+    --b3-theme-primary-lighter: rgba(3, 9, 33, .26);
+    --b3-theme-primary-lightest: rgba(3, 9, 33, .12);
+    --b3-theme-background: #f2f0f7;
+    --b3-theme-background-light: #ffffff;
+    --b3-theme-surface: #e7e4ef;
+    --b3-theme-surface-light: #ffffff;
+    --b3-theme-surface-lighter: #d0ced9;
+    --b3-theme-on-background: #48485f;
+    --b3-theme-on-surface: #5e5e73;
+    --b3-theme-on-surface-light: #5e5e73;
+    --b3-theme-on-surface-lighter: #a09fae;
+    --b3-body-background: var(--b3-chrome-background);
+    --b3-dock-background: var(--b3-chrome-background);
+    --b3-border-color: #d0ced9;
+    --b3-list-hover: rgba(3, 9, 33, .065);
+    --b3-list-icon-hover: rgba(3, 9, 33, .13);
+    --b3-toolbar-color: #5e5e73;
+    --b3-toolbar-hover: rgba(3, 9, 33, .10);
+    --b3-scroll-color: rgba(3, 9, 33, .24);
+    --b3-menu-background: #f2f0f7;
+    --b3-menu-icon-color: #5e5e73;
+    --b3-tab-active-color: #030921;
+    --b3-tab-active-background: #ffffff;
+    --b3-tab-active-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-editor-shadow: var(--b3-chrome-editor-shadow);
+    --b3-search-button-background: var(--b3-theme-background);
+    --b3-search-button-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-table-even-background: color-mix(in srgb, var(--b3-theme-primary) 3%, var(--b3-theme-background));
+    --b3-protyle-inline-blockref-color: #030921;
+    --b3-protyle-inline-link-color: #030921;
+    --b3-document-card-1: #ebe0f8;
+    --b3-document-card-2: #dfdee6;
+    --b3-document-card-3: #efe8f8;
+    --b3-document-card-4: #e8e7ee;
+    --b3-pair-accent: #c98fff;
+    --b3-empty-color: #5e5e73;
+    --b3-tab-active-accent: inset 0 -2px 0 var(--b3-theme-primary-lighter);
+    --b3-list-selected-background: color-mix(in srgb, var(--b3-pair-accent) 13%, var(--b3-chrome-background));
+    --b3-sidebar-selected-background: var(--b3-list-selected-background);
+    --b3-list-selected-shadow: inset 2px 0 0 var(--b3-theme-primary);
+    --b3-bq-background: color-mix(in srgb, var(--b3-pair-accent) 6%, var(--b3-theme-background));
+    --b3-protyle-quote-accent: color-mix(in srgb, var(--b3-theme-primary) 45%, var(--b3-pair-accent));
+}

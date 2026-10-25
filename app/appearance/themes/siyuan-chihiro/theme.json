@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-chihiro",
+  "author": "SiYuan local customization",
+  "version": "1.2.0",
+  "url": "https://github.com/siyuan-note/siyuan",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "light"
+  ],
+  "displayName": {
+    "default": "Chihiro & Navy",
+    "zh-CN": "千寻 · 两青色",
+    "zh-TW": "千尋 · 兩青色"
+  }
+}

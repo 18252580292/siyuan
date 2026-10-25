@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-chihiro-dark",
+  "author": "SiYuan local customization",
+  "version": "1.0.0",
+  "url": "https://github.com/siyuan-note/siyuan",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "dark"
+  ],
+  "displayName": {
+    "default": "Chihiro & Navy · Dark",
+    "zh-CN": "千寻 · 两青色 · 深色",
+    "zh-TW": "千尋 · 兩青色 · 深色"
+  }
+}

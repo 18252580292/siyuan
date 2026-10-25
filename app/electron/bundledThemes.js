@@ -2,7 +2,9 @@ const fs = require("fs");
 const path = require("path");
 
 const bundledThemeNames = ["siyuan-cream", "siyuan-forest", "siyuan-ocean", "siyuan-graphite",
-    "siyuan-catppuccin-latte", "siyuan-catppuccin-mocha"];
+    "siyuan-catppuccin-latte", "siyuan-catppuccin-mocha",
+    "siyuan-pearl-bay", "siyuan-chihiro", "siyuan-violet-night", "siyuan-lemon-teal",
+    "siyuan-pearl-bay-dark", "siyuan-chihiro-dark", "siyuan-violet-night-dark", "siyuan-lemon-teal-dark"];
 
 // 将随应用提供的配色作为普通主题安装，保留已存在的同名包和用户修改。
 const installBundledThemes = (resources, workspace) => {

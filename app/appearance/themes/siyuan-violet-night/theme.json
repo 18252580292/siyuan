@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-violet-night",
+  "author": "SiYuan local customization",
+  "version": "1.2.0",
+  "url": "https://github.com/siyuan-note/siyuan",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "light"
+  ],
+  "displayName": {
+    "default": "Violet Night",
+    "zh-CN": "紫夜",
+    "zh-TW": "紫夜"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "siyuan-pearl-bay",
+  "author": "SiYuan local customization",
+  "version": "1.2.0",
+  "url": "https://github.com/siyuan-note/siyuan",
+  "frontends": [
+    "all"
+  ],
+  "modes": [
+    "light"
+  ],
+  "displayName": {
+    "default": "Pearl & Bay",
+    "zh-CN": "珍珠白 · 海湾青",
+    "zh-TW": "珍珠白 · 海灣青"
+  }
+}

@@ -1,0 +1,57 @@
+/* 珍珠白 · 海湾青 · 深色配色，沿用摩卡深色的柔和层级，强调色按暗底阅读对比度调整。
+ * 原始配色 #f5f2e9，CMYK 5/5/10/0。
+ * 原始配色 #006e63，CMYK 88/49/66/6。
+ */
+@import url("../midnight/theme.css");
+
+:root,
+:root[data-frontend="desktop"],
+:root[data-frontend="desktop-window"],
+:root[data-frontend="browser-desktop"] {
+    --b3-theme-primary: #9acabd;
+    --b3-theme-on-primary: #222826;
+    --b3-theme-primary-light: rgba(154, 202, 189, .54);
+    --b3-theme-primary-lighter: rgba(154, 202, 189, .26);
+    --b3-theme-primary-lightest: rgba(154, 202, 189, .16);
+    --b3-theme-background: #222826;
+    --b3-theme-background-light: #313734;
+    --b3-theme-surface: #1b211f;
+    --b3-theme-surface-light: #313734;
+    --b3-theme-surface-lighter: #474d4a;
+    --b3-theme-on-background: #d9dfd9;
+    --b3-theme-on-surface: #b8beb9;
+    --b3-theme-on-surface-light: #a6aca7;
+    --b3-theme-on-surface-lighter: #747a77;
+    --b3-body-background: var(--b3-chrome-background);
+    --b3-dock-background: var(--b3-chrome-background);
+    --b3-border-color: #474d4a;
+    --b3-list-hover: rgba(154, 202, 189, .065);
+    --b3-list-icon-hover: rgba(154, 202, 189, .13);
+    --b3-toolbar-color: #a6aca7;
+    --b3-toolbar-hover: rgba(154, 202, 189, .10);
+    --b3-scroll-color: rgba(154, 202, 189, .24);
+    --b3-menu-background: #222826;
+    --b3-menu-icon-color: #b8beb9;
+    --b3-tab-active-color: #d9dfd9;
+    --b3-tab-active-background: #313734;
+    --b3-tab-active-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-editor-shadow: var(--b3-chrome-editor-shadow);
+    --b3-search-button-background: var(--b3-theme-background);
+    --b3-search-button-shadow: inset 0 0 0 1px var(--b3-border-color);
+    --b3-table-even-background: color-mix(in srgb, var(--b3-theme-primary) 3%, var(--b3-theme-background));
+    --b3-protyle-inline-blockref-color: #9acabd;
+    --b3-protyle-inline-link-color: #9acabd;
+    --b3-document-card-1: #333f3b;
+    --b3-document-card-2: #1f2f2c;
+    --b3-document-card-3: #2c3532;
+    --b3-document-card-4: #3b403d;
+    --b3-pair-accent: #006e63;
+    --b3-pair-anchor: #f5f2e9;
+    --b3-empty-color: #a6aca7;
+    --b3-tab-active-accent: inset 0 -2px 0 var(--b3-theme-primary-lighter);
+    --b3-list-selected-background: color-mix(in srgb, var(--b3-theme-primary) 11%, var(--b3-chrome-background));
+    --b3-sidebar-selected-background: var(--b3-list-selected-background);
+    --b3-list-selected-shadow: inset 2px 0 0 var(--b3-theme-primary);
+    --b3-bq-background: color-mix(in srgb, var(--b3-theme-primary) 5%, var(--b3-theme-background));
+    --b3-protyle-quote-accent: color-mix(in srgb, var(--b3-theme-primary) 40%, var(--b3-border-color));
+}
