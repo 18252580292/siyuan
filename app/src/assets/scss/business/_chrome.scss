@@ -1,0 +1,182 @@
+// 公共桌面界面使用当前主题的颜色，内置与第三方主题共享相同的导航和阅读层次。
+:where(:root[data-frontend="desktop"], :root[data-frontend="desktop-window"], :root[data-frontend="browser-desktop"]) {
+  --b3-chrome-navigation-background: color-mix(in srgb, var(--b3-theme-surface) 88%, var(--b3-theme-background));
+  --b3-chrome-panel-radius: 14px;
+  --b3-chrome-panel-shadow: inset 0 0 0 1px color-mix(in srgb, var(--b3-border-color) 65%, transparent), 0 4px 20px color-mix(in srgb, var(--b3-theme-on-background) 4%, transparent);
+  --b3-chrome-tab-height: 30px;
+  --b3-chrome-tab-margin: 6px 4px;
+  --b3-chrome-tab-radius: 9px;
+  --b3-chrome-tab-bar-padding: 0 8px;
+  --b3-chrome-tab-separator-content: none;
+  --b3-chrome-tab-active-background: color-mix(in srgb, var(--b3-theme-primary) 7%, var(--b3-theme-background));
+  --b3-chrome-tab-active-shadow: inset 0 0 0 1px color-mix(in srgb, var(--b3-theme-primary) 22%, transparent);
+  --b3-chrome-tab-surface-shadow: 0 2px 4px color-mix(in srgb, var(--b3-theme-on-background) 4%, transparent);
+  --b3-chrome-selected-shadow: inset 0 0 0 1px color-mix(in srgb, var(--b3-theme-primary) 16%, transparent);
+  --b3-chrome-dock-active-background: color-mix(in srgb, var(--b3-theme-primary) 12%, var(--b3-theme-background));
+  --b3-chrome-dock-active-color: var(--b3-theme-primary);
+  --b3-chrome-sidebar-search-padding: 6px 14px 12px;
+  --b3-chrome-sidebar-section-rule: color-mix(in srgb, var(--b3-border-color) 65%, transparent);
+  --b3-chrome-config-background: color-mix(in srgb, var(--b3-theme-surface) 32%, var(--b3-theme-background));
+  --b3-chrome-config-card-background: var(--b3-theme-background);
+  --b3-chrome-config-card-shadow: inset 0 0 0 1px color-mix(in srgb, var(--b3-border-color) 70%, transparent), 0 2px 8px color-mix(in srgb, var(--b3-theme-on-background) 2%, transparent);
+  --b3-chrome-config-title-size: 14px;
+  --b3-chrome-config-sidebar-width: 248px;
+}
+
+:where(:root[data-ui-density="compact"]) {
+  --b3-chrome-tab-height: 25px;
+  --b3-chrome-tab-margin: 4px 3px;
+  --b3-chrome-sidebar-search-padding: 2px 12px 8px;
+}
+
+.file-tree {
+  --b3-list-selected-font-weight: 600;
+  font-size: 13px;
+
+  > .block__icons {
+    min-height: max(var(--b3-block-header-height, 42px), 64px);
+    gap: 2px;
+    padding-inline: 16px 8px;
+  }
+
+  &__brand-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    color: var(--b3-theme-primary);
+    background-color: var(--b3-theme-primary-lightest);
+    box-shadow: var(--b3-chrome-selected-shadow, none);
+
+    svg {
+      width: 20px;
+      height: 20px;
+    }
+  }
+
+  .block__logo--stacked {
+    min-width: 0;
+    font-size: 15px;
+    letter-spacing: .01em;
+    overflow: hidden;
+
+    > span,
+    > small {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
+  &__section-label {
+    font-size: 11px;
+    letter-spacing: .06em;
+    font-weight: 500;
+  }
+
+  &__quick-navigation {
+    gap: 2px;
+  }
+
+  .b3-button--nav,
+  .b3-button--search {
+    font-size: inherit;
+    font-weight: 400;
+  }
+
+  // 层级线沿用每一行既有的缩进，不占用展开按钮和拖放标记的位置。
+  &__items [data-type="navigation-file"]::before {
+    content: "";
+    position: absolute;
+    inset-block: -1px;
+    inset-inline-start: calc(var(--file-toggle-width) - 12px);
+    width: 1px;
+    background-color: color-mix(in srgb, var(--b3-theme-on-surface-light) 18%, transparent);
+    pointer-events: none;
+  }
+
+  .b3-list-item {
+    --b3-list-item-text-weight: 400;
+
+    &[data-type="navigation-root"] {
+      --b3-list-item-text-weight: 600;
+      font-size: 12px;
+      letter-spacing: .02em;
+    }
+
+    &__text {
+      color: var(--b3-theme-on-surface);
+    }
+
+    &__icon svg {
+      color: var(--b3-theme-on-surface-light);
+    }
+
+    &--focus {
+      --b3-list-item-text-weight: 600;
+
+      > .b3-list-item__text,
+      > .b3-list-item__icon svg {
+        color: var(--b3-theme-primary);
+      }
+    }
+  }
+}
+
+.toolbar {
+  font-size: 12px;
+
+  &__text {
+    font-weight: 500;
+    letter-spacing: .01em;
+  }
+
+  &__item--secondary {
+    color: var(--b3-theme-on-surface-light);
+
+    > svg {
+      opacity: .76;
+    }
+
+    &:hover > svg,
+    &:focus-visible > svg,
+    &.toolbar__item--active > svg {
+      opacity: 1;
+    }
+  }
+}
+
+.layout-tab-bar .item {
+  font-size: 12px;
+  font-weight: 400;
+
+  &--focus {
+    font-weight: 600;
+  }
+}
+
+.config__side {
+  font-size: 13px;
+
+  .b3-list-item__graphic {
+    color: var(--b3-theme-on-surface-light);
+  }
+}
+
+// 仅装饰分组标题，折叠按钮、详情浮层与顶部拖动区域沿用原有布局。
+.config-title {
+  color: var(--b3-theme-on-surface);
+  letter-spacing: .015em;
+}
+
+.config__side .b3-list-item--focus {
+  color: var(--b3-theme-primary);
+}
+
+.status__counter {
+  color: var(--b3-theme-on-surface-light);
+  font-variant-numeric: tabular-nums;
+}

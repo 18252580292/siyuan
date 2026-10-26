@@ -5,11 +5,13 @@ import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 import {ModuleKind, transpileModule} from "typescript";
 import {createSectionRuntime} from "../util/sectionRuntime";
+import {canSyncAppearanceSettings} from "./appearanceChanges";
+import {getCurrentThemeName} from "../../util/themeCompatibility";
 
 const {parse} = require("ifdef-loader/preprocessor");
 
 for (const mobile of [true, false]) {
-    for (const change of ["gradient", "duplicate", "theme", "initial", "font", "font-reset", "compact", "scroll", "pdf", "outline", "mobile-bars"] as const) {
+    for (const change of ["gradient", "duplicate", "theme", "initial", "font", "font-reset", "compact", "scroll", "pdf", "outline", "mobile-bars", "list", "bar"] as const) {
         test(`appearance updates preserve gradient controls without skipping theme initialization (${change}, mobile=${mobile})`, async () => {
             const source = readFileSync(resolve(process.cwd(), "src/config/tabs/appearanceRuntime.ts"), "utf8");
             const processed = parse(source, {MOBILE: mobile, BROWSER: true}, false, true);
@@ -26,6 +28,8 @@ for (const mobile of [true, false]) {
                 outlineKeepCurrentExpand: change === "outline", mobileBars: change === "mobile-bars" ? {autoHide: false} : undefined,
                 bodyGradient: {mode: change === "duplicate" ? "auto" : "custom"},
                 globalFontFamilies: change === "font" ? [{family: "Arial", weight: 700}] : [],
+                ...(change === "list" ? {darkThemes: [{name: "new-dark-theme"}]} : {}),
+                ...(change === "bar" ? {hideStatusBar: true} : {}),
             };
             const siyuan = {config: {appearance}};
             const calls: string[] = [];
@@ -37,11 +41,13 @@ for (const mobile of [true, false]) {
                 document: {getElementById: (): HTMLElement | null => null},
                 require: (name: string) => {
                     if (name === "../util/sectionRuntime") return {createSectionRuntime};
+                    if (name === "./appearanceChanges") return {canSyncAppearanceSettings};
+                    if (name === "../setting/windowContext") return {isSettingsWindow: () => false};
                     if (name === "../util/namespaceApi") {
                         return {createConfigNamespaceApi: (options: {setConfig: (data: unknown) => void}) => ({apply: options.setConfig})};
                     }
                     if (name === "../../util/themeCompatibility") {
-                        return {shouldUnloadThemeScript: () => false};
+                        return {shouldUnloadThemeScript: () => false, getCurrentThemeName, isCurrentThemeSupported: () => true};
                     }
                     if (name === "../../util/assets") {
                         return new Proxy({}, {get: (_, key) => key === "enqueueAppearanceUpdate" ?
@@ -53,11 +59,14 @@ for (const mobile of [true, false]) {
             moduleExports.appearanceConfigApi.apply(next);
             await pending;
             assert.equal(siyuan.config.appearance, next);
-            const updatesInPlace = ["gradient", "duplicate", "compact", "scroll", "pdf", "outline", "mobile-bars"].includes(change);
-            assert.equal(calls.includes("syncBodyGradient"), updatesInPlace);
+            const updatesInPlace = ["gradient", "duplicate", "compact", "scroll", "pdf", "outline", "mobile-bars", "list", "bar"].includes(change);
+            assert.equal(calls.includes("syncBodyGradient"), updatesInPlace || change === "theme");
+            assert.equal(calls.includes("syncAppearancePreferences"), true);
             assert.equal(calls.includes("setBodyHighlight"), updatesInPlace);
             assert.equal(calls.includes("loadAssets"), !updatesInPlace);
-            assert.equal(calls.includes("remountOpenSettingTab"), !updatesInPlace && !mobile);
+            assert.equal(calls.includes("remountOpenSettingTab"), !updatesInPlace && change !== "theme" && !mobile);
+            assert.equal(calls.includes("syncAppearanceSettings"), updatesInPlace || change === "theme");
+            assert.equal(calls.includes("adjustDockPadding"), change === "bar" && !mobile);
             assert.equal(calls.includes("refreshDynamicIcons"), change === "font" || change === "font-reset");
         });
     }
@@ -85,6 +94,7 @@ for (const mobile of [true, false]) {
                 document: {getElementById: (): HTMLElement | null => null},
                 require: (name: string) => {
                     if (name === "../util/sectionRuntime") return {createSectionRuntime};
+                    if (name === "./appearanceChanges") return {canSyncAppearanceSettings};
                     if (name === "../util/namespaceApi") {
                         return {createConfigNamespaceApi: () => ({})};
                     }
@@ -132,9 +142,9 @@ for (const mobile of [true, false]) {
             });
             const shouldUnload = affected !== "other" && affected !== "icon";
             assert.equal(calls.includes("unload"), shouldUnload);
-            assert.equal(calls.includes("syncBodyGradient"), false);
+            assert.equal(calls.includes("syncBodyGradient"), affected !== "cannot-unload");
             assert.equal(calls.includes("reload"), affected === "cannot-unload");
-            assert.equal(calls.includes("loadAssets"), affected !== "cannot-unload");
+            assert.equal(calls.includes("loadAssets"), affected !== "cannot-unload" && affected !== "other");
             if (shouldUnload && affected !== "cannot-unload") {
                 assert.ok(calls.indexOf("unload") < calls.indexOf("loadAssets"));
             }

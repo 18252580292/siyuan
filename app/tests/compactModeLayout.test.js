@@ -88,8 +88,8 @@ const browserCases = ({css, desktop, community}) => {
     const normal = snapshot();
     if (desktop && !community) {
         checkTabEdge();
-        for (const [key, expected] of Object.entries({toolbar: 32, tabs: 42, panel: 42, breadcrumb: 42,
-            list: 28, menu: 28, dialog: 43, status: 32})) {
+        for (const [key, expected] of Object.entries({toolbar: 32, tabs: 42, panel: 48, breadcrumb: 42,
+            list: 30, menu: 28, dialog: 43, status: 32})) {
             near(normal[key].height, expected, `${key} retains the default size`);
         }
     }

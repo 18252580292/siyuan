@@ -110,6 +110,7 @@ export class Files extends Model {
         });
         options.tab.panelElement.classList.add("fn__flex-column", "file-tree", "sy__file", "dockPanel");
         options.tab.panelElement.innerHTML = `<div class="block__icons">
+    <span class="file-tree__brand-icon" aria-hidden="true"><svg><use xlink:href="#iconSiYuan"></use></svg></span>
     <div class="block__logo block__logo--stacked fn__flex-1"><span>${window.siyuan.languages.siyuanNote}</span><small>${window.siyuan.languages.workspace}</small></div>
     <span data-type="focus" class="block__icon ariaLabel" data-position="north" aria-label="${window.siyuan.languages.selectOpen1}${updateHotkeyAfterTip(window.siyuan.config.keymap.general.selectOpen1.custom)}"><svg><use xlink:href='#iconFocus'></use></svg></span>
     <span class="fn__space"></span>

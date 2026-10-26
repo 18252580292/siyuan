@@ -91,7 +91,7 @@ export const initBar = (app: App) => {
 <button id="barDailyNote" data-topbar-entry="barDailyNote" class="ariaLabel toolbar__item${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.dailyNote} ${updateHotkeyTip(window.siyuan.config.keymap.general.dailyNote.custom)}">
     <svg><use xlink:href="#iconCalendarPlus"></use></svg>
 </button>
-<button id="barRiffCard" data-topbar-entry="barRiffCard" class="ariaLabel toolbar__item${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.riffCard} ${updateHotkeyTip(window.siyuan.config.keymap.general.riffCard.custom)}">
+<button id="barRiffCard" data-topbar-entry="barRiffCard" class="ariaLabel toolbar__item toolbar__item--secondary${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.riffCard} ${updateHotkeyTip(window.siyuan.config.keymap.general.riffCard.custom)}">
     <svg><use xlink:href="#iconRiffCard"></use></svg>
 </button>
 <button id="barBack" data-topbar-entry="barBack" class="ariaLabel toolbar__item toolbar__item--disabled" aria-label="${window.siyuan.languages.goBack} ${updateHotkeyTip(window.siyuan.config.keymap.general.goBack.custom)}">
@@ -103,7 +103,7 @@ export const initBar = (app: App) => {
 <div class="fn__flex-1 fn__ellipsis" id="drag"><span class="fn__none">开发版，使用前请进行备份 Development version, please backup before use</span></div>
 <div id="toolbarVIP" data-topbar-entry="toolbarVIP" class="fn__flex${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.accountDisplayVIP}"></div>
 <div id="toolbarTitle" data-topbar-entry="toolbarTitle" class="fn__flex${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.accountDisplayTitle}"></div>
-<div id="barPlugins" data-topbar-entry="barPlugins" class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.plugin}">
+<div id="barPlugins" data-topbar-entry="barPlugins" class="toolbar__item toolbar__item--secondary ariaLabel" aria-label="${window.siyuan.languages.plugin}">
     <svg><use xlink:href="#iconPlugin"></use></svg>
 </div>
 <div id="barCommand" data-topbar-entry="barCommand" class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.commandPanel} ${updateHotkeyTip(window.siyuan.config.keymap.general.commandPanel.custom)}">
@@ -112,10 +112,10 @@ export const initBar = (app: App) => {
 <div id="barSearch" data-topbar-entry="barSearch" class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.globalSearch} ${updateHotkeyTip(window.siyuan.config.keymap.general.globalSearch.custom)}">
     <svg><use xlink:href="#iconSearch"></use></svg>
 </div>
-<div id="barZoom" data-topbar-entry="barZoom" class="toolbar__item ariaLabel${(window.siyuan.storage[Constants.LOCAL_ZOOM] === 1 || isBrowser()) ? " fn__none" : ""}" aria-label="${window.siyuan.languages.zoom}">
+<div id="barZoom" data-topbar-entry="barZoom" class="toolbar__item toolbar__item--secondary ariaLabel${(window.siyuan.storage[Constants.LOCAL_ZOOM] === 1 || isBrowser()) ? " fn__none" : ""}" aria-label="${window.siyuan.languages.zoom}">
     <svg><use xlink:href="#iconZoom${window.siyuan.storage[Constants.LOCAL_ZOOM] > 1 ? "In" : "Out"}"></use></svg>
 </div>
-<div id="barMode" data-topbar-entry="barMode" class="toolbar__item ariaLabel${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.appearanceMode}">
+<div id="barMode" data-topbar-entry="barMode" class="toolbar__item toolbar__item--secondary ariaLabel${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.appearanceMode}">
     <svg><use xlink:href="#icon${window.siyuan.config.appearance.modeOS ? "Mode" : (window.siyuan.config.appearance.mode === 0 ? "Light" : "Dark")}"></use></svg>
 </div>
 ${isInMobileApp() ? `<div id="barExit" data-topbar-entry="barExit" class="ft__error toolbar__item ariaLabel" aria-label="${window.siyuan.languages.safeQuit}">

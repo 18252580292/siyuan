@@ -1,4 +1,6 @@
 {
+	"themePairWithLight": "Match light theme",
+	"themePairWithDark": "Match dark theme",
 	"workspaceStorageView": "View",
 	"listMindmapDocumentLayout": "Document layout",
 	"livePhoto": "Live Photo",

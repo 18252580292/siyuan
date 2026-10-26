@@ -7,6 +7,7 @@ import {looseJsonParse} from "../../util/functions";
 import {genIconHTML} from "./util";
 import {getHostCapabilities, isExternalURLAllowed} from "../../util/hostCapabilities";
 import {escapeHtml} from "../../util/escape";
+import {getBasicChartOption} from "./chartOption";
 
 const secureEChartsOption = (option: any) => {
     if (!getHostCapabilities().remoteKernel || !option || typeof option !== "object") {
@@ -90,7 +91,6 @@ const renderCharts = async (element: Element, cdn: string, image = false) => {
         return;
     }
     await loadECharts(cdn);
-    await addScript(`${cdn}/js/echarts/echarts-gl.min.js?v=2.1.0`, "protyleEchartsGLScript");
     const wysiswgElement = hasClosestByClassName(element, "protyle-wysiwyg", true);
     let width: number = undefined;
     if (wysiswgElement && wysiswgElement.clientWidth > 0 && echartsElements[0].firstElementChild.clientWidth === 0 && wysiswgElement.firstElementChild) {
@@ -110,14 +110,18 @@ const renderCharts = async (element: Element, cdn: string, image = false) => {
             return;
         }
         try {
+            const content = Lute.UnEscapeHTMLStr(e.getAttribute("data-content"));
+            const basicOption = getBasicChartOption(content);
+            if (!basicOption) {
+                await addScript(`${cdn}/js/echarts/echarts-gl.min.js?v=2.1.0`, "protyleEchartsGLScript");
+            }
             if (!renderElement.lastElementChild || renderElement.childElementCount === 1) {
                 renderElement.innerHTML = `<span style="position: absolute;left:0;top:0;width: 1px;">${Constants.ZWSP}</span><div style="height:${e.style.height || "420px"}" contenteditable="false"></div>`;
             } else {
                 renderElement.lastElementChild.classList.remove("ft__error");
             }
             const chartInstance = window.echarts.getInstanceById(renderElement.lastElementChild?.getAttribute("_echarts_instance_"));
-            let option = secureEChartsOption(await looseJsonParse(
-                Lute.UnEscapeHTMLStr(e.getAttribute("data-content"))));
+            let option = secureEChartsOption(basicOption || await looseJsonParse(content));
             if (image) {
                 option = prepareChartImageOption(option);
             }

@@ -25,6 +25,8 @@ import {syncBodyGradient} from "./bodyGradient";
 import {refreshDynamicIcons} from "../../emoji/dynamicIcon";
 import {closeSettingsWindow, isSettingsWindow} from "../setting/windowContext";
 import {syncAppearancePreferences} from "./appearancePreferences";
+import {canSyncAppearanceSettings} from "./appearanceChanges";
+import {syncAppearanceSettings} from "./appearanceSettings";
 
 /** 主题模式下拉框初值：合并 mode / modeOS */
 export const appearanceThemeModeValue = (): number =>
@@ -55,6 +57,15 @@ interface IAppearanceRefresh {
     revision: string;
 }
 
+const applyAppearanceBars = (old: Config.IAppearance, next: Config.IAppearance) => {
+    document.getElementById("status")?.classList.toggle("fn__none", next.hideStatusBar);
+    /// #if !MOBILE
+    if (!isSettingsWindow() && next.hideStatusBar !== old.hideStatusBar) adjustDockPadding();
+    if (!isSettingsWindow() && next.hideToolbar !== old.hideToolbar) syncHideToolbarLayout();
+    if (!isSettingsWindow() && (next.mode !== old.mode || next.modeOS !== old.modeOS)) updateBarModeIcon();
+    /// #endif
+};
+
 const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppearanceRefresh) => {
     if (data.lang !== window.siyuan.config.appearance.lang) {
         if (isSettingsWindow()) {
@@ -74,14 +85,24 @@ const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppear
     const changedPackages = refresh && invalidateAppearancePackages(refresh.themes || [], refresh.icons || [], refresh.revision);
     const themeChanged = changedPackages?.themes.some(name => name === getCurrentThemeName(prevAppearance) ||
         name === getCurrentThemeName(data));
-    // 阅读和控件偏好原位应用，避免整页重建期间的布局变化引起滚动抖动。
+    // 独立控件与主题包列表原位同步，只有当前外观资源发生变化才重新加载。
     // 启动初始化传入当前配置本身，需要完整加载外观资源；重复推送仍使用原位同步。
-    const appearanceKeys = Object.keys({...prevAppearance, ...data}) as Array<keyof Config.IAppearance>;
-    const inPlaceKeys = new Set(["bodyGradient", "compactMode", "menuMouseScroll", "pdfTheme",
-        "outlineKeepCurrentExpand", "mobileBars"]);
-    const inPlace = !refresh && prevAppearance !== data &&
-        appearanceKeys.every(key => inPlaceKeys.has(key) ||
-            JSON.stringify(prevAppearance[key]) === JSON.stringify(data[key]));
+    const localUpdate = prevAppearance !== data && canSyncAppearanceSettings(prevAppearance, data);
+    const assetKeys: Array<keyof Config.IAppearance> = ["mode", "modeOS", "themeVer", "themeJS", "icon", "iconVer",
+        "codeBlockThemeLight", "codeBlockThemeDark"];
+    const assetsChanged = !localUpdate || themeChanged || changedPackages?.icons.includes(data.icon) ||
+        getCurrentThemeName(prevAppearance) !== getCurrentThemeName(data) ||
+        isCurrentThemeSupported(prevAppearance, getFrontend()) !== isCurrentThemeSupported(data, getFrontend()) ||
+        assetKeys.some(key => JSON.stringify(prevAppearance[key]) !== JSON.stringify(data[key]));
+    if (!assetsChanged) {
+        window.siyuan.config.appearance = data;
+        syncAppearancePreferences();
+        applyAppearanceBars(prevAppearance, data);
+        setBodyHighlight(data.bodyGradient);
+        syncBodyGradient();
+        syncAppearanceSettings();
+        return;
+    }
     const unloadChangedTheme = themeChanged && prevAppearance.themeJS && isCurrentThemeSupported(prevAppearance, getFrontend());
     if ((unloadChangedTheme || shouldUnloadThemeScript(prevAppearance, data, getFrontend())) && !await unloadThemeScript()) {
         if (closeSettingsWindow()) return;
@@ -104,7 +125,7 @@ const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppear
             apply: () => { syncAppearancePreferences(); },
         }, {
             name: "gradient",
-            changed: () => inPlace,
+            changed: () => !assetsChanged,
             apply: () => {
                 setBodyHighlight(data.bodyGradient);
                 syncBodyGradient();
@@ -112,23 +133,21 @@ const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppear
         }, {
             name: "bars",
             changed: () => true,
-            apply: (old, next) => {
-                document.getElementById("status")?.classList.toggle("fn__none", next.hideStatusBar);
-                /// #if !MOBILE
-                if (!isSettingsWindow() && next.hideStatusBar !== old.hideStatusBar) adjustDockPadding();
-                if (!isSettingsWindow() && next.hideToolbar !== old.hideToolbar) syncHideToolbarLayout();
-                if (!isSettingsWindow()) updateBarModeIcon();
-                /// #endif
-            },
+            apply: applyAppearanceBars,
         }, {
             name: "appearance-resources",
-            changed: () => !inPlace,
+            changed: () => assetsChanged,
             apply: async (old, next) => {
                 await loadAssets(next);
                 if (JSON.stringify(next.globalFontFamilies) !== JSON.stringify(old.globalFontFamilies)) {
                     await setInlineStyle();
                     refreshHeadingNumberMeasurements();
                     refreshDynamicIcons();
+                }
+                if (localUpdate) {
+                    syncBodyGradient();
+                    syncAppearanceSettings();
+                    return;
                 }
                 /// #if !MOBILE
                 void remountOpenSettingTab("appearance");

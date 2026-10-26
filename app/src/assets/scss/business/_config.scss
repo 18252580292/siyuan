@@ -216,11 +216,90 @@
   }
 }
 
+.config-theme-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.config-theme-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+
+  [hidden] {
+    display: none;
+  }
+
+  &__controls {
+    display: flex;
+    flex: 1;
+    min-width: min(180px, 100%);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+
+    .b3-select {
+      max-width: 100%;
+      width: 100%;
+    }
+  }
+}
+
+// 色板使用自己的配色变量，始终与当前应用主题相互独立。
+.config-theme-preview {
+  display: flex;
+  width: 104px;
+  height: 68px;
+  overflow: hidden;
+  border-radius: var(--b3-border-radius-s);
+  border: 1px solid color-mix(in srgb, var(--preview-text) 20%, var(--preview-background));
+  color: var(--preview-text);
+  background: var(--preview-background);
+
+  i {
+    display: block;
+    height: 3px;
+    margin-bottom: 5px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--preview-text) 28%, transparent);
+  }
+
+  &__sidebar {
+    width: 24px;
+    padding: 14px 5px;
+    flex-shrink: 0;
+    background: var(--preview-surface);
+
+    i:first-child {
+      background: var(--preview-accent);
+    }
+  }
+
+  &__page {
+    flex: 1;
+    padding: 9px 8px;
+
+    b {
+      display: block;
+      font: 600 14px/20px sans-serif;
+    }
+
+    i:last-child {
+      width: 60%;
+    }
+  }
+}
+
 .config {
   &__tab-wrap {
     overflow: hidden;
     box-sizing: border-box;
-    background-color: var(--b3-theme-background);
+    background-color: var(--b3-chrome-config-background, var(--b3-theme-background));
     border-radius: 0 var(--b3-border-radius-b) var(--b3-border-radius-b) 0;
     width: 100%;
     height: 100%;
@@ -334,7 +413,7 @@
   &-title {
     display: block;
     margin: var(--b3-ui-config-title-margin, 24px 16px 16px 16px);
-    font-size: var(--b3-config-title-size, 15px);
+    font-size: var(--b3-chrome-config-title-size, var(--b3-config-title-size, 15px));
     font-weight: 600;
 
     &--action {
@@ -344,9 +423,9 @@
   }
 
   &-items {
-    background-color: var(--b3-config-items-background, var(--b3-theme-surface));
+    background-color: var(--b3-chrome-config-card-background, var(--b3-config-items-background, var(--b3-theme-surface)));
     border-radius: var(--b3-border-radius-b);
-    box-shadow: var(--b3-config-items-shadow, none);
+    box-shadow: var(--b3-chrome-config-card-shadow, var(--b3-config-items-shadow, none));
 
     .config-item.config-item--last-visible {
       border-bottom: 0;
@@ -442,7 +521,8 @@
 
     & > .config__side {
       user-select: none;
-      width: 280px;
+      width: var(--b3-chrome-config-sidebar-width, 280px);
+      background-color: var(--b3-chrome-navigation-background, transparent);
       display: flex;
       flex-direction: column;
       min-height: 0;

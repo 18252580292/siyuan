@@ -3,7 +3,7 @@
 
 .file-tree__quick-search {
   display: flex;
-  padding: var(--b3-sidebar-search-padding, 4px 12px 10px);
+  padding: var(--b3-chrome-sidebar-search-padding, var(--b3-sidebar-search-padding, 4px 12px 10px));
   flex-shrink: 0;
 }
 
@@ -29,7 +29,7 @@
     content: "";
     flex: 1;
     height: 1px;
-    background-color: var(--b3-sidebar-section-rule, var(--b3-border-color));
+    background-color: var(--b3-chrome-sidebar-section-rule, var(--b3-sidebar-section-rule, var(--b3-border-color)));
   }
 }
 
@@ -86,7 +86,7 @@
 
     &--focus {
       background-color: var(--b3-list-selected-background, var(--b3-list-hover));
-      box-shadow: var(--b3-list-selected-shadow, none);
+      box-shadow: var(--b3-chrome-selected-shadow, var(--b3-list-selected-shadow, none));
 
       > .b3-list-item__text {
         font-weight: var(--b3-list-selected-font-weight, inherit);

@@ -25,6 +25,7 @@ import {registerSecretsVariablesTab} from "../tabs/secretsVariablesTab";
 import {registerExportTab} from "../tabs/exportTab";
 import {registerSearchTab} from "../tabs/searchTab";
 import {registerAppearanceTab} from "../tabs/appearanceTab";
+import {mountAppearanceSettings} from "../tabs/appearanceSettings";
 import {registerSyncTab} from "../tabs/syncTab";
 import {registerAccessTab} from "../tabs/accessTab";
 import {registerAppTab} from "../tabs/appTab";
@@ -52,6 +53,7 @@ const createSettingTabs = () => {
             icon: "iconTheme",
             title: () => window.siyuan.languages.appearance,
             defaultSave: appearanceConfigApi.patch,
+            afterMount: mountAppearanceSettings,
         }, registerAppearanceTab),
         bazaar: setting.panel({
             id: "bazaar",

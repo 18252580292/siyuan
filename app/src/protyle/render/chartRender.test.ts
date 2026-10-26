@@ -28,20 +28,25 @@ const browserCases = async (sources: Record<string, string>, libraries: Record<s
     Object.assign(window, {Lute: {UnEscapeHTMLStr: unescape}});
     let loading: Promise<void> = Promise.resolve();
     let parsing: Promise<void> = Promise.resolve();
+    let glLoads = 0;
+    let parseCalls = 0;
+    const chartOptions = new Function("exports", sources.option + "; return exports;")({});
     const chartAPI = {} as typeof import("./chartRender");
     const chartDependencies: Record<string, unknown> = {
-        "../util/addScript": {addScript: () => loading},
+        "../util/addScript": {addScript: () => { glLoads++; return loading; }},
+        "./chartOption": chartOptions,
         "../util/echarts": {loadECharts: () => loading},
         "./foldedContent": {isFoldedRenderContent: () => false},
         "../../constants": {Constants: {PROTYLE_CDN: "", ZWSP: "\u200b"}},
         "../util/hasClosest": {hasClosestByClassName: (element: Element) => element.closest(".protyle-wysiwyg")},
-        "../../util/functions": {looseJsonParse: async (text: string) => { await parsing; return JSON.parse(text); }},
+        "../../util/functions": {looseJsonParse: async (text: string) => { parseCalls++; await parsing; return JSON.parse(text); }},
         "./util": {genIconHTML: () => '<div class="protyle-icons"></div>'},
         "../../util/hostCapabilities": {getHostCapabilities: () => ({remoteKernel: false})},
         "../../util/escape": {escapeHtml: (text: string) => text},
     };
     new Function("exports", "require", sources.chart)(chartAPI, (name: string) => chartDependencies[name]);
     const option = {
+        graphic: undefined as object[] | undefined,
         animation: true, animationDuration: 60000, animationDelay: 60000,
         title: {text: "Chart"},
         xAxis: {type: "category", boundaryGap: false, data: Array.from({length: 31}, (_, i) => `${i}`)},
@@ -66,6 +71,8 @@ const browserCases = async (sources: Record<string, string>, libraries: Record<s
     await tick(30);
     const sourceChart = echarts.getInstanceByDom(sourceBlock.querySelector("[_echarts_instance_]"));
     check.ok(sourceChart);
+    check.equal(glLoads, 0, "ordinary 2D JSON charts do not request the GL extension");
+    check.equal(parseCalls, 0, "ordinary 2D JSON charts reuse the validated JSON option");
     check.equal(sourceChart.getOption().animation, true, "editor animation remains enabled");
     check.equal(sourceChart.getOption().series[0].animationDuration, 60000);
     const sourceWidth = sourceChart.getWidth();
@@ -95,6 +102,10 @@ const browserCases = async (sources: Record<string, string>, libraries: Record<s
     check.equal(sourceChart.getWidth(), host.clientWidth, "showing the tab needs no corrective resize");
     echarts.dispose(sourceChart);
     host.remove();
+
+    // 自定义图形保留完整加载与异步解析流程，导出仍须等待解析结束。
+    option.graphic = [];
+    sourceBlock.dataset.content = JSON.stringify(option);
 
     let content = "";
     let mobile = false;
@@ -221,6 +232,8 @@ const browserCases = async (sources: Record<string, string>, libraries: Record<s
             }
         }
     }
+    check.ok(glLoads > 0, "complex configurations retain the extension loading path");
+    check.ok(parseCalls > 0, "complex configurations retain the asynchronous parser");
     return "Chart theme and PNG regression cases passed";
 };
 
@@ -228,7 +241,7 @@ test("hidden chart themes and static PNG exports retain complete charts on deskt
     skip: process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY,
     timeout: 45000,
 }, async () => {
-    const sources = Object.fromEntries(Object.entries({chart: "chartRender.ts", export: "../export/util.ts",
+    const sources = Object.fromEntries(Object.entries({chart: "chartRender.ts", option: "chartOption.ts", export: "../export/util.ts",
         layout: "../export/imageLayout.ts", fonts: "../export/imageFonts.ts"}).map(([name, file]) => [name,
         transpileModule(readFileSync(path.resolve(__dirname, file), "utf8"), {
             compilerOptions: {target: ScriptTarget.ES2021, module: ModuleKind.CommonJS},
@@ -239,7 +252,12 @@ test("hidden chart themes and static PNG exports retain complete charts on deskt
     const temporary = mkdtempSync(path.join(tmpdir(), "siyuan-chart-render-"));
     const script = path.join(temporary, "run.cjs");
     writeFileSync(script, `const {app, BrowserWindow} = require("electron");
-app.setPath("userData", ${JSON.stringify(path.join(temporary, "profile"))});
+for (const key of ["home", "appData", "userData"]) {
+    const directory = require("node:path").join(${JSON.stringify(temporary)}, key);
+    require("node:fs").mkdirSync(directory, {recursive:true});
+    app.setPath(key, directory);
+}
+app.setAsDefaultProtocolClient = () => false;
 app.commandLine.appendSwitch("disable-gpu");
 app.whenReady().then(async () => {
     const win = new BrowserWindow({show:false,width:850,height:650,

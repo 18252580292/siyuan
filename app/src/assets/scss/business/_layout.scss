@@ -3,8 +3,8 @@
 
   &__wnd--active .layout-tab-bar .item--focus {
     color: var(--b3-tab-active-color, var(--b3-theme-on-background));
-    background-color: var(--b3-tab-active-background, var(--b3-theme-primary-lightest));
-    box-shadow: var(--b3-tab-active-accent, 0 0 transparent), var(--b3-tab-active-shadow, 0 0 0 1px var(--b3-theme-primary-lighter) inset);
+    background-color: var(--b3-chrome-tab-active-background, var(--b3-tab-active-background, var(--b3-theme-primary-lightest)));
+    box-shadow: var(--b3-chrome-tab-active-shadow, var(--b3-tab-active-accent, 0 0 transparent)), var(--b3-chrome-tab-surface-shadow, var(--b3-tab-active-shadow, 0 0 0 1px var(--b3-theme-primary-lighter) inset));
     font-weight: var(--b3-tab-active-weight, normal);
   }
 
@@ -14,8 +14,8 @@
 
   &__center {
     min-width: 148px;
-    border-radius: var(--b3-border-radius-b);
-    box-shadow: var(--b3-editor-shadow, none);
+    border-radius: var(--b3-chrome-panel-radius, var(--b3-border-radius-b));
+    box-shadow: var(--b3-chrome-panel-shadow, var(--b3-editor-shadow, none));
 
     .layout-tab-container {
       background-color: var(--b3-theme-background);
@@ -29,7 +29,7 @@
   &__dockr,
   &__dockb {
     flex-shrink: 0;
-    background-color: var(--b3-dock-background, var(--b3-theme-background));
+    background-color: var(--b3-chrome-navigation-background, var(--b3-dock-background, var(--b3-theme-background)));
     border-radius: var(--b3-border-radius-b);
     overflow: hidden;
   }
@@ -315,7 +315,7 @@
       position: relative;
       background-color: var(--b3-tab-bar-background, var(--b3-theme-background));
       border-bottom: var(--b3-tab-bar-border-width, 1px) solid var(--b3-tab-bar-border, var(--b3-theme-background-light));
-      padding: var(--b3-tab-bar-padding, 0 4px);
+      padding: var(--b3-chrome-tab-bar-padding, var(--b3-tab-bar-padding, 0 4px));
 
       &::-webkit-scrollbar {
         display: none;
@@ -335,17 +335,17 @@
         display: flex;
         align-items: center;
         transition: var(--b3-transition);
-        min-height: var(--b3-tab-height, var(--b3-ui-tab-min-height, 29px));
+        min-height: var(--b3-chrome-tab-height, var(--b3-tab-height, var(--b3-ui-tab-min-height, 29px)));
         position: relative;
         max-width: var(--b3-tab-max-width, 186px);
         flex-shrink: 0;
         overflow: hidden;
         color: var(--b3-theme-on-surface);
-        margin: var(--b3-tab-margin, var(--b3-ui-tab-margin, 6px 4px));
-        border-radius: var(--b3-border-radius);
+        margin: var(--b3-chrome-tab-margin, var(--b3-tab-margin, var(--b3-ui-tab-margin, 6px 4px)));
+        border-radius: var(--b3-chrome-tab-radius, var(--b3-border-radius));
 
         &:not(:last-child)::after {
-          content: var(--b3-tab-separator-content, none);
+          content: var(--b3-chrome-tab-separator-content, var(--b3-tab-separator-content, none));
           position: absolute;
           inset-inline-end: 0;
           top: calc(50% - 8px);
@@ -591,8 +591,9 @@
     }
 
     &--activefocus {
-      color: var(--b3-theme-on-primary);
-      background-color: var(--b3-theme-primary);
+      color: var(--b3-chrome-dock-active-color, var(--b3-theme-on-primary));
+      background-color: var(--b3-chrome-dock-active-background, var(--b3-theme-primary));
+      box-shadow: var(--b3-chrome-selected-shadow, none);
     }
   }
 }

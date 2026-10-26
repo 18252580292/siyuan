@@ -24,11 +24,11 @@ import {Menu} from "../../plugin/Menu";
 import {escapeAttr, escapeHtml} from "../../util/escape";
 import {genListSwitchItemHtml} from "../render/fragments";
 import {genStackHtml} from "../render/render";
-import {controlBoolean} from "../setting/control";
+import {controlBoolean, controlSelect} from "../setting/control";
 import {editorConfigApi} from "./editorRuntime";
 import {appearanceConfigApi, appearanceThemeModeValue, saveThemeMode} from "./appearanceRuntime";
 import {upDownHint} from "../../util/upDownHint";
-import {isThemeFrontendSupported} from "../../util/themeCompatibility";
+import {genThemePickerHTML, getAppearanceThemeChoices, mountThemePickers} from "./themePicker";
 import {setEditorFontSize} from "../../util/editorFontSize";
 import {
     invalidateCustomFonts,
@@ -822,7 +822,7 @@ const registerAppearanceInterfaceGroup = (tab: SettingTabBuilder) => {
     });
     /// #endif
     if (getHostCapabilities().customAppearance) {
-        group.stack({
+        group.composite({
             key: "theme",
             keywords: [
                 window.siyuan.languages.theme,
@@ -830,40 +830,20 @@ const registerAppearanceInterfaceGroup = (tab: SettingTabBuilder) => {
                 window.siyuan.languages.theme12,
                 window.siyuan.languages.appearance9,
             ],
+            html: () => genThemePickerHTML(getHostCapabilities().localFileSystem),
+            controls: (["light", "dark"] as const).map(mode => ({
+                control: controlSelect("appearance.theme" + (mode === "light" ? "Light" : "Dark"), {
+                    options: getAppearanceThemeChoices(mode).map(item => ({value: item.name, label: item.label})),
+                }),
+            })),
             afterMount: (root) => {
+                mountThemePickers(root);
                 /// #if !BROWSER
                 root.querySelector("#appearanceOpenTheme")?.addEventListener("click", () => {
                     useShell("openPath", path.join(window.siyuan.config.system.dataDir, "themes"));
                 });
                 /// #endif
             },
-        }, (stack) => {
-            stack.title(window.siyuan.languages.theme);
-            /// #if !BROWSER
-            if (getHostCapabilities().localFileSystem) {
-                stack.button({
-                    id: "appearanceOpenTheme",
-                    label: window.siyuan.languages.appearance9,
-                    icon: "iconFolder",
-                });
-            }
-            /// #endif
-            stack.select("appearance.themeLight", {
-                desc: window.siyuan.languages.theme11,
-                options: window.siyuan.config.appearance.lightThemes.filter((item) =>
-                    isThemeFrontendSupported(item.frontends, getFrontend())).map((item) => ({
-                    value: item.name,
-                    label: item.label,
-                })),
-            });
-            stack.select("appearance.themeDark", {
-                desc: window.siyuan.languages.theme12,
-                options: window.siyuan.config.appearance.darkThemes.filter((item) =>
-                    isThemeFrontendSupported(item.frontends, getFrontend())).map((item) => ({
-                    value: item.name,
-                    label: item.label,
-                })),
-            });
         });
         group.stack({
             key: "icon",
