@@ -1,6 +1,7 @@
 import {onWindowWorkspaceStorageChanged} from "./workspace";
 import {closeNotebookHistoryDialogs} from "../history/notebookDialogs";
 import {invalidateHomeRecentDocs} from "../layout/home";
+import {clearDocumentCreationPlans} from "../util/configuredDocument";
 import {closeNotebookLivePhotos} from "../protyle/preview/livePhoto";
 import {Constants} from "../constants";
 import {refreshSettingConfig} from "../config/setting/sync";
@@ -24,6 +25,7 @@ import {
     transactionError
 } from "../dialog/processSystem";
 import {progressLoading} from "../dialog/progress";
+import {syncCheckoutProgress} from "../sync/checkoutProgress";
 import {initMessage} from "../dialog/message";
 import {getAllTabs} from "../layout/getAll";
 import {getLocalStorage} from "../protyle/util/compatibility";
@@ -128,6 +130,9 @@ class App {
                             case "setServerAddrs":
                                 updateServerAddresses(data.data);
                                 break;
+                            case "syncProgress":
+                                syncCheckoutProgress(data);
+                                break;
                             case "progress":
                                 progressLoading(data);
                                 break;
@@ -173,6 +178,7 @@ class App {
                             case "removeBox":
                                 invalidateHomeRecentDocs(data.data.box);
                                 closeNotebookHistoryDialogs(data.data.box);
+                                clearDocumentCreationPlans(data.data.box);
                                 closeNotebookLivePhotos(data.data.box);
                                 removeBlockPanelEditors({notebookId: data.data.box});
                                 getAllTabs().forEach((tab) => {

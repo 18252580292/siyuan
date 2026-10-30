@@ -22,6 +22,7 @@ import {remountOpenSettingTab} from "../setting/mount";
 import {createConfigNamespaceApi} from "../util/namespaceApi";
 import {createSectionRuntime} from "../util/sectionRuntime";
 import {syncBodyGradient} from "./bodyGradient";
+import {syncLockScreenWallpaper} from "./lockScreenWallpaper";
 import {refreshDynamicIcons} from "../../emoji/dynamicIcon";
 import {closeSettingsWindow, isSettingsWindow} from "../setting/windowContext";
 import {syncAppearancePreferences} from "./appearancePreferences";
@@ -97,6 +98,7 @@ const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppear
     if (!assetsChanged) {
         window.siyuan.config.appearance = data;
         syncAppearancePreferences();
+        if (JSON.stringify(prevAppearance.lockScreenWallpaper) !== JSON.stringify(data.lockScreenWallpaper)) syncLockScreenWallpaper();
         applyAppearanceBars(prevAppearance, data);
         setBodyHighlight(data.bodyGradient);
         syncBodyGradient();
@@ -123,6 +125,10 @@ const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppear
             name: "preferences",
             changed: () => true,
             apply: () => { syncAppearancePreferences(); },
+        }, {
+            name: "lock-screen-wallpaper",
+            changed: (old, next) => old.lockScreenWallpaper !== next.lockScreenWallpaper,
+            apply: () => { syncLockScreenWallpaper(); },
         }, {
             name: "gradient",
             changed: () => !assetsChanged,

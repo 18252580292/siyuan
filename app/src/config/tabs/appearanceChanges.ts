@@ -1,5 +1,5 @@
 const localKeys = new Set([
-    "compactMode", "menuMouseScroll", "pdfTheme", "outlineKeepCurrentExpand", "mobileBars",
+    "lockScreenWallpaper", "compactMode", "menuMouseScroll", "pdfTheme", "outlineKeepCurrentExpand", "mobileBars",
     "bodyGradient", "mode", "modeOS", "themeLight", "themeDark", "themeVer", "themeJS", "lightThemes", "darkThemes",
     "icon", "iconVer", "icons", "codeBlockThemeLight", "codeBlockThemeDark", "hideToolbar", "hideStatusBar", "closeButtonBehavior",
 ]);

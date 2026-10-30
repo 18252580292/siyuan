@@ -51,8 +51,11 @@ const createPanel = (query: string) => {
     ["#searchAssetInput", "#searchAssetList", "#searchAssetResult", "#searchAssetPreview", ".search__drag",
         '[data-type="assetPrevious"]', '[data-type="assetNext"]'].forEach(selector => nodes.set(selector, node()));
     const loading = node();
+    const attributes = new Map<string, string>();
     const element = {
         isConnected: true,
+        setAttribute: (name: string, value: string) => attributes.set(name, value),
+        getAttribute: (name: string) => attributes.get(name) ?? null,
         classList: {remove() {}},
         parentElement: {querySelector: () => loading},
         querySelector: (selector: string) => nodes.get(selector),
@@ -103,6 +106,7 @@ test("independent asset search panels do not cancel each other's debounce", asyn
     const first = createPanel("first");
     const second = createPanel("second");
     search.exports.assetInputEvent(first.element, options);
+    assert.equal(first.element.getAttribute("data-asset-search"), "true");
     search.exports.assetInputEvent(second.element, options);
     await flush();
     assert.deepEqual(search.requests.map(request => request.data.query), ["first", "second"]);

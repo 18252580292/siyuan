@@ -15,6 +15,7 @@ import {invalidateFocusFoldRequests} from "./focusFold";
 import {unregisterViewFoldContext} from "./viewFold";
 import {destroyAutoDirection} from "../render/autoDirection";
 import {destroyScrollEvent} from "../scroll/event";
+import {disposeSyncEditorSave} from "./editorSave";
 
 export const destroy = (protyle: IProtyle) => {
     if (!protyle) {
@@ -23,8 +24,11 @@ export const destroy = (protyle: IProtyle) => {
     if (protyle.contentElement) {
         destroyScrollEvent(protyle.contentElement);
     }
+    protyle.title?.cancelPendingInput();
+    disposeSyncEditorSave(protyle);
     destroyFoldedRender(protyle);
     destroyListMindmaps(protyle);
+    protyle.breadcrumb?.destroy();
     cancelLegacyMindmapMigration(protyle);
     invalidateFocusFoldRequests(protyle);
     unregisterViewFoldContext(protyle);

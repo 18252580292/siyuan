@@ -197,6 +197,10 @@ export const openSearchAsset = (element: HTMLElement, isStick: boolean) => {
     /// #endif
 };
 
+export const refreshAssetContentSearch = () => {
+    document.querySelectorAll("[data-asset-search]").forEach(element => assetInputEvent(element));
+};
+
 export const cancelAssetSearch = (element: Element | null) => {
     if (!element) {
         return;
@@ -211,6 +215,7 @@ export const cancelAssetSearch = (element: Element | null) => {
 };
 
 export const assetInputEvent = (element: Element, localSearch?: ISearchAssetOption, page = 1) => {
+    element.setAttribute("data-asset-search", "true");
     pausedAssetPanels.delete(element);
     const previewElement = element.querySelector("#searchAssetPreview");
     cancelSearchRequest(previewElement);
@@ -255,7 +260,7 @@ export const assetInputEvent = (element: Element, localSearch?: ISearchAssetOpti
             return {
                 method: 0,
                 version,
-                abortWhenSuperseded: true,
+                abortable: true,
                 run(signal, isCurrent) {
                     return fetchPost("/api/search/fullTextSearchAssetContent", request, (response) => {
                         if (!isCurrent()) {
@@ -303,7 +308,7 @@ export const renderPreview = (element: Element, id: string, query: string, query
             return {
                 method: 0,
                 version,
-                abortWhenSuperseded: true,
+                abortable: true,
                 run(signal, isCurrent) {
                     return fetchPost("/api/search/getAssetContent", {id, query, queryMethod}, (response) => {
                         if (!isCurrent()) {
@@ -539,12 +544,7 @@ export const assetMoreMenu = (target: Element, element: Element, cb: () => void)
                 iconHTML: "",
                 label: window.siyuan.languages.rebuildAssetContentIndex,
                 click() {
-                    const loadingElement = element.parentElement.querySelector(".fn__loading") as HTMLElement;
-                    loadingElement.classList.remove("fn__none");
-                    loadingElement.style.top = "84px";
-                    fetchPost("/api/asset/fullReindexAssetContent", {}, () => {
-                        assetInputEvent(element, localData);
-                    });
+                    fetchPost("/api/asset/fullReindexAssetContent", {});
                 },
             }).element);
             /// #if MOBILE
