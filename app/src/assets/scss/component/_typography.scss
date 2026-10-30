@@ -423,7 +423,7 @@
 
     td,
     th {
-      padding: 4px 8px;
+      padding: var(--b3-reading-table-cell-padding, 4px 8px);
       border: 0;
       border-right: 1px solid var(--b3-protyle-table-border, var(--b3-theme-surface-lighter));
       border-bottom: 1px solid var(--b3-protyle-table-border, var(--b3-theme-surface-lighter));
@@ -462,7 +462,7 @@
 
   [data-type="NodeTable"]:not([custom-sy-table-header-row="false"]) thead th,
   [data-type="NodeTable"]:not([custom-sy-table-header-row="false"]) thead td {
-    background-color: var(--b3-table-even-background);
+    background-color: var(--b3-reading-table-header-background, var(--b3-table-even-background));
   }
 
   [data-type="NodeTable"][custom-sy-table-header-column="true"] tr > th:first-child,

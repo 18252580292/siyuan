@@ -25,16 +25,19 @@ export const getHomeHTML = () => {
     ];
     return `<div class="layout__empty layout__empty--home">
     <div class="layout__home">
+        <div class="layout__home-hero">
         <div class="layout__home-header">
-            <span class="layout__home-brand">${escapeHtml(languages.siyuanNote)}</span>
+            <span class="layout__home-brand"><svg aria-hidden="true"><use xlink:href="#iconSiYuan"></use></svg>${escapeHtml(languages.siyuanNote)}</span>
             <h1>${languages.workspace}</h1>
         </div>
         <div class="layout__home-actions">${actions.slice(0, 3).filter(action => !action.writable || !window.siyuan.config.readonly).map(action =>
-        `<button type="button" id="${action.id}" class="b3-button b3-button--comfortable${action.id === "editorEmptyFile" ? "" : " b3-button--outline"}">
+        `<button type="button" id="${action.id}" class="b3-button b3-button--tile">
             <svg><use xlink:href="#${action.icon}"></use></svg>
             <span>${action.title}</span>
-            <span class="b3-button__shortcut">${action.id === "editorEmptyFile" ? "" : updateHotkeyTip(action.key || "")}</span>
+            <span class="b3-button__shortcut">${updateHotkeyTip(action.key || "")}</span>
         </button>`).join("")}</div>
+        </div>
+        <div class="layout__home-body">
         <section class="layout__home-recent">
             <div class="layout__home-section-header"><h2>${languages.recentViewed}</h2>
                 <button type="button" class="block__icon block__icon--show" data-home-refresh aria-label="${languages.refresh}"><svg><use xlink:href="#iconRefresh"></use></svg></button>
@@ -46,6 +49,7 @@ export const getHomeHTML = () => {
         `<button type="button" id="${action.id}" class="b3-button b3-button--cancel b3-button--comfortable">
             <svg><use xlink:href="#${action.icon}"></use></svg><span>${action.title}</span>
         </button>`).join("")}</div>
+        </div>
     </div>
 </div>`;
 };
