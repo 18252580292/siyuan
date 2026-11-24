@@ -142,9 +142,16 @@ const browserCases = async (sources: Record<string, string>, libraries: Record<s
             this.element.remove();
         }
     }
+    const suspendedColumns = new Set<HTMLElement>();
     const dependencies: Record<string, unknown> = {
         "./imageLayout": layout, "./imageFonts": fonts,
-        "../../dialog": {Dialog: ExportDialog},
+        "../render/av/columnWindow": {suspendAVColumnWindows: (element: HTMLElement) => {
+            check.equal(element, dialog.element.querySelector(".protyle-wysiwyg"));
+            check.equal(suspendedColumns.has(element), false);
+            suspendedColumns.add(element);
+            return () => check.equal(suspendedColumns.delete(element), true);
+        }},
+        "../../dialog/adaptiveDialog": {AdaptiveDialog: ExportDialog},
         "../../dialog/message": {showMessage: (text: string) => messages.push(text), hideMessage: () => {}},
         "../../util/fetch": {fetchPost: (url: string, data: {file: File}, callback: (response: unknown) => void) => {
             if (url === "/api/export/exportPreviewHTML") {
@@ -164,7 +171,7 @@ const browserCases = async (sources: Record<string, string>, libraries: Record<s
         "../render/highlightRender": {highlightRender: () => {}},
         "../render/chartRender": chartAPI,
         "../util/processCode": {processRender: chartAPI.chartRender},
-        "../util/compatibility": {isIPhone: () => mobile && modern, isIPad: () => false, isSafari: () => modern,
+        "../util/compatibility": {isMac: () => false, isIPhone: () => mobile && modern, isIPad: () => false, isSafari: () => modern,
             isInAndroid: () => false, setStorageVal: () => {}, saveExportFile: async () => {}},
         "../../util/hostCapabilities": {getHostCapabilities: () => ({documentImportExport: true}), sanitizeKernelHTML: (text: string) => text},
         "../../menus/util": {writePNGBlob: async (blob: Blob) => remember(blob)},
@@ -227,6 +234,7 @@ const browserCases = async (sources: Record<string, string>, libraries: Record<s
                     (dialog.element.querySelector('[data-type="export"]') as HTMLButtonElement).click();
                 }
                 await waitFor(() => !!captured);
+                check.equal(suspendedColumns.size, 0, "capture restores column virtualization");
                 await verifyPNG();
                 await waitFor(() => !dialog.element.isConnected);
             }
@@ -238,7 +246,7 @@ const browserCases = async (sources: Record<string, string>, libraries: Record<s
 };
 
 test("hidden chart themes and static PNG exports retain complete charts on desktop and mobile", {
-    skip: process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY,
+    skip: process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && !process.env.SIYUAN_ELECTRON_HEADLESS,
     timeout: 45000,
 }, async () => {
     const sources = Object.fromEntries(Object.entries({chart: "chartRender.ts", option: "chartOption.ts", export: "../export/util.ts",
@@ -274,7 +282,9 @@ app.whenReady().then(async () => {
     const env = {...process.env};
     delete env.ELECTRON_RUN_AS_NODE;
     try {
-        const result = await promisify(execFile)(require("electron") as unknown as string, [script], {
+        const args = process.env.SIYUAN_ELECTRON_HEADLESS ?
+            ["--ozone-platform=headless", "--ozone-override-screen-size=1920,1080", script] : [script];
+        const result = await promisify(execFile)(require("electron") as unknown as string, args, {
             env, timeout: 40000, windowsHide: true,
         });
         assert.match(result.stdout, /Chart theme and PNG regression cases passed/, result.stderr);

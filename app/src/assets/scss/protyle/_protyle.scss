@@ -4,6 +4,49 @@
 @use "attr" as *;
 @use "mindmap-view" as *;
 @use "block-resize" as *;
+@use "inline";
+
+.protyle-keyboard-guard {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.b3-typography.outline-document-title,
+.b3-typography.document-title-preview {
+  display: block;
+  font-family: inherit;
+  @include inline.interactive-marks;
+
+  img {
+    max-height: 1.5em;
+    width: auto;
+    vertical-align: middle;
+  }
+}
+
+.b3-list-item__text.document-title-preview,
+.item__text.document-title-preview,
+.b3-menu__label.document-title-preview,
+.mobile-tabs__item-title.document-title-preview {
+  max-height: 1.625em;
+  overflow: hidden;
+  white-space: nowrap;
+  line-height: 1.625;
+}
+
+.b3-typography.document-title-preview,
+.mobile-document-title-editor .protyle-title__input,
+.document-title-dialog .protyle-title__input {
+  code:not(.hljs),
+  span[data-type~="code"] {
+    white-space: inherit;
+  }
+}
 
 .protyle-lite-fragment .protyle-action__menu {
   display: none;
@@ -44,9 +87,9 @@
 
   &__page {
     position: absolute;
-    left: 50%;
+    left: -8px;
     bottom: 12%;
-    transform: translateX(-50%);
+    transform: translateX(-100%);
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -323,6 +366,15 @@
     margin-left: 0;
   }
 
+  > .protyle-breadcrumb__bar {
+    flex: 1;
+    min-width: 0;
+
+    + .protyle-breadcrumb__space {
+      flex: 0 0 8px;
+    }
+  }
+
   &__space {
     min-width: 8px;
     transition: var(--b3-transition);
@@ -333,7 +385,8 @@
     flex: 1;
   }
 
-  &__plugin {
+  &__plugin,
+  &__actions {
     display: flex;
     align-items: center;
     flex: 0 1 auto;
@@ -346,8 +399,12 @@
       display: none;
     }
 
-    &:not(:empty) + .protyle-breadcrumb__icon {
+    > .protyle-breadcrumb__icon:not(:first-child) {
       margin-left: 8px;
+    }
+
+    > [data-entry-hidden="true"] {
+      display: none;
     }
   }
 
@@ -432,10 +489,26 @@
   }
 
   &__text {
-    margin-left: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+
+    &:not(:first-child) {
+      margin-left: 4px;
+    }
+  }
+
+  &__graphic {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    font-variant-emoji: emoji;
+    font-size: 16px;
+    line-height: 16px;
+    object-fit: contain;
   }
 
   &__item {
@@ -515,7 +588,7 @@
 
   > .protyle-wysiwyg,
   > .sy__backlink--bottom {
-    padding-left: var(--b3-protyle-padding-left);
+    padding-left: max(var(--b3-protyle-padding-left), var(--b3-protyle-min-padding-left, 0px));
     padding-right: max(var(--b3-protyle-padding-right), var(--b3-protyle-page-scroll-gutter, 0px));
   }
 
@@ -523,7 +596,7 @@
     .protyle-title,
     .protyle-background__ia,
     .protyle-db-attr {
-      margin-left: var(--b3-protyle-padding-left);
+      margin-left: max(var(--b3-protyle-padding-left), var(--b3-protyle-min-padding-left, 0px));
       margin-right: max(var(--b3-protyle-padding-right), var(--b3-protyle-page-scroll-gutter, 0px));
     }
   }
@@ -532,7 +605,7 @@
 .protyle-preview[data-padding-mode="responsive"][data-device="desktop"] > .b3-typography {
   --b3-protyle-padding-left: 24px;
   --b3-protyle-padding-right: 16px;
-  padding-left: var(--b3-protyle-padding-left);
+  padding-left: max(var(--b3-protyle-padding-left), var(--b3-protyle-min-padding-left, 0px));
   padding-right: var(--b3-protyle-padding-right);
 }
 
@@ -913,7 +986,6 @@
   position: relative;
   font-size: var(--b3-font-size-editor);
   font-family: var(--b3-font-family-protyle);
-  padding-left: 2px;
   border-radius: var(--b3-border-radius);
   padding-bottom: var(--b3-protyle-title-bottom-space, 0);
   border-bottom: var(--b3-protyle-title-divider, none);
@@ -924,6 +996,11 @@
 
   &[custom-riff-decks] {
     box-shadow: 2px 0 0 0 var(--b3-protyle-inline-mark-background) inset;
+  }
+
+  > .protyle-title__rich {
+    // 富文本编辑器不能遮住外层标题的制卡标记和动画。
+    background-color: transparent;
   }
 
   &__icon {
@@ -974,6 +1051,99 @@
   }
 }
 
+.protyle-title__rich {
+  // 标题按内容撑高，不继承完整编辑器为滚动条预留的最小高度。
+  min-height: 0;
+
+  .protyle-content {
+    overflow: visible;
+
+    &[data-padding-mode="responsive"] > .protyle-wysiwyg {
+      // 外层标题已跟随正文边距，内部片段不能再次叠加响应式留白。
+      padding-left: 0;
+      padding-right: 0;
+    }
+  }
+
+  .protyle-wysiwyg {
+    padding: 0;
+    min-height: 0;
+  }
+
+  .protyle-wysiwyg > [data-type="NodeParagraph"] {
+    margin: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .protyle-wysiwyg > [data-type="NodeParagraph"] > .protyle-title__input {
+    min-height: 1.625em;
+    padding: 0;
+  }
+
+  .img {
+    max-width: 100%;
+  }
+}
+
+.document-title-dialog {
+  min-height: 0;
+  max-height: min(60vh, 640px);
+  overflow: auto;
+  padding: 16px 24px;
+  background-color: transparent;
+
+  > .protyle-content,
+  > .protyle-preview {
+    display: none;
+  }
+}
+
+.document-title-dialog__editor {
+  min-height: 0;
+  overflow: auto;
+  font-size: var(--b3-font-size);
+
+  .protyle-title__rich {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .protyle-wysiwyg {
+    font-size: inherit;
+    font-family: inherit;
+
+    > [data-type="NodeParagraph"] {
+      padding: 0;
+    }
+  }
+
+  .protyle-title__input {
+    font-size: inherit;
+    font-weight: inherit;
+    padding: 0;
+    white-space: nowrap;
+  }
+
+  img {
+    max-height: 1.5em;
+    width: auto;
+  }
+
+  .protyle-attr {
+    display: none;
+  }
+}
+
+.document-title-conflict__preview {
+  max-height: 30vh;
+  overflow: auto;
+
+  .protyle-attr {
+    display: none;
+  }
+}
+
 .protyle-password {
   text-align: center !important;
 
@@ -997,6 +1167,8 @@
   // 跟随单元格的可用宽度，保证预览与编辑使用相同的折行边界。
   width: auto;
   max-width: 100%;
+  // 字形的绘制范围可以超出文字排版宽度，允许笔画伸入单元格留白。
+  overflow: visible;
 }
 
 .table__cell-rich .code-block,
@@ -1021,6 +1193,10 @@
 
   .protyle-action {
     pointer-events: none;
+  }
+
+  .protyle-wysiwyg[data-readonly="false"] & .protyle-action--task {
+    pointer-events: auto;
   }
 
   .protyle-icons,
@@ -1055,6 +1231,7 @@
   .protyle-wysiwyg {
     padding: 0 !important;
     min-height: 1.6em;
+    overflow: visible;
     // 继承单元格字号，保持预览与编辑时的文字大小一致。
     font-size: inherit;
   }
@@ -1222,10 +1399,6 @@ table + .protyle-action__table {
     z-index: 2;
     touch-action: none;
 
-    &:hover::after {
-      background-color: var(--b3-theme-primary-light);
-    }
-
     &::after {
       top: 0;
       width: 2px;
@@ -1253,12 +1426,11 @@ table + .protyle-action__table {
     z-index: 2;
     width: var(--b3-table-frame-width);
     height: var(--b3-table-frame-height);
-    background-image: radial-gradient(circle var(--b3-table-frame-radius) at bottom right, transparent calc(100% - 1px), var(--b3-theme-surface-lighter) calc(100% - .5px), var(--b3-parent-background) 100%),
-      radial-gradient(circle var(--b3-table-frame-radius) at bottom left, transparent calc(100% - 1px), var(--b3-theme-surface-lighter) calc(100% - .5px), var(--b3-parent-background) 100%),
-      radial-gradient(circle var(--b3-table-frame-radius) at top right, transparent calc(100% - 1px), var(--b3-theme-surface-lighter) calc(100% - .5px), var(--b3-parent-background) 100%),
+    clip-path: var(--b3-table-frame-clip);
+    background-image: radial-gradient(circle var(--b3-table-frame-radius) at top right, transparent calc(100% - 1px), var(--b3-theme-surface-lighter) calc(100% - .5px), var(--b3-parent-background) 100%),
       radial-gradient(circle var(--b3-table-frame-radius) at top left, transparent calc(100% - 1px), var(--b3-theme-surface-lighter) calc(100% - .5px), var(--b3-parent-background) 100%);
     background-repeat: no-repeat;
-    background-position: top left, top right, bottom left, bottom right;
+    background-position: bottom left, bottom right;
     background-size: var(--b3-table-frame-radius) var(--b3-table-frame-radius);
     content: "";
     pointer-events: none;
@@ -1427,11 +1599,11 @@ table + .protyle-action__table {
     }
 
     &--row {
-      cursor: row-resize;
+      cursor: ns-resize;
     }
 
     &--column {
-      cursor: col-resize;
+      cursor: ew-resize;
     }
 
     &--both {
@@ -1486,9 +1658,7 @@ table + .protyle-action__table {
     touch-action: none;
 
     &::before {
-      width: 100%;
-      height: 2px;
-      background-color: var(--b3-theme-primary);
+      display: none;
     }
   }
 

@@ -26,7 +26,7 @@ const createEnvironment = ({browser = false, mobile = false, remote = true} = {}
         "constants": {Constants: {SIYUAN_GET: "siyuan-get", HELP_PATH: {}}},
         "menus/Menu": {MenuItem: class {constructor(options) {this.element = options;}}},
         "dialog/message": {showMessage: (...args) => {messages.push(args); return "message";}, hideMessage: id => hidden.push(id)},
-        "dialog/confirmDialog": {confirmDialog: (_title, _text, callback) => callback()},
+        "dialog/confirmDialog": {confirmDialog: ({confirm}) => confirm()},
         "util/fetch": {fetchPost: (...args) => requests.push(args), fetchSyncPost: async () => ({code: 0, data: []})},
         "protyle/util/compatibility": {
             saveExportFile: uri => saved.push(uri), isInMobileApp: () => mobile, getScreenWidth: () => 800,
@@ -55,6 +55,7 @@ const createEnvironment = ({browser = false, mobile = false, remote = true} = {}
         return exports;
     };
     dependencies["util/contractFormData"] = load("util/contractFormData");
+    dependencies["protyle/export/scriptLiteral"] = load("protyle/export/scriptLiteral");
     return {load, window, dependencies, capabilities, menus, requests, saved, messages, hidden};
 };
 
@@ -126,7 +127,7 @@ test("browser and native mobile continue to save through their own download hand
 test("remote notebook and migration dialogs offer archive uploads without binding local file controls", () => {
     const env = createEnvironment();
     const contents = [];
-    env.dependencies.dialog = {Dialog: class {
+    env.dependencies["dialog/adaptiveDialog"] = {AdaptiveDialog: class {
         constructor(options) {
             contents.push(options.content);
             this.element = {

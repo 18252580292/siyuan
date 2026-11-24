@@ -20,6 +20,7 @@ import {
     isPluginTopBarEntryKey,
 } from "../../plugin/topBarKey";
 import {MOBILE_TOOLBAR_CONTEXT_KEYS} from "./mobileToolbarContext";
+import type {IBreadcrumbButtonCatalogEntry} from "../../plugin/breadcrumbButtonRegistry";
 
 export {getPluginDockEntryKey} from "../../plugin/dockKey";
 export {getLegacyPluginTopBarEntryKey, getPluginTopBarEntryKey} from "../../plugin/topBarKey";
@@ -314,6 +315,8 @@ const gutterTable = () => node("table", lang("tableBlock"), true, [
     node("useDefaultWidthForAllColumns", lang("useDefaultWidthForAllColumns")),
     node("pinTableHead", lang("pinTableHead")),
     node("unpinTableHead", lang("unpinTableHead")),
+    node("pinTableHeaderColumn", lang("pinTableHeaderColumn")),
+    node("unpinTableHeaderColumn", lang("unpinTableHeaderColumn")),
     node("tableHeaderRow", lang("tableHeaderRow")),
     node("tableHeaderColumn", lang("tableHeaderColumn")),
     node("title", lang("title")),
@@ -331,6 +334,7 @@ const gutterTable = () => node("table", lang("tableBlock"), true, [
         node("useDefaultVerticalAlign", lang("useDefaultVerticalAlign")),
     ]),
     separator("separator_insert"),
+    node("insertTableHeaderRow", lang("insertTableHeaderRow")),
     node("insertRowAbove", lang("insertRowAbove")),
     node("insertRowBelow", lang("insertRowBelow")),
     node("insertColumnLeft", lang("insertColumnLeft")),
@@ -424,10 +428,13 @@ const gutterSingle = () => [
     separator("separator_VideoOrAudio"),
     node("assetVideo", location(lang("video"), lang("assets")), true, [
         node("asset", lang("assets")),
+        node("loop", lang("videoLoop")),
         separator("separator_rename"),
         node("rename", lang("rename")),
         node("openBy", lang("openBy")),
         node("export", lang("export")),
+        node("shareAsset", lang("shareAsset")),
+        node("saveToGallery", lang("saveToGallery")),
         node("copyFile", lang("copyFile")),
     ]),
     node("assetAudio", location(lang("audio"), lang("assets")), true, [
@@ -436,6 +443,7 @@ const gutterSingle = () => [
         node("rename", lang("rename")),
         node("openBy", lang("openBy")),
         node("export", lang("export")),
+        node("shareAsset", lang("shareAsset")),
         node("copyFile", lang("copyFile")),
     ]),
     separator("separator_IFrame"),
@@ -443,6 +451,7 @@ const gutterSingle = () => [
         node("asset", lang("assets")),
         separator("separator_openBy"),
         node("openBy", lang("openBy")),
+        node("shareAsset", lang("shareAsset")),
     ]),
     separator("separator_html"),
     node("html", lang("htmlBlock")),
@@ -467,6 +476,9 @@ const gutterSingle = () => [
             node("auto", lang("embedHeadingLevelPreserve")),
             ...[1, 2, 3, 4, 5, 6].map(level => node(`heading${level}`, lang(`heading${level}`))),
         ]),
+        separator("separator_conversion"),
+        node("convertToBlocks", lang("embedToBlocks")),
+        node("convertToReferences", lang("embedToReferences")),
     ]),
     separator("separator_1"),
     gutterHeadingTransform(),
@@ -635,6 +647,24 @@ const toolbarCatalogSection: IEntryCatalogSection = {
 export const TOP_BAR_ROOT_PATH = "topBar";
 export const STATUS_BAR_ROOT_PATH = "statusBar";
 export const WINDOW_TOP_BAR_ROOT_PATH = "windowTopBar";
+export const BREADCRUMB_ROOT_PATH = "editor.breadcrumb";
+
+const breadcrumbBuiltinChildren = [
+    node("undo", lang("undo")),
+    node("redo", lang("redo")),
+    node("outdent", lang("outdent")),
+    node("indent", lang("indent")),
+    node("command-panel", lang("commandPanel")),
+    node("readonly", lang("lockEdit")),
+    node("doc", lang("entryDocumentMenu")),
+    node("more", lang("more")),
+];
+
+const breadcrumbCatalogSection: IEntryCatalogSection = {
+    key: BREADCRUMB_ROOT_PATH,
+    label: location(lang("editor"), lang("breadcrumb")),
+    children: breadcrumbBuiltinChildren,
+};
 
 const statusBarCatalogSection: IEntryCatalogSection = {
     key: STATUS_BAR_ROOT_PATH,
@@ -888,6 +918,11 @@ export const entryCatalog: IEntryCatalogSection[] = [
                 node("enable", lang("enable"), false),
                 node("disable", lang("disable"), false),
             ]),
+            node("docOpenPosition", lang("docOpenPosition"), true, [
+                node("default", lang("default")),
+                node("restore", lang("restoreDocPosition")),
+                node("start", lang("docOpenAtStart")),
+            ]),
             node("fullWidth", lang("fullWidth"), false, [
                 node("enable", lang("enable"), false),
                 node("disable", lang("disable"), false),
@@ -903,6 +938,17 @@ export const entryCatalog: IEntryCatalogSection[] = [
         ],
     },
     toolbarCatalogSection,
+    breadcrumbCatalogSection,
+    {
+        key: "editor.ref",
+        label: location(lang("editor"), lang("ref")),
+        sortable: false,
+        children: [
+            node("newFile", lang("newFile"), true, undefined, false),
+            node("newSubDoc", lang("newSubDoc"), true, undefined, false),
+            node("newFileAtPath", lang("newFileAtPath"), true, undefined, false),
+        ],
+    },
     {
         key: "editor.blockEmbed",
         label: location(lang("editor"), lang("blockEmbed")),
@@ -950,6 +996,7 @@ export const entryCatalog: IEntryCatalogSection[] = [
             node("pasteEscaped", lang("pasteEscaped"), false),
             node("selectAll", lang("selectAll")),
             separator("separator_1"),
+            node("insertTableHeaderRow", lang("insertTableHeaderRow")),
             node("insertRowAbove", lang("insertRowAbove")),
             node("insertRowBelow", lang("insertRowBelow")),
             node("insertColumnLeft", lang("insertColumnLeft")),
@@ -963,6 +1010,8 @@ export const entryCatalog: IEntryCatalogSection[] = [
                 node("useDefaultWidth", lang("useDefaultWidth")),
                 node("pinTableHead", lang("pinTableHead")),
                 node("unpinTableHead", lang("unpinTableHead")),
+                node("pinTableHeaderColumn", lang("pinTableHeaderColumn")),
+                node("unpinTableHeaderColumn", lang("unpinTableHeaderColumn")),
                 node("tableHeaderRow", lang("tableHeaderRow")),
                 node("tableHeaderColumn", lang("tableHeaderColumn")),
                 node("title", lang("title")),
@@ -1024,6 +1073,8 @@ export const entryCatalog: IEntryCatalogSection[] = [
             separator("separator_3"),
             node("openBy", lang("openBy")),
             node("export", lang("export")),
+            node("shareAsset", lang("shareAsset")),
+            node("saveToGallery", lang("saveToGallery")),
             node("copyFile", lang("copyFile"), false),
             node("copyAsPNG", lang("copyAsPNG"), false),
         ],
@@ -1080,8 +1131,11 @@ export const entryCatalog: IEntryCatalogSection[] = [
             node("turnIntoRef", lang("ref")),
             node("turnIntoText", lang("text")),
             separator("separator_2"),
-            node("openBy", lang("openBy")),
+            node("openBy", lang("openBy"), true, [
+                node("openMarkdownEditor", lang("openMarkdownEditor")),
+            ]),
             node("export", lang("export")),
+            node("shareAsset", lang("shareAsset")),
             node("copyFile", lang("copyFile")),
         ],
     },
@@ -1162,6 +1216,24 @@ export const getEntryPaths = () => Array.from(entryMap.entries())
     .map(([path]) => path);
 export const getEntryCatalogSection = (key: string) => sectionMap.get(key);
 export const getEntryCatalogChildren = (path: string) => childrenMap.get(path);
+
+let breadcrumbCatalogSignature = "[]";
+
+export const refreshBreadcrumbCatalog = (entries: IBreadcrumbButtonCatalogEntry[]) => {
+    const signature = JSON.stringify(entries);
+    if (signature === breadcrumbCatalogSignature) return;
+    const seen = new Set<string>();
+    breadcrumbCatalogSection.children = [
+        ...entries.filter(entry => {
+            if (!entry.key.startsWith("plugin:") || seen.has(entry.key)) return false;
+            seen.add(entry.key);
+            return true;
+        }).map(entry => node(entry.key, literal(entry.label))),
+        ...breadcrumbBuiltinChildren,
+    ];
+    breadcrumbCatalogSignature = signature;
+    rebuildCatalogIndexes();
+};
 export const isEntryOrderSortable = (parentPath: string) => {
     const section = getEntryCatalogSection(parentPath);
     if (section) {

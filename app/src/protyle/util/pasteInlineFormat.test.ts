@@ -58,9 +58,14 @@ const browserCases = async (sources: Record<string, string>, snippets: Record<st
     };
     const evaluate = (source: string, names: string[]) => new Function(...Object.keys(deps), source +
         `\nreturn {${names.join(",")}};`)(...Object.values(deps));
-    Object.assign(deps, evaluate(snippets.block, ["getContenteditableElement", "hasNextSibling", "hasPreviousSibling"]));
+    Object.assign(deps, evaluate(snippets.block, ["getContenteditableElement", "hasNextSibling", "hasPreviousSibling",
+        "getPreviousBlockSibling", "getNextBlockSibling"]));
     Object.assign(deps, evaluate(snippets.style, ["setFontStyle", "hasSameTextStyle", "mergeSameInlineElement"]));
     Object.assign(deps, evaluate(snippets.transaction, ["updateTransaction"]));
+    Object.assign(deps, load("protyle/wysiwyg/blockSelection"), {
+        countSelectWord() {}, countBlockWord() {}, hideElements() {},
+    });
+    Object.assign(deps, evaluate(snippets.selection, ["selectAll", "getSelectionOffset"]));
     const {ReviewToolbar} = evaluate(snippets.toolbar, ["ReviewToolbar"]);
     const lute = boundary.protectLuteInlineElementBoundaries(Lute.New());
     ["SetTextMark", "SetHTMLTag2TextMark", "SetBlockRef", "SetSpin", "SetProtyleWYSIWYG", "SetKramdownIAL"]
@@ -75,6 +80,7 @@ const browserCases = async (sources: Record<string, string>, snippets: Record<st
         document.body.append(editor);
         const toolbar = Object.create(ReviewToolbar.prototype);
         toolbar.element = document.createElement("div");
+        toolbar.render = (_protyle: IProtyle, range: Range) => {toolbar.range = range;};
         mobileToolbar.querySelectorAll("button").forEach(button => button.className = "");
         const protyle = {toolbar, lute, notebookId: "notebook", options: {}, transactions: [] as Array<{
             doOperations: IOperation[], undoOperations: IOperation[]}>, wysiwyg: {element: editor, lastHTMLs: {}},
@@ -107,6 +113,100 @@ const browserCases = async (sources: Record<string, string>, snippets: Record<st
         check.equal(matches[0].querySelector("span"), null);
         return holder.innerHTML;
     };
+    for (const platform of ["desktop", "mobile"]) {
+        mobile = platform === "mobile";
+        for (const action of ["range", "toolbar"] as const) {
+            for (const type of ["strong", "em", "u", "s", "mark", "sup", "sub", "code", "kbd"]) {
+                for (const label of ["123, sample", "sample"]) {
+                    for (const breaks of [1, 2]) {
+                        const text = label + "\n".repeat(breaks) + "next\nafter";
+                        const fixture = setup(text);
+                        const button = `<button data-type="${type}"></button>`;
+                        fixture.toolbar.element.innerHTML = button;
+                        mobileToolbar.querySelector(".keyboard__dynamic").innerHTML = button;
+                        const range = document.createRange();
+                        range.setStart(fixture.editable.firstChild, 0);
+                        range.setEnd(fixture.editable.firstChild, label.length + breaks);
+                        fixture.toolbar.range = range;
+                        deps.focusByRange(range);
+                        for (let iteration = 0; iteration < 4; iteration++) {
+                            fixture.toolbar.setInlineMark(fixture.protyle, type, action);
+                            const expected = iteration % 2 === 0;
+                            const context = JSON.stringify({platform, action, type, label, breaks, iteration});
+                            check.equal(!!fixture.editable.querySelector(`[data-type~="${type}"]`), expected, context);
+                            check.equal(fixture.toolbar.getCurrentToolbarType(fixture.protyle).includes(type), expected, context);
+                            check.equal(marker.getTextWithoutSemanticMarkers(fixture.editable).split(Constants.ZWSP).join(""), text, context + ": live");
+                            const operation = fixture.protyle.transactions.at(-1);
+                            const serialized = document.createElement("div");
+                            serialized.innerHTML = lute.SpinBlockDOM(operation.doOperations[0].data as string);
+                            check.equal(!!serialized.querySelector(`[data-type~="${type}"]`), expected, context);
+                            const serializedText = Array.from(serialized.children).map(block =>
+                                marker.getTextWithoutSemanticMarkers(block.querySelector('[contenteditable="true"]'))
+                                    .split(Constants.ZWSP).join("")).join("\n\n");
+                            check.equal(serializedText, text, context + ": serialized");
+                        }
+                        fixture.editor.remove();
+                    }
+                }
+            }
+        }
+    }
+    // 保持格式操作返回的选区，覆盖全选后连续切换时包含外部边界占位符的情况。
+    for (const platform of ["desktop", "mobile"]) {
+        mobile = platform === "mobile";
+        for (const action of ["range", "toolbar"] as const) {
+            for (const mode of ["ctrl-a", "contents"]) {
+                for (const sample of [
+                    {html: "inline-code", type: "code", initial: false},
+                    {html: "inline-code", type: "kbd", initial: false},
+                    {html: "inline-code", type: "sup", initial: false},
+                    {html: "inline-code", type: "sub", initial: false},
+                    {html: '<span data-type="strong">inline-code</span>', type: "code", initial: false, keep: "strong"},
+                    {html: '<span data-type="code strong">inline-code</span>', type: "strong", initial: true, keep: "code"},
+                    {html: '<span data-type="kbd mark">inline-code</span>', type: "mark", initial: true, keep: "kbd"},
+                    {html: "before<br>inline-code", type: "code", initial: false},
+                    {html: '<span data-type="code">inline-code</span> plain', type: "code", initial: false},
+                    {html: '<span data-type="code">inline-code</span> <span data-type="code">again</span>', type: "code", initial: false},
+                    ...["s", "d"].map(subtype => ({html: `<span data-type="block-ref" data-id="${referenceID}" data-subtype="${subtype}">inline-code</span>`,
+                        type: "code", initial: false, keep: "block-ref"})),
+                ]) {
+                    const fixture = setup(sample.html);
+                    const buttons = ["code", "kbd", "sup", "sub", "strong", "mark"].map(type => `<button data-type="${type}"></button>`).join("");
+                    fixture.toolbar.element.innerHTML = buttons;
+                    mobileToolbar.querySelector(".keyboard__dynamic").innerHTML = buttons;
+                    marker.normalizeSemanticInlineElements(fixture.editor);
+                    const originalText = marker.getTextWithoutSemanticMarkers(fixture.editable).split(Constants.ZWSP).join("");
+                    const range = document.createRange();
+                    range.selectNodeContents(fixture.editable);
+                    range.collapse(false);
+                    fixture.toolbar.range = range;
+                    deps.focusByRange(range);
+                    if (mode === "ctrl-a") {
+                        check.equal(deps.selectAll(fixture.protyle, fixture.editor.firstElementChild, range), true);
+                    } else {
+                        range.selectNodeContents(fixture.editable);
+                    }
+                    for (let iteration = 0; iteration < 4; iteration++) {
+                        fixture.toolbar.setInlineMark(fixture.protyle, sample.type, action);
+                        const expected = iteration % 2 === 0 ? !sample.initial : sample.initial;
+                        const context = JSON.stringify({platform, action, mode, sample, iteration});
+                        check.equal(!!fixture.editable.querySelector(`[data-type~="${sample.type}"]`), expected, context);
+                        check.equal(fixture.toolbar.getCurrentToolbarType(fixture.protyle).includes(sample.type), expected, context);
+                        check.equal(marker.getTextWithoutSemanticMarkers(fixture.editable).split(Constants.ZWSP).join(""), originalText, context);
+                        if (sample.keep) {
+                            check.ok(fixture.editable.querySelector(`[data-type~="${sample.keep}"]`), context);
+                        }
+                        if (sample.keep === "block-ref") {
+                            const reference = fixture.editable.querySelector<HTMLElement>('[data-type~="block-ref"]');
+                            check.equal(reference.dataset.id, referenceID, context);
+                            check.equal(reference.dataset.subtype, sample.html.includes('data-subtype="s"') ? "s" : "d", context);
+                        }
+                    }
+                    fixture.editor.remove();
+                }
+            }
+        }
+    }
     for (const platform of ["desktop", "mobile"]) {
         mobile = platform === "mobile";
         for (const subtype of ["s", "d"]) {
@@ -254,7 +354,7 @@ const browserCases = async (sources: Record<string, string>, snippets: Record<st
     return "paste-inline-format-ok";
 };
 
-test("block references and inline formatting survive paste order, input and transaction serialization", {timeout: 45000}, async () => {
+test("block references and inline formatting survive repeated toggles, paste order, input and transaction serialization", {timeout: 45000}, async () => {
     const compile = (source: string) => transpileModule(source, {
         compilerOptions: {target: ScriptTarget.ES2021, module: ModuleKind.CommonJS},
     }).outputText;
@@ -270,15 +370,18 @@ test("block references and inline formatting survive paste order, input and tran
     };
     const parsed = createSourceFile("toolbar", read("protyle/toolbar/index"), ScriptTarget.Latest, true);
     const toolbar = parsed.statements.find(isClassDeclaration);
-    const methods = ["setInlineMark", "setInlineMarkInBlock", "getCurrentType", "mergeNode"].map(name =>
+    const methods = ["setInlineMark", "setInlineMarkInBlock", "getCurrentType", "getCurrentToolbarType", "mergeNode"].map(name =>
         toolbar.members.find(member => member.name?.getText(parsed) === name).getText(parsed)).join("\n");
-    const sources = Object.fromEntries(["protyle/wysiwyg/compositionInput", "protyle/util/longTextWrap",
+    const sources = Object.fromEntries(["protyle/wysiwyg/compositionInput", "protyle/wysiwyg/blockSelection", "protyle/util/longTextWrap",
         "protyle/util/inlineElementBoundary", "protyle/util/inlineElementMarker", "protyle/toolbar/inlineRangeBoundary",
         "protyle/toolbar/inlineFormat", "protyle/toolbar/fontFamilyCore", "protyle/toolbar/inlineDirectionStyle",
         "protyle/util/hasClosest", "protyle/util/paste", "protyle/util/pasteSource", "protyle/util/normalizeText"].map(name => [name, compile(read(name))]));
     const snippets = {
+        selection: extract("protyle/util/selection", ["selectAll"]) +
+            extract("protyle/util/selectionOffsets", ["selectIsEditor", "getSelectionOffset"]),
         toolbar: compile(`class ReviewToolbar {${methods}}`),
-        block: extract("protyle/wysiwyg/getBlock", ["getContenteditableElement", "hasNextSibling", "hasPreviousSibling"]),
+        block: extract("protyle/wysiwyg/getBlock", ["getContenteditableElement", "hasNextSibling", "hasPreviousSibling",
+            "getPreviousBlockSibling", "getNextBlockSibling"]),
         style: extract("protyle/toolbar/Font", ["setFontStyle", "hasSameTextStyle"]) +
             extract("protyle/toolbar/util", ["mergeSameInlineElement"]) + extract("util/functions", ["isArrayEqual"]),
         transaction: extract("protyle/wysiwyg/transaction", ["updateTransaction"]),

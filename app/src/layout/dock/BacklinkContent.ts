@@ -1,6 +1,7 @@
 import {config as configApi} from "../../config/util/configApi";
 import {toggleMenu} from "../../menus/menuToggle";
 import {GlobalBacklinkList} from "./GlobalBacklinkList";
+import {bindBacklinkSelection} from "./backlinkSelection";
 import {bindPanelSearch} from "./panelSearch";
 import type {Tab} from "../Tab";
 import {Model} from "../Model";
@@ -65,6 +66,7 @@ import {
     type IBacklinkReadingAnchor,
     restoreBacklinkReadingAnchor,
 } from "./backlinkReadingAnchor";
+import {BacklinkContextBatch} from "./backlinkContextBatch";
 
 interface IBacklinkItemRecord {
     revision: string,
@@ -148,6 +150,7 @@ export class BacklinkContent extends Model {
     } = {};
     private dirty = false;
     private destroyed = false;
+    private unbindSelection: () => void;
     private refreshQueued = false;
     private searchQueued = false;
     private requestID = 0;
@@ -180,6 +183,7 @@ export class BacklinkContent extends Model {
     private restoringReadingAnchors: [boolean, boolean] = [false, false];
     private readingAnchorScrollEpochs: [number, number] = [0, 0];
     private readingAnchorRenderGeneration = 0;
+    private contextBatch = new BacklinkContextBatch();
     private bottomLayoutScroll?: BottomBacklinkScroll;
     private ownerScrollListener?: () => void;
     private onlyBacklinks: boolean;
@@ -252,7 +256,7 @@ export class BacklinkContent extends Model {
         const backmentionSort = window.siyuan.config.editor.backmentionSort;
         this.element.innerHTML = `<div class="block__icons backlinkList__header">
     ${this.type === "bottom" ? `<span data-type="bLayout" class="block__icon block__icon--show fn__flex-center backlinkList__toggle ariaLabel" data-position="north" aria-label="${window.siyuan.languages.collapse}"><svg><use xlink:href="#iconDown"></use></svg></span>` : ""}
-    <div class="block__logo block__logo--counter fn__flex-1 fn__pointer" data-type="backlink">${window.siyuan.languages.backlinks}<span class="counter listCount"></span></div>
+    <div class="block__logo block__logo--counter fn__flex-1 fn__pointer" data-type="backlink">${this.type === "pin" ? `<span class="fn__ellipsis">${window.siyuan.languages.backlinks}</span>` : window.siyuan.languages.backlinks}<span class="counter listCount${this.type === "pin" ? " fn__flex-shrink" : ""}"></span></div>
     <input spellcheck="false" class="b3-text-field search__label fn__none fn__size200" placeholder="${window.siyuan.languages.searchPlaceholder}" />
     ${this.type === "bottom" ? "" : `<span data-type="refresh" class="block__icon ariaLabel" data-position="north" aria-label="${window.siyuan.languages.refresh}"><svg><use xlink:href='#iconRefresh'></use></svg></span>
     <span class="fn__space"></span>`}
@@ -275,7 +279,7 @@ export class BacklinkContent extends Model {
 <div class="backlinkList fn__flex-1"></div>
 <div class="block__icons backlinkMList__header">
     ${this.type === "bottom" ? `<span data-type="layout" class="block__icon block__icon--show fn__flex-center backlinkList__toggle ariaLabel" data-position="north" aria-label="${window.siyuan.languages.collapse}"><svg><use xlink:href="#iconDown"></use></svg></span>` : ""}
-    <div class="block__logo block__logo--counter fn__flex-1 fn__pointer" data-type="mention">${window.siyuan.languages.mentions}<span class="counter listMCount"></span></div>
+    <div class="block__logo block__logo--counter fn__flex-1 fn__pointer" data-type="mention">${this.type === "pin" ? `<span class="fn__ellipsis">${window.siyuan.languages.mentions}</span>` : window.siyuan.languages.mentions}<span class="counter listMCount${this.type === "pin" ? " fn__flex-shrink" : ""}"></span></div>
     <input spellcheck="false" class="b3-text-field search__label fn__none fn__size200" placeholder="${window.siyuan.languages.searchPlaceholder}" />
     <span data-type="search" class="block__icon b3-tooltips b3-tooltips__nw" aria-label="${window.siyuan.languages.search}"><svg><use xlink:href='#iconSearch'></use></svg></span>
     <span class="fn__space"></span>
@@ -389,6 +393,7 @@ export class BacklinkContent extends Model {
             },
             blockExtHTML: `<span class="b3-list-item__action b3-tooltips b3-tooltips__nw" aria-label="${window.siyuan.languages.more}"><svg><use xlink:href="#iconMore"></use></svg></span>`
         });
+        this.unbindSelection = bindBacklinkSelection(this.element);
         this.tree.element.addEventListener("scroll", (event) => {
             this.tree.element.querySelectorAll(".protyle-gutters").forEach(item => {
                 item.classList.add("fn__none");
@@ -764,6 +769,9 @@ export class BacklinkContent extends Model {
 
     private setFocus() {
         /// #if !MOBILE
+        if (this.surface === "popover") {
+            return;
+        }
         if (this.type === "bottom") {
             this.setOwnerFocus();
             this.element.focus({preventScroll: true});
@@ -1306,41 +1314,62 @@ export class BacklinkContent extends Model {
             }
             // 收到有效内容后再保护当前视口，等待请求期间仍允许用户正常滚动。
             finishScroll = manualBottomExpand ? this.beginBottomScroll() : undefined;
-            record.contextDirty = false;
-            record.contextRevision = response.data.revision;
-            record.editor?.protyle.element.setAttribute("data-backlink-revision", response.data.revision);
+            if (!record.editor || response.data.unchanged) {
+                record.contextDirty = false;
+                record.contextRevision = response.data.revision;
+                record.editor?.protyle.element.setAttribute("data-backlink-revision", response.data.revision);
+            }
             if (!response.data.unchanged) {
                 const backlinkData = isMention ? response.data.backmentions : response.data.backlinks;
                 if (record.editor) {
                     const editor = record.editor;
-                    const scrollAnchor = this.captureReadingAnchor(isMention);
-                    const scrollEpoch = this.getReadingAnchorScrollEpoch(isMention);
-                    const anchorQueryKey = this.renderedQueryKey;
-                    editor.protyle.options.backlinkData = backlinkData;
-                    viewPromises.push(renderBacklink(editor.protyle, backlinkData).then(() => {
-                        if (manualBottomExpand) {
-                            return;
-                        }
-                        window.requestAnimationFrame(() => {
+                    record.contextDirty = true;
+                    viewPromises.push(this.contextBatch.enqueue({
+                        key: manualBottomExpand ? 2 : this.getReadingAnchorIndex(isMention),
+                        isCurrent: () => {
                             if (this.destroyed || blockId !== this.blockId ||
                                 viewStateGeneration !== this.viewStateGeneration ||
                                 contextRequestVersion !== this.contextRequestVersions[index] ||
                                 requestGeneration !== record.requestGeneration || record.editor !== editor ||
-                                !editor.protyle.element.isConnected || editor.protyle.element.classList.contains("fn__none") ||
-                                scrollEpoch !== this.getReadingAnchorScrollEpoch(isMention) ||
-                                anchorQueryKey !== this.renderedQueryKey || anchorQueryKey !== this.listQueryKey) {
-                                return;
+                                !editor.protyle.element.isConnected || editor.protyle.element.classList.contains("fn__none")) {
+                                return false;
                             }
-                            if (scrollAnchor) {
-                                this.restoreReadingAnchor(scrollAnchor);
-                            } else {
-                                this.restorePersistedReadingAnchor(isMention, docId);
+                            if (editor.protyle.element.contains(document.activeElement) || hasAVEditorSession(editor.protyle.element)) {
+                                record.contextDirty = true;
+                                this.dirty = true;
+                                this.pendingRootIDs.add(docId);
+                                return false;
                             }
-                        });
+                            return true;
+                        },
+                        capture: () => {
+                            const scrollAnchor = manualBottomExpand ? undefined : this.captureReadingAnchor(isMention);
+                            const scrollEpoch = this.getReadingAnchorScrollEpoch(isMention);
+                            const anchorQueryKey = this.renderedQueryKey;
+                            return () => {
+                                if (manualBottomExpand || scrollEpoch !== this.getReadingAnchorScrollEpoch(isMention) ||
+                                    anchorQueryKey !== this.renderedQueryKey || anchorQueryKey !== this.listQueryKey) {
+                                    return;
+                                }
+                                if (scrollAnchor) {
+                                    this.restoreReadingAnchor(scrollAnchor);
+                                } else {
+                                    this.restorePersistedReadingAnchor(isMention);
+                                }
+                            };
+                        },
+                        render: () => {
+                            record.contextDirty = false;
+                            record.contextRevision = response.data.revision;
+                            editor.protyle.element.setAttribute("data-backlink-revision", response.data.revision);
+                            editor.protyle.options.backlinkData = backlinkData;
+                            const promise = renderBacklink(editor.protyle, backlinkData);
+                            searchMarkRender(editor.protyle, response.data.keywords, undefined, undefined, {
+                                excludeSelector: ".protyle-breadcrumb__bar[data-backlink-id]"
+                            });
+                            return promise;
+                        },
                     }));
-                    searchMarkRender(editor.protyle, response.data.keywords, undefined, undefined, {
-                        excludeSelector: ".protyle-breadcrumb__bar[data-backlink-id]"
-                    });
                 } else {
                     const editorElement = document.createElement("div");
                     editorElement.style.minHeight = "auto";
@@ -1738,6 +1767,7 @@ export class BacklinkContent extends Model {
     }
 
     private clearReadingAnchorTimers() {
+        this.contextBatch.clear();
         this.readingAnchorTimers.forEach(timer => {
             if (timer) {
                 window.clearTimeout(timer);
@@ -1842,7 +1872,7 @@ export class BacklinkContent extends Model {
     }
 
     private showLoading() {
-        if (this.type !== "bottom" && !isMobile()) {
+        if (this.type !== "bottom" && this.surface !== "popover" && !isMobile()) {
             return;
         }
         this.showingLoading = true;
@@ -2524,6 +2554,7 @@ export class BacklinkContent extends Model {
         this.globalList?.destroy();
         this.globalList = undefined;
         this.destroyed = true;
+        this.unbindSelection();
         this.clearIndexRefresh();
         this.viewStateGeneration++;
         this.clearReadingAnchorTimers();

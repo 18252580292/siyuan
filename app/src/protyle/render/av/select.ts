@@ -1,14 +1,16 @@
+import {confirmDialog} from "../../../dialog/confirmDialog";
+import {showMessage} from "../../../dialog/message";
 import {isTableLikeView} from "./viewType";
 import {Menu} from "../../../plugin/Menu";
 import {transaction} from "../../wysiwyg/transaction";
-import {hasClosestBlock, hasClosestByClassName} from "../../util/hasClosest";
-import {confirmDialog} from "../../../dialog/confirmDialog";
+import {hasClosestByClassName} from "../../util/hasClosest";
+import {getAVHost, getAVRelationHost} from "./host";
 import {upDownHint} from "../../../util/upDownHint";
 import {bindEditEvent, getColId, getEditHTML} from "./col";
 import {updateAttrViewCellAnimation} from "./action";
 import {isCustomAttr} from "./blockAttr";
 import {escapeAriaLabel, escapeAttr, escapeHtml} from "../../../util/escape";
-import {genCellValueByElement, getTypeByCellElement, updateAttrViewCellInOtherElements} from "./cell";
+import {cellScrollIntoView, genCellValueByElement, getTypeByCellElement, popTextCell, updateAttrViewCellInOtherElements, type IAVCellInputElements} from "./cell";
 import dayjs from "dayjs";
 import {getFieldsByData} from "./view";
 import {getFieldIdByCellElement} from "./row";
@@ -27,6 +29,8 @@ import {
 } from "./color";
 import {openAVCustomColorDialog} from "./colorDialog";
 import {isMobile} from "../../../util/functions";
+import {isAVContinuousInputKey, prepareAVContinuousInput} from "./continuousInput";
+import {getAVCellSelection} from "./selectionState";
 
 let cellValues: IAVCellValue[];
 
@@ -84,10 +88,15 @@ const filterSelectHTML = (key: string, options: {
     return html;
 };
 
-export const removeCellOption = (protyle: IProtyle, cellElements: HTMLElement[], target: HTMLElement, blockElement: Element) => {
+export const removeCellOption = (protyle: IProtyle, cellElements: HTMLElement[], target: HTMLElement, blockElement: Element,
+                                 onSave?: () => void) => {
     if (!target) {
         return;
     }
+    const resolveInput = (cellElements as IAVCellInputElements).resolveAVCellInput;
+    const inputTarget = resolveInput?.();
+    if (resolveInput && !inputTarget) return;
+    blockElement = inputTarget?.blockElement || blockElement;
     const viewType = blockElement.getAttribute("data-av-type") as TAVView;
     const colId = getColId(cellElements[0], viewType);
     const doOperations: IOperation[] = [];
@@ -96,11 +105,14 @@ export const removeCellOption = (protyle: IProtyle, cellElements: HTMLElement[],
     const avID = blockElement.getAttribute("data-av-id");
     const batchMode = getAVBatchEditMode(cellElements[0]);
     cellElements.forEach((item, elementIndex) => {
-        const rowID = getFieldIdByCellElement(item, viewType);
+        const selectedCell = inputTarget?.cells[elementIndex];
+        const rowID = selectedCell?.rowID || getFieldIdByCellElement(item, viewType);
         if (!rowID) {
             return;
         }
-        if (!blockElement.contains(item)) {
+        if (selectedCell) {
+            item = inputTarget.elements[elementIndex];
+        } else if (!blockElement.contains(item)) {
             if (isTableLikeView(viewType)) {
                 item = cellElements[elementIndex] = (blockElement.querySelector(`.av__row[data-id="${rowID}"] .av__cell[data-col-id="${item.dataset.colId}"]`) ||
                     blockElement.querySelector(`.fn__flex-1[data-col-id="${item.dataset.colId}"]`)) as HTMLElement;
@@ -108,9 +120,8 @@ export const removeCellOption = (protyle: IProtyle, cellElements: HTMLElement[],
                 item = cellElements[elementIndex] = (blockElement.querySelector(`.av__gallery-item[data-id="${rowID}"] .av__cell[data-field-id="${item.dataset.fieldId}"]`)) as HTMLElement;
             }
         }
-        const cellValue: IAVCellValue = batchMode === "replace" ?
-            cellValues[elementIndex] :
-            getAVBatchSourceValue(item, cellValues[elementIndex]);
+        const cellValue: IAVCellValue = selectedCell ? selectedCell.cell.value : inputTarget?.values[elementIndex] ||
+            (batchMode === "replace" ? cellValues[elementIndex] : getAVBatchSourceValue(item, cellValues[elementIndex]));
         const oldValue = JSON.parse(JSON.stringify(cellValue));
         if (batchMode !== "replace") {
             cellValue.mSelect = cellValue.mSelect?.filter(option => option.content !== target.dataset.content) || [];
@@ -142,7 +153,7 @@ export const removeCellOption = (protyle: IProtyle, cellElements: HTMLElement[],
             avID,
             data: oldValue
         });
-        if (!item.classList.contains("custom-attr__avvalue")) {
+        if (item && !item.classList.contains("custom-attr__avvalue")) {
             updateAttrViewCellAnimation(item, cellValue);
         }
         updateAttrViewCellInOtherElements(protyle, avID, rowID, colId, cellValue, item);
@@ -152,7 +163,7 @@ export const removeCellOption = (protyle: IProtyle, cellElements: HTMLElement[],
         id: blockElement.getAttribute("data-node-id"),
         data: dayjs().format("YYYYMMDDHHmmss"),
     });
-    transaction(protyle, doOperations, undoOperations);
+    transaction(protyle, doOperations, undoOperations, {callback: onSave});
     Array.from(document.querySelectorAll(".av__panel .b3-menu__item")).find((item: HTMLElement) => {
         if (item.dataset.name === target.dataset.content) {
             item.querySelector(".b3-menu__checked")?.remove();
@@ -165,10 +176,15 @@ export const removeCellOption = (protyle: IProtyle, cellElements: HTMLElement[],
     if (menuElement) {
         setSelectMenuPosition(menuElement, cellElements[cellElements.length - 1]);
     }
+    return true;
 };
 
 export const setColOption = (protyle: IProtyle, data: IAV, target: HTMLElement, blockElement: Element, isCustomAttr: boolean,
                              cellElements?: HTMLElement[], keepMenuOpen = false) => {
+    if (getAVRelationHost(blockElement)) {
+        showMessage(window.siyuan.languages._attrView.relatedDatabaseViewSharedTip);
+        return;
+    }
     const menuElement = hasClosestByClassName(target, "b3-menu");
     const optionElement = target.closest("[data-name]") as HTMLElement;
     if (!menuElement || !optionElement) {
@@ -181,8 +197,34 @@ export const setColOption = (protyle: IProtyle, data: IAV, target: HTMLElement, 
     let desc = optionElement.dataset.desc;
     let color = optionElement.dataset.color;
     const fields = getFieldsByData(data);
+    const resolveInput = (cellElements as IAVCellInputElements)?.resolveAVCellInput;
+    const isCurrentInput = () => !resolveInput || !!resolveInput();
+    const updateCells = (update: (value: IAVCellValue) => void) => {
+        const inputTarget = resolveInput?.();
+        if (resolveInput && !inputTarget) return;
+        blockElement = inputTarget?.blockElement || blockElement;
+        cellElements.forEach((originalElement, index) => {
+            const selectedCell = inputTarget?.cells[index];
+            const rowID = selectedCell?.rowID || getFieldIdByCellElement(originalElement, viewType);
+            let cellElement = selectedCell ? inputTarget.elements[index] : originalElement;
+            if (!selectedCell && !blockElement.contains(cellElement)) {
+                cellElement = (isTableLikeView(viewType) || isCustomAttr ?
+                    blockElement.querySelector(`.av__row[data-id="${rowID}"] .av__cell[data-col-id="${colId}"]`) ||
+                    blockElement.querySelector(`.fn__flex-1[data-col-id="${colId}"]`) :
+                    blockElement.querySelector(`.av__gallery-item[data-id="${rowID}"] .av__cell[data-field-id="${colId}"]`)) as HTMLElement;
+            }
+            if (cellElement) cellElements[index] = cellElement;
+            const value = selectedCell ? selectedCell.cell.value : inputTarget?.values[index] || cellValues[index];
+            update(value);
+            cellValues[index] = value;
+            if (cellElement && !cellElement.classList.contains("custom-attr__avvalue")) {
+                updateAttrViewCellAnimation(cellElement, value);
+            }
+            updateAttrViewCellInOtherElements(protyle, data.id, rowID, colId, value, cellElement);
+        });
+    };
     const menu = new Menu(Constants.MENU_AV_COL_OPTION, () => {
-        if ((name === inputElement.value && desc === descElement.value) || !inputElement.value) {
+        if (!isCurrentInput() || (name === inputElement.value && desc === descElement.value) || !inputElement.value) {
             return;
         }
         // cell 不判断重名 https://github.com/siyuan-note/siyuan/issues/11484
@@ -240,27 +282,13 @@ export const setColOption = (protyle: IProtyle, data: IAV, target: HTMLElement, 
             menuElement.innerHTML = getEditHTML({protyle, data, colId, isCustomAttr});
             bindEditEvent({protyle, data, menuElement, isCustomAttr, blockID});
         } else {
-            cellElements.forEach((cellElement: HTMLElement, index) => {
-                const rowID = getFieldIdByCellElement(cellElement, viewType);
-                if (!blockElement.contains(cellElement)) {
-                    if (isTableLikeView(viewType) || isCustomAttr) {
-                        cellElement = cellElements[index] = (blockElement.querySelector(`.av__row[data-id="${rowID}"] .av__cell[data-col-id="${cellElement.dataset.colId}"]`) ||
-                            blockElement.querySelector(`.fn__flex-1[data-col-id="${cellElement.dataset.colId}"]`)) as HTMLElement;
-                    } else {
-                        cellElement = cellElements[index] = (blockElement.querySelector(`.av__gallery-item[data-id="${rowID}"] .av__cell[data-field-id="${cellElement.dataset.fieldId}"]`)) as HTMLElement;
-                    }
-                }
-
-                cellValues[index].mSelect.find((item) => {
+            updateCells(value => {
+                value.mSelect.find((item) => {
                     if (item.content === name) {
                         item.content = inputElement.value;
                         return true;
                     }
                 });
-                if (!cellElement.classList.contains("custom-attr__avvalue")) {
-                    updateAttrViewCellAnimation(cellElement, cellValues[index]);
-                }
-                updateAttrViewCellInOtherElements(protyle, data.id, rowID, colId, cellValues[index], cellElement);
             });
             menuElement.innerHTML = getSelectHTML(fields, cellElements, false, blockElement);
             bindSelectEvent(protyle, data, menuElement, cellElements, blockElement);
@@ -329,76 +357,68 @@ ${isMobile() ? "" : '<div class="fn__hr--small"></div>'}`,
         label: window.siyuan.languages.delete,
         icon: "iconTrashcan",
         click() {
-            confirmDialog(window.siyuan.languages.deleteOpConfirm, window.siyuan.languages.confirmDelete, () => {
-                let colOptions: { name: string, color: string }[] = [];
-                fields.find(column => {
-                    if (column.id === colId) {
-                        colOptions = column.options;
-                        return true;
-                    }
-                });
-                const newName = target.parentElement.dataset.name;
-                transaction(protyle, [{
-                    action: "removeAttrViewColOption",
-                    id: colId,
-                    avID: data.id,
-                    blockID,
-                    data: newName,
-                }, {
-                    action: "doUpdateUpdated",
-                    id: blockID,
-                    data: dayjs().format("YYYYMMDDHHmmss"),
-                }], [{
-                    action: "updateAttrViewColOptions",
-                    id: colId,
-                    avID: data.id,
-                    blockID,
-                    data: colOptions.map(option => ({...option}))
-                }]);
-                colOptions.find((item, index) => {
-                    if (item.name === newName) {
-                        colOptions.splice(index, 1);
-                        return true;
-                    }
-                });
-                const oldScroll = menuElement.querySelector(".b3-menu__items").scrollTop;
-                const selectedElement = menuElement.querySelector(".b3-chips");
-                const oldChipsHeight = selectedElement ? selectedElement.clientHeight : 0;
-                if (!cellElements) {
-                    menuElement.innerHTML = getEditHTML({protyle, data, colId, isCustomAttr});
-                    bindEditEvent({protyle, data, menuElement, isCustomAttr, blockID});
-                } else {
-                    cellElements.forEach((cellElement: HTMLElement, index) => {
-                        const rowID = getFieldIdByCellElement(cellElement, viewType);
-                        if (!blockElement.contains(cellElement)) {
-                            if (isTableLikeView(viewType) || isCustomAttr) {
-                                cellElement = cellElements[index] = (blockElement.querySelector(`.av__row[data-id="${rowID}"] .av__cell[data-col-id="${cellElement.dataset.colId}"]`) ||
-                                    blockElement.querySelector(`.fn__flex-1[data-col-id="${cellElement.dataset.colId}"]`)) as HTMLElement;
-                            } else {
-                                cellElement = cellElements[index] = (blockElement.querySelector(`.av__gallery-item[data-id="${rowID}"] .av__cell[data-field-id="${cellElement.dataset.fieldId}"]`)) as HTMLElement;
-                            }
+            confirmDialog({
+                title: window.siyuan.languages.deleteOpConfirm,
+                text: window.siyuan.languages.confirmDelete,
+                confirm: () => {
+                    if (!isCurrentInput()) return;
+                    let colOptions: { name: string, color: string }[] = [];
+                    fields.find(column => {
+                        if (column.id === colId) {
+                            colOptions = column.options;
+                            return true;
                         }
-                        cellValues[index].mSelect.find((item, selectIndex) => {
-                            if (item.content === newName) {
-                                cellValues[index].mSelect.splice(selectIndex, 1);
-                                return true;
-                            }
-                        });
-                        if (!cellElement.classList.contains("custom-attr__avvalue")) {
-                            updateAttrViewCellAnimation(cellElement, cellValues[index]);
-                        }
-                        updateAttrViewCellInOtherElements(protyle, data.id, rowID, colId,
-                            cellValues[index], cellElement);
                     });
-                    menuElement.innerHTML = getSelectHTML(fields, cellElements, false, blockElement);
-                    bindSelectEvent(protyle, data, menuElement, cellElements, blockElement);
-                }
-                if (selectedElement) {
-                    menuElement.querySelector(".b3-menu__items").scrollTop = oldScroll + (menuElement.querySelector(".b3-chips").clientHeight - oldChipsHeight);
-                    // chips 增减导致菜单高度变化后重新定位（锁底部，顶部自适应，避免底部溢出视口）
-                    setSelectMenuPosition(menuElement, cellElements[cellElements.length - 1]);
-                }
-            }, undefined, true);
+                    const newName = target.parentElement.dataset.name;
+                    transaction(protyle, [{
+                        action: "removeAttrViewColOption",
+                        id: colId,
+                        avID: data.id,
+                        blockID,
+                        data: newName,
+                    }, {
+                        action: "doUpdateUpdated",
+                        id: blockID,
+                        data: dayjs().format("YYYYMMDDHHmmss"),
+                    }], [{
+                        action: "updateAttrViewColOptions",
+                        id: colId,
+                        avID: data.id,
+                        blockID,
+                        data: colOptions.map(option => ({...option}))
+                    }]);
+                    colOptions.find((item, index) => {
+                        if (item.name === newName) {
+                            colOptions.splice(index, 1);
+                            return true;
+                        }
+                    });
+                    const oldScroll = menuElement.querySelector(".b3-menu__items").scrollTop;
+                    const selectedElement = menuElement.querySelector(".b3-chips");
+                    const oldChipsHeight = selectedElement ? selectedElement.clientHeight : 0;
+                    if (!cellElements) {
+                        menuElement.innerHTML = getEditHTML({protyle, data, colId, isCustomAttr});
+                        bindEditEvent({protyle, data, menuElement, isCustomAttr, blockID});
+                    } else {
+                        updateCells(value => {
+                            value.mSelect.find((item, selectIndex) => {
+                                if (item.content === newName) {
+                                    value.mSelect.splice(selectIndex, 1);
+                                    return true;
+                                }
+                            });
+                        });
+                        menuElement.innerHTML = getSelectHTML(fields, cellElements, false, blockElement);
+                        bindSelectEvent(protyle, data, menuElement, cellElements, blockElement);
+                    }
+                    if (selectedElement) {
+                        menuElement.querySelector(".b3-menu__items").scrollTop = oldScroll + (menuElement.querySelector(".b3-chips").clientHeight - oldChipsHeight);
+                        // chips 增减导致菜单高度变化后重新定位（锁底部，顶部自适应，避免底部溢出视口）
+                        setSelectMenuPosition(menuElement, cellElements[cellElements.length - 1]);
+                    }
+                },
+                isDelete: true,
+            });
         }
     });
     menu.addSeparator();
@@ -411,6 +431,7 @@ ${isMobile() ? "" : '<div class="fn__hr--small"></div>'}`,
         bind(element) {
             element.classList.add("b3-menu__custom", "av__option-custom");
             element.addEventListener("click", (event) => {
+                if (!isCurrentInput()) return;
                 const colorTarget = (event.target as HTMLElement).closest<HTMLElement>("button");
                 if (colorTarget?.dataset.type === AV_MANAGE_CUSTOM_COLORS_TYPE) {
                     menu.close();
@@ -474,17 +495,8 @@ ${isMobile() ? "" : '<div class="fn__hr--small"></div>'}`,
                         menuElement.innerHTML = getEditHTML({protyle, data, colId, isCustomAttr});
                         bindEditEvent({protyle, data, menuElement, isCustomAttr, blockID});
                     } else {
-                        cellElements.forEach((cellElement: HTMLElement, cellIndex) => {
-                            const rowID = getFieldIdByCellElement(cellElement, viewType);
-                            if (!blockElement.contains(cellElement)) {
-                                if (isTableLikeView(viewType) || isCustomAttr) {
-                                    cellElement = cellElements[cellIndex] = (blockElement.querySelector(`.av__row[data-id="${rowID}"] .av__cell[data-col-id="${cellElement.dataset.colId}"]`) ||
-                                        blockElement.querySelector(`.fn__flex-1[data-col-id="${cellElement.dataset.colId}"]`)) as HTMLElement;
-                                } else {
-                                    cellElement = cellElements[cellIndex] = (blockElement.querySelector(`.av__gallery-item[data-id="${rowID}"] .av__cell[data-field-id="${cellElement.dataset.fieldId}"]`)) as HTMLElement;
-                                }
-                            }
-                            cellValues[cellIndex].mSelect.find((item) => {
+                        updateCells(value => {
+                            value.mSelect.find((item) => {
                                 if (item.content === name) {
                                     item.content = inputElement.value;
                                     item.color = newColor;
@@ -492,11 +504,6 @@ ${isMobile() ? "" : '<div class="fn__hr--small"></div>'}`,
                                     return true;
                                 }
                             });
-                            if (!cellElement.classList.contains("custom-attr__avvalue")) {
-                                updateAttrViewCellAnimation(cellElement, cellValues[cellIndex]);
-                            }
-                            updateAttrViewCellInOtherElements(protyle, data.id, rowID, colId,
-                                cellValues[cellIndex], cellElement);
                         });
                         menuElement.innerHTML = getSelectHTML(fields, cellElements, false, blockElement);
                         bindSelectEvent(protyle, data, menuElement, cellElements, blockElement);
@@ -559,13 +566,39 @@ export const bindSelectEvent = (protyle: IProtyle, data: IAV, menuElement: HTMLE
         }
         let currentElement = upDownHint(listElement, event, "b3-menu__item--current", listElement.firstElementChild);
         if (event.key === "Enter") {
+            event.preventDefault();
+            event.stopPropagation();
+            if (colData.type === "select" && event.repeat) return;
             if (!currentElement) {
                 currentElement = menuElement.querySelector(".b3-menu__item--current");
             }
+            if (!currentElement) return;
+            let onSave: () => void;
+            if (colData.type === "select" && protyle && isAVContinuousInputKey(event)) {
+                const resolveInput = (cellElements as IAVCellInputElements).resolveAVCellInput;
+                const target = resolveInput?.();
+                const block = (target?.blockElement || blockElement) as HTMLElement;
+                const cells = target?.elements || cellElements;
+                if ((!resolveInput || target) && cells[0]?.isConnected) {
+                    const selection = getAVCellSelection(block);
+                    const next = prepareAVContinuousInput(protyle, block, cells, cell => {
+                        cellScrollIntoView(block, cell);
+                        if (selection?.input) popTextCell(protyle, [cell]);
+                    });
+                    if (next) {
+                        onSave = () => {
+                            if (getAVCellSelection(block) === selection && !document.querySelector(".av__panel")) next();
+                        };
+                    }
+                }
+            }
             if (currentElement.querySelector(".b3-menu__checked")) {
-                removeCellOption(protyle, cellElements, menuElement.querySelector(`.b3-chips .b3-chip[data-content="${escapeAttr(currentElement.dataset.name)}"]`), blockElement);
+                const chip = menuElement.querySelector<HTMLElement>(`.b3-chips .b3-chip[data-content="${escapeAttr(currentElement.dataset.name)}"]`);
+                if (removeCellOption(protyle, cellElements, chip, blockElement, onSave) && onSave) {
+                    menuElement.parentElement.dispatchEvent(new CustomEvent("click", {detail: "close"}));
+                }
             } else {
-                addColOptionOrCell(protyle, data, cellElements, currentElement, menuElement, blockElement);
+                addColOptionOrCell(protyle, data, cellElements, currentElement, menuElement, blockElement, onSave);
             }
         } else if (event.key === "Backspace" && inputElement.value === "") {
             removeCellOption(protyle, cellElements, inputElement.previousElementSibling as HTMLElement, blockElement);
@@ -573,7 +606,16 @@ export const bindSelectEvent = (protyle: IProtyle, data: IAV, menuElement: HTMLE
     });
 };
 
-export const addColOptionOrCell = (protyle: IProtyle, data: IAV, cellElements: HTMLElement[], currentElement: HTMLElement, menuElement: HTMLElement, blockElement: Element) => {
+export const addColOptionOrCell = (protyle: IProtyle, data: IAV, cellElements: HTMLElement[], currentElement: HTMLElement,
+                                   menuElement: HTMLElement, blockElement: Element, onSave?: () => void) => {
+    const resolveInput = (cellElements as IAVCellInputElements).resolveAVCellInput;
+    const inputTarget = resolveInput?.();
+    if (resolveInput && !inputTarget) return;
+    blockElement = inputTarget?.blockElement || blockElement;
+    if (getAVRelationHost(blockElement) && currentElement.querySelector(".b3-menu__accelerator")) {
+        showMessage(window.siyuan.languages._attrView.relatedDatabaseViewSharedTip);
+        return;
+    }
     const inputElement = menuElement.querySelector("input");
     const restoreSearchFocus = !isMobile() || document.activeElement === inputElement ||
         menuElement.dataset.restoreSearchFocus === "true";
@@ -591,8 +633,8 @@ export const addColOptionOrCell = (protyle: IProtyle, data: IAV, cellElements: H
         return;
     }
 
-    const nodeElement = hasClosestBlock(cellElements[0]);
-    if (!nodeElement) {
+    const nodeElement = getAVHost(cellElements[0]);
+    if (!nodeElement && !inputTarget?.cells.length) {
         cellElements.forEach((item, index) => {
             const rowID = getFieldIdByCellElement(item, data.viewType);
             if (isTableLikeView(data.viewType) || isCustomAttr(item)) {
@@ -623,13 +665,14 @@ export const addColOptionOrCell = (protyle: IProtyle, data: IAV, cellElements: H
     let mSelectValue: IAVCellSelectValue[];
     const batchMode = getAVBatchEditMode(cellElements[0]);
     cellElements.forEach((item, index) => {
-        const rowID = getFieldIdByCellElement(item, data.viewType);
+        const selectedCell = inputTarget?.cells[index];
+        const rowID = selectedCell?.rowID || getFieldIdByCellElement(item, data.viewType);
         if (!rowID) {
             return;
         }
-        const cellValue: IAVCellValue = batchMode === "replace" ?
-            cellValues[index] :
-            getAVBatchSourceValue(item, cellValues[index]);
+        if (selectedCell) item = inputTarget.elements[index];
+        const cellValue: IAVCellValue = selectedCell ? selectedCell.cell.value : inputTarget?.values[index] ||
+            (batchMode === "replace" ? cellValues[index] : getAVBatchSourceValue(item, cellValues[index]));
         const oldValue = JSON.parse(JSON.stringify(cellValue));
         if (batchMode === "remove") {
             cellValue.mSelect = cellValue.mSelect?.filter(option =>
@@ -689,7 +732,7 @@ export const addColOptionOrCell = (protyle: IProtyle, data: IAV, cellElements: H
             avID: data.id,
             data: oldValue
         });
-        if (!item.classList.contains("custom-attr__avvalue")) {
+        if (item && !item.classList.contains("custom-attr__avvalue")) {
             updateAttrViewCellAnimation(item, cellValue);
         }
         updateAttrViewCellInOtherElements(protyle, data.id, rowID, colId, cellValue, item);
@@ -716,14 +759,14 @@ export const addColOptionOrCell = (protyle: IProtyle, data: IAV, cellElements: H
             id: colId,
             avID: data.id,
             data: currentElement.dataset.name,
-        }]);
+        }], {callback: onSave});
     } else {
         cellDoOperations.push({
             action: "doUpdateUpdated",
             id: blockElement.getAttribute("data-node-id"),
             data: dayjs().format("YYYYMMDDHHmmss"),
         });
-        transaction(protyle, cellDoOperations, cellUndoOperations);
+        transaction(protyle, cellDoOperations, cellUndoOperations, {callback: onSave});
     }
     if (colData.type === "select") {
         if (blockElement.classList.contains("av")) {

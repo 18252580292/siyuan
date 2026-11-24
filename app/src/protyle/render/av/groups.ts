@@ -14,20 +14,23 @@ import {getAVColorStyle} from "./color";
 export const getPageSize = (blockElement: Element) => {
     const groupPageSize: {
         [key: string]: {
-            pageSize: number
+            pageSize: number,
+            page?: number
         }
     } = {};
     let unGroupPageSize: number;
+    let unGroupPage: number;
     blockElement.querySelectorAll(".av__body").forEach((item: HTMLElement) => {
         const id = item.dataset.groupId;
         const pageSize = parseInt(item.dataset.pageSize);
         if (id) {
-            groupPageSize[id] = {pageSize};
+            groupPageSize[id] = {pageSize, ...(item.dataset.rootPage ? {page: Number(item.dataset.rootPage)} : {})};
         } else if (!unGroupPageSize) {
             unGroupPageSize = pageSize;
+            unGroupPage = item.dataset.rootPage ? Number(item.dataset.rootPage) : undefined;
         }
     });
-    return {groupPageSize, unGroupPageSize};
+    return {groupPageSize, unGroupPageSize, unGroupPage};
 };
 
 export const setGroupMethod = async (options: {
@@ -84,10 +87,8 @@ export const getGroupsMethodHTML = (columns: IAVColumn[], group: IAVGroup, viewT
             return;
         }
         html += `<button class="b3-menu__item" data-id="${item.id}" data-type="setGroupMethod">
-    <div class="b3-menu__label fn__flex">
-        ${item.icon ? unicode2Emoji(item.icon, "b3-menu__icon", true) : `<svg class="b3-menu__icon"><use xlink:href="#${getColIconByType(item.type)}"></use></svg>`}
-        ${escapeHtml(item.name) || "&nbsp;"}
-    </div>
+    ${item.icon ? unicode2Emoji(item.icon, "b3-menu__icon", true) : `<svg class="b3-menu__icon"><use xlink:href="#${getColIconByType(item.type)}"></use></svg>`}
+    <div class="b3-menu__label">${escapeHtml(item.name) || "&nbsp;"}</div>
     ${group?.field === item.id ? selectHTML : ""}
 </button>`;
     });

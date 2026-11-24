@@ -20,6 +20,7 @@ import (
 )
 
 type AI struct {
+	Memory          *Memory          `json:"memory"`
 	Web             *AIWeb           `json:"web"`
 	MCP             *MCP             `json:"mcp"`
 	Embedding       *Embedding       `json:"embedding"`
@@ -36,6 +37,7 @@ type AIWeb struct {
 	SearchProvider string `json:"searchProvider"`
 	FetchProvider  string `json:"fetchProvider"`
 	APIKey         string `json:"apiKey"`
+	ExaAPIKey      string `json:"exaApiKey"`
 	Timeout        int    `json:"timeout"`
 }
 
@@ -49,6 +51,7 @@ func (web *AIWeb) Normalize() {
 		web.FetchProvider = "direct"
 	}
 	web.APIKey = strings.TrimSpace(web.APIKey)
+	web.ExaAPIKey = strings.TrimSpace(web.ExaAPIKey)
 	web.Timeout = util.NormalizeWebTimeout(web.Timeout)
 }
 
@@ -107,9 +110,18 @@ const (
 // behavior from the model registry. See https://github.com/siyuan-note/siyuan/issues/17797
 type Editing struct {
 	ModelID             string  `json:"modelId"`
+	ReasoningEffort     string  `json:"reasoningEffort"`
 	MaxHistoryMessages  int     `json:"maxHistoryMessages"`  // Max number of prior turns kept as context
 	Temperature         float64 `json:"temperature"`         // Alignment with Agent.Temperature
 	MaxCompletionTokens int     `json:"maxCompletionTokens"` // Alignment with Agent.MaxCompletionTokens
+}
+
+func IsAIReasoningEffort(value string) bool {
+	switch value {
+	case "", "none", "low", "medium", "high", "xhigh", "max":
+		return true
+	}
+	return false
 }
 
 // ImageGeneration 配置图片生成场景的模型和默认输出参数。
@@ -416,6 +428,7 @@ func defaultImageGeneration() *ImageGeneration {
 
 func NewAI() *AI {
 	ai := &AI{
+		Memory:          defaultMemory(),
 		Providers:       []*Provider{},
 		MCP:             &MCP{Servers: []MCPServer{}, ExposurePolicy: defaultCapabilityPolicy()},
 		Embedding:       defaultEmbedding(),
@@ -649,6 +662,10 @@ func (ai *AI) ReconcileModelIDs() {
 }
 
 func (ai *AI) Normalize() {
+	if ai.Memory == nil {
+		ai.Memory = defaultMemory()
+	}
+	ai.Memory.Normalize()
 	if ai.Providers == nil {
 		ai.Providers = []*Provider{}
 	}
@@ -737,6 +754,9 @@ func (ai *AI) Normalize() {
 	if ai.Editing == nil {
 		ai.Editing = defaultEditing()
 	} else {
+		if !IsAIReasoningEffort(ai.Editing.ReasoningEffort) {
+			ai.Editing.ReasoningEffort = ""
+		}
 		if 0 > ai.Editing.MaxCompletionTokens {
 			ai.Editing.MaxCompletionTokens = 0
 		}
@@ -942,6 +962,13 @@ func normalizeApprovalPolicy(policy *ApprovalPolicy) {
 }
 
 func (ai *AI) DecryptAPIKeys() {
+	if ai.Web != nil && ai.Web.ExaAPIKey != "" {
+		if dec := util.AESDecrypt(ai.Web.ExaAPIKey); dec != nil {
+			if plain, err := hex.DecodeString(string(dec)); err == nil {
+				ai.Web.ExaAPIKey = string(plain)
+			}
+		}
+	}
 	if ai.Web != nil && ai.Web.APIKey != "" {
 		if dec := util.AESDecrypt(ai.Web.APIKey); dec != nil {
 			if plain, err := hex.DecodeString(string(dec)); err == nil {
@@ -1000,6 +1027,9 @@ func (ai *AI) DecryptAPIKeys() {
 }
 
 func (ai *AI) EncryptAPIKeys() {
+	if ai.Web != nil && ai.Web.ExaAPIKey != "" {
+		ai.Web.ExaAPIKey = util.AESEncrypt(ai.Web.ExaAPIKey)
+	}
 	if ai.Web != nil && ai.Web.APIKey != "" {
 		ai.Web.APIKey = util.AESEncrypt(ai.Web.APIKey)
 	}

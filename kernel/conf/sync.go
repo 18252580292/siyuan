@@ -4,7 +4,10 @@
 
 package conf
 
+import "strings"
+
 type Sync struct {
+	Configured          bool     `json:"configured"`
 	CloudName           string   `json:"cloudName"`           // 云端同步目录名称
 	Enabled             bool     `json:"enabled"`             // 是否开启同步
 	Perception          bool     `json:"perception"`          // 是否开启感知
@@ -12,6 +15,7 @@ type Sync struct {
 	Interval            int      `json:"interval"`            // 自动同步间隔，单位：秒
 	Synced              int64    `json:"synced"`              // 最近同步时间
 	Stat                string   `json:"stat"`                // 最近同步统计信息
+	LastResult          int      `json:"lastResult"`          // 最近同步结果：0 未知，1 成功，2 失败；不持久化进行中状态
 	GenerateConflictDoc bool     `json:"generateConflictDoc"` // 云端同步冲突时是否生成冲突文档
 	AssetDownloadMode   int      `json:"assetDownloadMode"`   // 当前设备的资源下载模式，0：全部下载，1：按需下载
 	Provider            int      `json:"provider"`            // 云端存储服务提供者
@@ -85,4 +89,19 @@ func ProviderToStr(provider int) string {
 		return "Local File System"
 	}
 	return "Unknown"
+}
+
+func (s *Sync) HasConfiguredSync() bool {
+	if s == nil {
+		return false
+	}
+	if s.Configured || s.Enabled || s.Synced != 0 || s.LastResult != 0 {
+		return true
+	}
+	if name := strings.TrimSpace(s.CloudName); name != "" && name != "main" {
+		return true
+	}
+	return (s.S3 != nil && strings.TrimSpace(s.S3.Endpoint) != "" && strings.TrimSpace(s.S3.Bucket) != "") ||
+		(s.WebDAV != nil && strings.TrimSpace(s.WebDAV.Endpoint) != "") ||
+		(s.Local != nil && strings.TrimSpace(s.Local.Endpoint) != "")
 }

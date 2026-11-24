@@ -4,7 +4,6 @@ import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 import {ModuleKind, ScriptTarget, transpileModule} from "typescript";
 import {ContractFormData} from "../../util/contractFormData";
-import {createLazyModuleLoader} from "../../util/lazyModule";
 
 test("wallpaper settings require password or OIDC authentication on desktop, web and mobile", () => {
     const compiled = transpileModule(readFileSync("src/config/tabs/accessTab.ts", "utf8") +
@@ -21,6 +20,7 @@ test("wallpaper settings require password or OIDC authentication on desktop, web
                         const exports = {} as {registerAccessAuthGroup: (tab: unknown) => void};
                         runInNewContext(compiled, {exports, require: () => ({
                             isBrowser: () => browser, isInMobileApp: () => mobile,
+                            isMac: () => false, isWindows: () => true,
                             getHostCapabilities: () => ({oidcAuthentication: true}),
                         }), window: {siyuan: {config: {readonly, accessAuthCode: password,
                             oidc: {enabled: oidc}, api: {token: "token"}, appearance}, languages: {about14: "${token}"}}}});
@@ -35,6 +35,46 @@ test("wallpaper settings require password or OIDC authentication on desktop, web
                 }
             }
         }
+    }
+});
+
+test("application system lock follows the client platform and preserves hidden configuration", () => {
+    const compiled = transpileModule(readFileSync("src/config/tabs/accessTab.ts", "utf8") +
+        "\nexport {registerAccessAuthGroup};", {
+        compilerOptions: {module: ModuleKind.CommonJS, target: ScriptTarget.ES2021},
+    }).outputText;
+    for (const [platform, browser, mobile, password, kernelOS, expected] of [
+        ["windows", false, false, "password", "windows", true],
+        ["mac", false, false, "password", "darwin", true],
+        ["linux", false, false, "password", "linux", false],
+        ["windows", false, false, "password", "linux", true],
+        ["mac", false, false, "password", "linux", true],
+        ["linux", false, false, "password", "windows", false],
+        ["windows", true, false, "password", "windows", false],
+        ["mac", true, false, "password", "darwin", false],
+        ["android", true, true, "password", "android", true],
+        ["ios", true, true, "password", "ios", true],
+        ["harmony", true, true, "password", "harmony", true],
+        ["windows", false, false, "", "windows", false],
+        ["unknown", false, false, "password", "windows", false],
+    ] as const) {
+        const switches: string[] = [];
+        const system = {os: kernelOS, lockScreenMode: 1};
+        const config = {accessAuthCode: password, readonly: false, oidc: {enabled: false},
+            api: {token: "token"}, system};
+        const exports = {} as {registerAccessAuthGroup: (tab: unknown) => void};
+        runInNewContext(compiled, {exports, require: () => ({
+            isBrowser: () => browser, isInMobileApp: () => mobile,
+            isMac: () => platform === "mac", isWindows: () => platform === "windows",
+            getHostCapabilities: () => ({oidcAuthentication: true}),
+        }), window: {siyuan: {config, languages: {about14: "${token}"}}}});
+        exports.registerAccessAuthGroup({group: () => ({
+            button: () => {}, text: () => {}, slot: () => {},
+            switch: (id: string) => switches.push(id),
+        })});
+        assert.equal(switches.includes("system.lockScreenMode"), expected,
+            JSON.stringify({platform, browser, mobile, password: Boolean(password), kernelOS}));
+        assert.equal(system.lockScreenMode, 1);
     }
 });
 
@@ -81,7 +121,6 @@ test("encrypted notebook system lock is offered only for supported local desktop
         const system = {os, encryptedNotebookFollowSystemLock: false};
         let confirmSave: () => void;
         const dependencies = {
-            createLazyModuleLoader,
             isBrowser: () => browser,
             isMobile: () => mobile,
             getHostCapabilities: () => ({ownsKernel, importExport: ownsKernel}),
@@ -136,11 +175,10 @@ test("crypto backup import trims passwords and rejects whitespace-only input", a
     };
     const file = new Blob(["backup"], {type: "application/json"});
     const input = {files: [file], onchange: (): void => undefined, click() { this.onchange(); }};
-    let confirm: (value: string, dialog: {destroy: () => void}) => void;
+    let confirm: (value: string, dialog: {destroy: () => void}) => Promise<void>;
     const requests: FormData[] = [];
     let destroyed = 0;
     const dependencies = {
-        createLazyModuleLoader,
         ContractFormData,
         getHostCapabilities: () => ({importExport: true}),
         fetchPost: (): void => undefined,
@@ -149,7 +187,10 @@ test("crypto backup import trims passwords and rejects whitespace-only input", a
             requests.push(data);
             return {code: 0};
         },
-        openInputDialog: (options: {onConfirm: typeof confirm}) => { confirm = options.onConfirm; },
+        openInputDialog: (options: {awaitConfirm: boolean, onConfirm: (value: string) => Promise<boolean>}) => {
+            assert.equal(options.awaitConfirm, true);
+            confirm = (value, dialog) => options.onConfirm(value).then(success => { if (success) dialog.destroy(); });
+        },
         showMessage: (): void => undefined,
     };
     const exports = {} as {mountEncryptedNotebook: (element: typeof root) => void};
@@ -162,206 +203,169 @@ test("crypto backup import trims passwords and rejects whitespace-only input", a
     exports.mountEncryptedNotebook(root);
     listeners.get("#importCryptoBackupBtn")();
     const dialog = {destroy: () => { destroyed++; }};
-    confirm("", dialog);
-    confirm("   ", dialog);
-    confirm("\t\u00a0\u3000\n", dialog);
+    await confirm("", dialog);
+    await confirm("   ", dialog);
+    await confirm("\t\u00a0\u3000\n", dialog);
     assert.equal(requests.length, 0);
     for (const password of [" password ", "\tpassword\n", "\u00a0password\u3000"]) {
-        confirm(password, dialog);
-        await Promise.resolve();
+        await confirm(password, dialog);
         assert.equal(requests[requests.length - 1].get("password"), password.trim());
         assert.ok(requests[requests.length - 1].get("file") instanceof Blob);
     }
     assert.equal(destroyed, 3);
 });
 
-test("recovery-required key configuration can be disabled and cannot import another archive", () => {
+test("key backup actions have their own settings search entry", () => {
+    const compiled = transpileModule(readFileSync("src/config/tabs/accessTab.ts", "utf8") +
+        "\nexport {registerEncryptedNotebookGroup};", {
+        compilerOptions: {module: ModuleKind.CommonJS, target: ScriptTarget.ES2021},
+    }).outputText;
+    const lang = {
+        importNotebookCryptoBackup: "导入密钥",
+        importNotebookCryptoBackupDesc: "使用对应的主密码导入加密笔记本的密钥备份",
+        restoreEncryptedNotebooksTip: "请在独立工作区恢复",
+        _kernel: {"474": "同步工作区不能停用"},
+    };
+    const slots = new Map<string, {key: string; keywords: string[]; html: () => string}>();
+    const buttons = new Map<string, string>();
+    const exports = {} as {registerEncryptedNotebookGroup: (tab: unknown) => void};
+    runInNewContext(compiled, {exports, require: () => ({
+        getHostCapabilities: () => ({importExport: true}),
+        isBrowser: () => true,
+        genConfigItemMainHtml: (title: string, desc: string) => `${title} ${desc}`,
+    }), window: {siyuan: {config: {readonly: false}, languages: lang}}});
+    exports.registerEncryptedNotebookGroup({group: () => ({
+        slot: (spec: {key: string; keywords: string[]; html: () => string}) => slots.set(spec.key, spec),
+        button: (spec: {id: string; desc: string}) => buttons.set(spec.id, spec.desc),
+        number: () => {},
+    })});
+    const status = slots.get("encryptedNotebookStatus");
+    const actions = slots.get("encryptedNotebookActions");
+    assert.doesNotMatch(status.html(), /importCryptoBackupBtn/);
+    assert.ok(actions.html().includes(lang.importNotebookCryptoBackupDesc));
+    assert.ok(actions.keywords.includes(lang.importNotebookCryptoBackup));
+    assert.ok(actions.keywords.includes(lang.importNotebookCryptoBackupDesc));
+    assert.equal(actions.keywords.some(keyword => keyword?.includes("独立")), false);
+    assert.ok(buttons.get("restoreEncryptedNotebooks").includes("独立"));
+});
+
+test("synced workspaces cannot disable notebook encryption, including when key recovery is required", () => {
     const compiled = transpileModule(readFileSync("src/config/tabs/accessTab.ts", "utf8") +
         "\nexport {refreshEncryptedNotebookStatus};", {
         compilerOptions: {module: ModuleKind.CommonJS, target: ScriptTarget.ES2021},
     }).outputText;
-    const controls = new Map<string, {checked: boolean, disabled: boolean, classList: {toggle: () => void, remove: () => void}}>();
+    const createControl = () => ({
+        checked: false, disabled: false,
+        setAttribute: () => {}, removeAttribute: () => {},
+        classList: {toggle: () => {}, remove: () => {}},
+    });
+    const controls = new Map<string, ReturnType<typeof createControl>>();
     const root = {
         querySelector: (selector: string) => {
             if (!controls.has(selector)) {
-                controls.set(selector, {checked: false, disabled: false, classList: {toggle: () => {}, remove: () => {}}});
+                controls.set(selector, createControl());
             }
             return controls.get(selector);
         },
     };
     let state = "RecoveryRequired";
     const dependencies = {
-        createLazyModuleLoader,
         getHostCapabilities: () => ({importExport: true}),
         fetchPost: (url: string, data: object, callback: (response: unknown) => void) => {
             assert.equal(url, "/api/notebook/getEncryptedNotebookStatus");
             assert.equal(Object.keys(data).length, 0);
-            callback({data: {state, migrationPending: false}});
+            callback({code: 0, data: {state, migrationPending: false}});
         },
     };
-    const config = {notebookCrypto: {enabled: false}};
+    const config = {notebookCrypto: {enabled: false}, sync: {configured: false, enabled: false, synced: 0, cloudName: "main"}};
     const exports = {} as {refreshEncryptedNotebookStatus: (element: typeof root) => void};
     runInNewContext(compiled, {exports, require: () => dependencies, window: {siyuan: {config}}});
     exports.refreshEncryptedNotebookStatus(root);
     assert.equal(root.querySelector("#encryptedNotebookSwitch").checked, true);
     assert.equal(root.querySelector("#restoreEncryptedNotebooks").disabled, true);
     assert.equal(config.notebookCrypto.enabled, false);
+    assert.equal(root.querySelector("#encryptedNotebookSwitch").disabled, false);
+    config.sync.enabled = true;
+    exports.refreshEncryptedNotebookStatus(root);
+    assert.equal(root.querySelector("#encryptedNotebookSwitch").disabled, true);
+    config.sync.enabled = false;
+    config.sync.synced = 1;
+    state = "Enabled";
+    exports.refreshEncryptedNotebookStatus(root);
+    assert.equal(root.querySelector("#encryptedNotebookSwitch").checked, true);
+    assert.equal(root.querySelector("#encryptedNotebookSwitch").disabled, true);
+    assert.equal(config.notebookCrypto.enabled, true);
+    config.sync.synced = 0;
+    config.sync.configured = true;
+    exports.refreshEncryptedNotebookStatus(root);
+    assert.equal(root.querySelector("#encryptedNotebookSwitch").disabled, true);
     state = "Disabled";
     exports.refreshEncryptedNotebookStatus(root);
     assert.equal(root.querySelector("#encryptedNotebookSwitch").checked, false);
+    assert.equal(root.querySelector("#encryptedNotebookSwitch").disabled, false);
     assert.equal(root.querySelector("#restoreEncryptedNotebooks").disabled, false);
 });
 
-test("lazy password strength retains weak-password confirmation and rejects cancelled or failed checks", async () => {
+test("backend rejection restores the checked encryption switch when sync evidence is only server-side", async () => {
     const compiled = transpileModule(readFileSync("src/config/tabs/accessTab.ts", "utf8") +
-        "\nexport {confirmWeakPassword, updatePasswordStrength};", {
+        "\nexport {mountEncryptedNotebook};", {
         compilerOptions: {module: ModuleKind.CommonJS, target: ScriptTarget.ES2021},
     }).outputText;
-    let loads = 0;
-    let confirms = 0;
-    let warnings = 0;
-    let messages = 0;
-    const exports = {} as {confirmWeakPassword: (password: string, confirmed: () => void, current: () => boolean) => Promise<void>};
-    runInNewContext(compiled, {exports, require: (name: string) => {
-        if (name === "./passwordEstimator") { loads++; return {estimatePassword: (password: string) => password === "123" ? 0 : 4}; }
-        return {createLazyModuleLoader, confirmDialog: (_title: string, _message: string, confirmed: () => void) => { warnings++; confirmed(); },
-            showMessage: () => messages++};
-    }, window: {siyuan: {languages: {}}}});
-    assert.equal(loads, 0);
-    await exports.confirmWeakPassword("123", () => confirms++, () => true);
-    assert.equal(warnings, 1);
-    assert.equal(confirms, 1);
-    await exports.confirmWeakPassword("a-strong-fixture", () => confirms++, () => false);
-    assert.equal(confirms, 1);
-    await exports.confirmWeakPassword("a-strong-fixture", () => confirms++, () => true);
-    assert.equal(confirms, 2);
-    assert.equal(loads, 1);
-    assert.equal(messages, 0);
-    const failed = {} as typeof exports;
-    runInNewContext(compiled, {exports: failed, require: () => ({
-        createLazyModuleLoader: () => async () => { throw new Error("module unavailable"); },
-        showMessage: () => messages++,
-    }), window: {siyuan: {languages: {}}}});
-    await failed.confirmWeakPassword("123", () => confirms++, () => true);
-    assert.equal(confirms, 2);
-    assert.equal(messages, 1);
-});
-
-test("a pending weak-password warning cannot confirm after its owning inputs become stale", async () => {
-    const source = transpileModule(readFileSync("src/config/tabs/accessTab.ts", "utf8") +
-        "\nexport {confirmWeakPassword};", {compilerOptions: {module: ModuleKind.CommonJS}}).outputText;
-    let warning: () => void;
-    let current = true;
-    let confirmed = 0;
-    const exports = {} as {confirmWeakPassword: (password: string, callback: () => void, current: () => boolean) => Promise<void>};
-    runInNewContext(source, {exports, window: {siyuan: {languages: {}}}, require: (name: string) =>
-        name === "./passwordEstimator" ? {estimatePassword: () => 0} : {
-            createLazyModuleLoader, confirmDialog: (_title: string, _message: string, callback: () => void) => { warning = callback; },
-        }});
-    await exports.confirmWeakPassword("fixture", () => confirmed++, () => current);
-    assert.equal(typeof warning, "function");
-    current = false;
-    warning();
-    assert.equal(confirmed, 0);
-});
-
-test("master-password checks discard changed values and superseded enable submissions", async () => {
-    const source = transpileModule(readFileSync("src/config/tabs/accessTab.ts", "utf8") +
-        "\nexport {openEnableEncryptedDialog, openChangeMasterPasswordDialog};", {compilerOptions: {module: ModuleKind.CommonJS}}).outputText;
-    const settle = () => new Promise(resolve => setImmediate(resolve));
-    for (const kind of ["enable", "change"] as const) {
-        let resolveEstimator: (value: {estimatePassword: () => number}) => void;
-        const estimator = new Promise<{estimatePassword: () => number}>(resolve => { resolveEstimator = resolve; });
-        const requests: {url: string, data: object}[] = [];
-        const control = (value: string) => ({value, checked: true, disabled: false, focus() {}, addEventListener() {}});
-        const inputs = [control("old-fixture"), control("new-fixture"), control("new-fixture")];
-        if (kind === "enable") inputs[0].value = inputs[1].value;
-        const clicks: (() => void)[] = [];
-        const buttons = [0, 1].map(index => ({addEventListener: (_type: string, callback: () => void) => { clicks[index] = callback; }}));
-        const risk = control("");
-        const element = {isConnected: true, querySelectorAll: (selector: string) => selector === "input" ? inputs : buttons,
-            querySelector: (selector: string) => selector === "#encRiskConfirm" ? risk : {isConnected: true, classList: {add() {}, remove() {}}}};
-        const exports = {} as {openEnableEncryptedDialog: (done: () => void, cancel: () => void) => void,
-            openChangeMasterPasswordDialog: () => void};
-        runInNewContext(source, {exports, window: {siyuan: {languages: {}}}, require: (name: string) => {
-            if (name === "./passwordEstimator") return estimator;
-            return {createLazyModuleLoader, Dialog: class {element = element; destroy() { element.isConnected = false; }},
-                isMobile: () => false, showMessage: () => {}, fetchSyncPost: async (url: string, data: object) => {
-                    requests.push({url, data}); return {code: 0};
-                }};
-        }});
-        if (kind === "enable") exports.openEnableEncryptedDialog(() => {}, () => {});
-        else exports.openChangeMasterPasswordDialog();
-        clicks[1]();
-        await settle();
-        inputs[1].value = "changed-fixture";
-        resolveEstimator({estimatePassword: () => 4});
-        await settle();
-        assert.equal(requests.length, 0);
-        if (kind === "enable") inputs[0].value = inputs[1].value;
-        else inputs[2].value = inputs[1].value;
-        clicks[1]();
-        clicks[1]();
-        await settle();
-        assert.equal(requests.length, 1);
-        assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), kind === "enable" ? {
-            url: "/api/notebook/enableEncryptedNotebooks", data: {password: "changed-fixture"},
-        } : {
-            url: "/api/notebook/changeMasterPassword", data: {oldPassword: "old-fixture", newPassword: "changed-fixture"},
-        });
-    }
-});
-
-for (const kind of ["enable", "change"] as const) {
-    test(`${kind} password submission stays single-flight until the kernel responds and permits retry`, async () => {
-        const compiled = transpileModule(readFileSync("src/config/tabs/accessTab.ts", "utf8") +
-            "\nexport {openEnableEncryptedDialog, openChangeMasterPasswordDialog};",
-        {compilerOptions: {module: ModuleKind.CommonJS}}).outputText;
-        const settle = () => new Promise(resolve => setImmediate(resolve));
-        const clicks: (() => void)[] = [];
-        const buttons = [0, 1].map(index => ({disabled: false,
-            addEventListener: (_type: string, callback: () => void) => { clicks[index] = callback; }}));
-        const inputs = ["old-fixture", "new-fixture", "new-fixture"].map(value => ({value, focus() {}, addEventListener() {}}));
-        if (kind === "enable") inputs[0].value = inputs[1].value;
-        const risk = {checked: true, addEventListener() {}};
-        const element = {isConnected: true, querySelectorAll: (selector: string) => selector === "input" ? inputs : buttons,
-            querySelector: (selector: string) => selector === "#encRiskConfirm" ? risk : {classList: {add() {}, remove() {}}}};
-        const pending: {resolve: (response: {code: number, msg: string}) => void, reject: (error: Error) => void}[] = [];
-        let messages = 0;
-        const exports = {} as {openEnableEncryptedDialog: (done: () => void, cancel: () => void) => void,
-            openChangeMasterPasswordDialog: () => void};
-        runInNewContext(compiled, {exports, window: {siyuan: {languages: {}}}, require: (name: string) => {
-            if (name === "./passwordEstimator") return {estimatePassword: () => 4};
-            return {createLazyModuleLoader, Dialog: class {element = element; destroy() { element.isConnected = false; }},
-                isMobile: () => false, showMessage() { messages++; },
-                fetchSyncPost: () => new Promise((resolve, reject) => pending.push({resolve, reject})),
-            };
-        }});
-        if (kind === "enable") exports.openEnableEncryptedDialog(() => {}, () => {});
-        else exports.openChangeMasterPasswordDialog();
-        clicks[1]();
-        await settle();
-        assert.equal(pending.length, 1);
-        clicks[1]();
-        await settle();
-        assert.equal(pending.length, 1, "a second click must not start a concurrent password mutation");
-        assert.equal(buttons[1].disabled, true);
-        pending[0].resolve({code: -1, msg: "retry fixture"});
-        await settle();
-        assert.equal(buttons[1].disabled, false);
-        clicks[1]();
-        await settle();
-        assert.equal(pending.length, 2);
-        const previousMessages = messages;
-        pending[1].reject(new Error("network fixture"));
-        await settle();
-        assert.equal(messages, previousMessages + 1);
-        assert.equal(buttons[1].disabled, false);
-        clicks[1]();
-        await settle();
-        assert.equal(pending.length, 3);
-        pending[2].resolve({code: 0, msg: ""});
-        await settle();
-        assert.equal(element.isConnected, false);
+    const listeners = new Map<string, () => Promise<void>>();
+    const createControl = (selector: string) => ({
+        checked: false, disabled: false,
+        setAttribute: () => {}, removeAttribute: () => {},
+        querySelector: (child: string): unknown => root.querySelector(child),
+        addEventListener: (_event: string, callback: () => Promise<void>) => listeners.set(selector, callback),
+        classList: {toggle: () => {}, remove: () => {}},
     });
-}
+    const controls = new Map<string, ReturnType<typeof createControl>>();
+    const root = {
+        querySelector: (selector: string) => {
+            if (!controls.has(selector)) {
+                controls.set(selector, createControl(selector));
+            }
+            return controls.get(selector);
+        },
+    };
+    const requests: string[] = [];
+    const messages: string[] = [];
+    let transportFailure = false;
+    const status = {code: 0, data: {state: "Enabled", count: 0, hasHistoryDependency: false}};
+    const config = {notebookCrypto: {enabled: true}, sync: {enabled: false, synced: 0, cloudName: "main"}};
+    const exports = {} as {mountEncryptedNotebook: (element: typeof root) => void};
+    runInNewContext(compiled, {exports, require: () => ({
+        getHostCapabilities: () => ({importExport: true}),
+        fetchPost: (_url: string, _data: object, callback: (value: typeof status) => void) => callback(status),
+        fetchSyncPost: async (url: string) => {
+            requests.push(url);
+            if (requests.length === 1) {
+                return status;
+            }
+            if (transportFailure) {
+                throw new Error("connection lost");
+            }
+            return {code: 9};
+        },
+        showMessage: (message: string) => messages.push(message),
+    }), window: {siyuan: {config, languages: {confirmActionFailed: "request failed"}}}});
+    exports.mountEncryptedNotebook(root);
+    const switchElement = root.querySelector("#encryptedNotebookSwitch");
+    assert.equal(switchElement.checked, true);
+    switchElement.checked = false;
+    const pending = listeners.get("#encryptedNotebookSwitch")();
+    assert.equal(switchElement.disabled, true);
+    await listeners.get("#encryptedNotebookSwitch")();
+    await pending;
+    assert.equal(switchElement.disabled, false);
+    assert.deepEqual(requests, ["/api/notebook/getEncryptedNotebookStatus", "/api/notebook/disableEncryptedNotebooks"]);
+    assert.equal(switchElement.checked, true);
+    assert.equal(config.notebookCrypto.enabled, true);
+    assert.deepEqual(messages, []);
+    requests.length = 0;
+    transportFailure = true;
+    switchElement.checked = false;
+    await listeners.get("#encryptedNotebookSwitch")();
+    assert.equal(switchElement.checked, true);
+    assert.deepEqual(messages, ["request failed"]);
+});

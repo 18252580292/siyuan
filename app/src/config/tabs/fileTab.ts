@@ -81,6 +81,10 @@ const registerFileTreeBehaviorGroup = (tab: SettingTabBuilder) => {
         title: window.siyuan.languages.selectOpen,
         desc: window.siyuan.languages.fileTree2,
     });
+    group.switch("fileTree.restoreDocPosition", {
+        title: window.siyuan.languages.restoreDocPosition,
+        desc: window.siyuan.languages.restoreDocPositionTip,
+    });
 };
 
 const registerTabStartupGroup = (tab: SettingTabBuilder) => {
@@ -284,13 +288,13 @@ const registerFileManagementGroup = (tab: SettingTabBuilder) => {
 </div>`,
         afterMount: (root) => {
             root.querySelector("#clearHistory")?.addEventListener("click", () => {
-                confirmDialog(
-                    window.siyuan.languages.clearHistory,
-                    window.siyuan.languages.confirmClearHistory,
-                    () => {
+                confirmDialog({
+                    title: window.siyuan.languages.clearHistory,
+                    text: window.siyuan.languages.confirmClearHistory,
+                    confirm: () => {
                         fetchPost("/api/history/clearWorkspaceHistory", {});
                     },
-                );
+                });
             });
         },
         controls: [{
@@ -299,6 +303,12 @@ const registerFileManagementGroup = (tab: SettingTabBuilder) => {
         }],
     });
 
+    group.number("fileTree.docTreeBatchSize", {
+        title: window.siyuan.languages.docTreeBatchSize,
+        desc: window.siyuan.languages.docTreeBatchSizeTip,
+        min: 1,
+        max: 10240,
+    });
     group.number("fileTree.maxListCount", {
         title: window.siyuan.languages.fileTree16,
         desc: window.siyuan.languages.fileTree17,

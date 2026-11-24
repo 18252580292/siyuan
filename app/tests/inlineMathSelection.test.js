@@ -11,7 +11,7 @@ const setup = async (source, suffix) => {
         revealTabsForTarget: () => {},
         genRenderFrame: () => { throw new Error("Unexpected block formula"); },
     };
-    const api = new Function(...Object.keys(dependencies), source + "\nreturn {mathRender, normalizeInlineMathCaret};")(
+    const api = new Function(...Object.keys(dependencies), source + "\nreturn {mathRender, normalizeInlineMathCaret, openInlineMath};")(
         ...Object.values(dependencies));
     window.mathSelectionAPI = api;
     window.siyuan = {config: {editor: {katexMacros: "{}"}}};
@@ -118,13 +118,13 @@ const setupEdge = async (mode, direction) => {
     for (const type of ["mousedown", "selectionchange", "mouseup", "click"]) {
         document.addEventListener(type, event => recordSelection(type, event), {signal: diagnosticAbort.signal});
     }
-    document.addEventListener("click", () => {
+    document.addEventListener("click", event => {
         // 使用编辑器的延迟光标校正，验证鼠标释放后的选区不会被折叠。
         setTimeout(() => {
             const selection = getSelection();
             if (selection.rangeCount) {
                 recordSelection("before-caret-normalization");
-                window.mathSelectionAPI.normalizeInlineMathCaret(selection.getRangeAt(0));
+                window.mathSelectionAPI.normalizeInlineMathCaret(selection.getRangeAt(0), event);
                 recordSelection("after-caret-normalization");
             }
         }, 0);
@@ -176,9 +176,16 @@ const runElectron = async () => {
         const clicks = ts.createSourceFile("index.ts", readFileSync(path.join(root, "wysiwyg/index.ts"), "utf8"),
             ts.ScriptTarget.Latest, true);
         let caretSource;
+        let mathClickSource;
         const visit = node => {
             if (ts.isBlock(node)) {
                 node.statements.forEach((statement, index) => {
+                    if (ts.isVariableStatement(statement) && statement.getText(clicks).includes(
+                        'hasClosestByAttribute(event.target, "data-subtype", "math")')) {
+                        const next = node.statements[index + 1];
+                        assert.ok(ts.isIfStatement(next));
+                        mathClickSource = statement.getText(clicks) + "\n" + next.getText(clicks);
+                    }
                     if (ts.isVariableStatement(statement) && statement.getText(clicks).includes(
                         'hasClosestByAttribute(newRange.startContainer, "data-type", "inline-math")')) {
                         const next = node.statements[index + 1];
@@ -191,7 +198,10 @@ const runElectron = async () => {
         };
         visit(clicks);
         assert.ok(caretSource);
-        source += "\nconst normalizeInlineMathCaret = (newRange: Range) => {" + caretSource + "};";
+        source += "\nconst normalizeInlineMathCaret = (newRange: Range, event: MouseEvent) => {" + caretSource + "};";
+        assert.ok(mathClickSource);
+        source += "\nconst openInlineMath = (event: MouseEvent, protyle: any) => {" +
+            "const ctrlIsPressed = false; const isInAndroid = () => false;" + mathClickSource + "};";
         const compiled = ts.transpileModule(source, {compilerOptions: {target: ts.ScriptTarget.ES2021}}).outputText;
         const css = require("sass").compile(path.join(__dirname, "../src/assets/scss/base.scss"), {
             logger: require("sass").Logger.silent,
@@ -202,7 +212,7 @@ const runElectron = async () => {
             require("node:url").pathToFileURL(path.join(katexRoot, "katex.min.css")) + '"><style>' + css +
             "body {margin:32px;font-size:16px} .protyle-wysiwyg {padding:0}</style><script src=\"" +
             require("node:url").pathToFileURL(path.join(__dirname, "../stage/protyle/js/lute/lute.min.js")) +
-            "\"></script></head><body></body></html>");
+            "\"></script></head><body class=\"" + (process.platform === "darwin" ? "body--mac" : "") + "\"></body></html>");
         await win.loadFile(html);
         await win.webContents.executeJavaScript(`window.katex = require(${JSON.stringify(path.join(katexRoot, "katex.min.js"))}); true;`);
         win.webContents.debugger.attach("1.3");
@@ -295,9 +305,98 @@ const runElectron = async () => {
             range.collapse(true);
             getSelection().removeAllRanges();
             getSelection().addRange(range);
-            window.mathSelectionAPI.normalizeInlineMathCaret(range);
+            window.mathSelectionAPI.normalizeInlineMathCaret(range, new MouseEvent("click", {
+                detail: 1, clientX: math.getBoundingClientRect().right + 1,
+            }));
             return {collapsed: getSelection().isCollapsed, outside: !math.contains(getSelection().anchorNode)};
         })()`), {collapsed: true, outside: true});
+        for (const prefix of ["", "preceding text"]) {
+            await win.webContents.executeJavaScript(`(${setup.toString()})(${JSON.stringify(compiled)}, "following text")`);
+            await win.webContents.executeJavaScript(`(async () => {
+                const math = document.querySelector('[data-type="inline-math"]');
+                math.previousSibling.textContent = ${JSON.stringify(prefix)};
+                math.dataset.content = ${JSON.stringify(String.raw` \frac{\mathrm{d}V}{\mathrm{d}x} `)};
+                math.removeAttribute("data-render");
+                await window.mathSelectionAPI.mathRender(math);
+                await document.fonts.ready;
+            })()`);
+            for (const [position, detail, expected] of [
+                ["left", 1, "before"], ["left-edge", 1, "before"], ["edge", 1, "after"], ["inside", 1, "after"],
+                ["right", 1, "after"], ["left", 0, "after"],
+            ]) {
+                const result = await win.webContents.executeJavaScript(`(() => {
+                    const math = document.querySelector('[data-type="inline-math"]');
+                    const rect = math.getBoundingClientRect();
+                    // MouseEvent 坐标取整；边界两侧分别采样严格在左侧及首个到达公式的整数像素。
+                    const x = {left: rect.left - 70, "left-edge": Math.ceil(rect.left) - 1, edge: Math.ceil(rect.left),
+                        inside: (rect.left + rect.right) / 2, right: rect.right + 1}[${JSON.stringify(position)}];
+                    const range = document.createRange();
+                    range.selectNodeContents(math.querySelector(".mord"));
+                    range.collapse(true);
+                    getSelection().removeAllRanges();
+                    getSelection().addRange(range);
+                    window.mathSelectionAPI.normalizeInlineMathCaret(range,
+                        new MouseEvent("click", {detail: ${detail}, clientX: x}));
+                    const index = Array.from(math.parentNode.childNodes).indexOf(math);
+                    return {collapsed: range.collapsed, outside: range.startContainer === math.parentNode,
+                        side: range.startOffset === index ? "before" : range.startOffset === index + 1 ? "after" : "other"};
+                })()`);
+                assert.deepEqual(result, {collapsed: true, outside: true, side: expected},
+                    JSON.stringify({prefix, position, detail}));
+            }
+            for (const backward of [false, true]) {
+                assert.deepEqual(await win.webContents.executeJavaScript(`(() => {
+                    const math = document.querySelector('[data-type="inline-math"]');
+                    const range = document.createRange();
+                    range.selectNodeContents(math.querySelector(".mord"));
+                    range.setEnd(math.nextSibling, 2);
+                    const selection = getSelection();
+                    selection.setBaseAndExtent(${backward} ? range.endContainer : range.startContainer,
+                        ${backward} ? range.endOffset : range.startOffset,
+                        ${backward} ? range.startContainer : range.endContainer,
+                        ${backward} ? range.startOffset : range.endOffset);
+                    window.mathSelectionAPI.normalizeInlineMathCaret(selection.getRangeAt(0), new MouseEvent("click", {
+                        detail: 1, clientX: math.getBoundingClientRect().left - 70,
+                    }));
+                    const result = selection.getRangeAt(0);
+                    return {collapsed: result.collapsed,
+                        before: result.startContainer === math.parentNode &&
+                            result.startOffset === Array.from(math.parentNode.childNodes).indexOf(math),
+                        end: result.endContainer === math.nextSibling && result.endOffset === 2,
+                        backward: selection.anchorNode === result.endContainer && selection.anchorOffset === result.endOffset};
+                })()`), {collapsed: false, before: true, end: true, backward});
+            }
+            if (prefix) {
+                assert.equal(await win.webContents.executeJavaScript(`(() => {
+                    const math = document.querySelector('[data-type="inline-math"]');
+                    const text = math.previousSibling;
+                    const range = document.createRange();
+                    range.setStart(text, 2);
+                    range.collapse(true);
+                    window.mathSelectionAPI.normalizeInlineMathCaret(range, new MouseEvent("click", {
+                        detail: 1, clientX: math.getBoundingClientRect().left - 70,
+                    }));
+                    return range.collapsed && range.startContainer === text && range.startOffset === 2;
+                })()`), true);
+            }
+        }
+        await win.webContents.executeJavaScript(`(${setupEdge.toString()})("left", "click")`);
+        assert.equal(await win.webContents.executeJavaScript(`(() => {
+            const math = document.querySelector('[data-type="inline-math"]');
+            const expected = document.body.classList.contains("body--mac") ? "text" : "all";
+            if (getComputedStyle(math).userSelect !== expected) throw new Error("Unexpected editable math selection");
+            const editor = math.closest(".protyle-wysiwyg");
+            editor.dataset.readonly = "true";
+            if (getComputedStyle(math).userSelect !== "all") throw new Error("Readonly math must remain atomic");
+            editor.dataset.readonly = "false";
+            let opened = false;
+            const protyle = {disabled: false, toolbar: {showRender: (owner, target) => {
+                opened = owner === protyle && target === math;
+            }}};
+            math.addEventListener("click", event => window.mathSelectionAPI.openInlineMath(event, protyle), {once: true});
+            math.querySelector(".katex").dispatchEvent(new MouseEvent("click", {bubbles: true}));
+            return opened;
+        })()`), true, "clicking rendered math still opens its editor");
         const points = await win.webContents.executeJavaScript(`(${setupEdge.toString()})("right", "delete")`);
         await drag(points.before, points.right, true);
         assert.equal(await win.webContents.executeJavaScript(`document.execCommand("delete");

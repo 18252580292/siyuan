@@ -34,7 +34,6 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/task"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
-	"gopkg.in/yaml.v3"
 )
 
 // Box 笔记本。
@@ -334,6 +333,21 @@ func (box *Box) SaveConf(conf *conf.BoxConf) error {
 
 // SaveConfAndSync 保存用户修改的笔记本配置，并为已落盘的变更重新计划同步。
 func (box *Box) SaveConfAndSync(conf *conf.BoxConf) error {
+	boxDocTitleNameLock.Lock()
+	defer boxDocTitleNameLock.Unlock()
+	if box.Exist(boxDocPath(box.ID)) && (!IsEncryptedBox(box.ID) || IsBoxUnlocked(box.ID)) {
+		tree, _, err := filesys.ReadTreeSnapshot(box.ID, boxDocPath(box.ID))
+		if err != nil {
+			return err
+		}
+		// 其他设置的旧快照不能覆盖标题事务已更新的名称。
+		if tree.Root.IALAttr(boxDocTitleSourceAttr) == "document" || tree.Root.DocumentTitle != nil {
+			conf.Name = treenode.ReadDocumentTitle(tree.Root).Text
+			if conf.Name == "" {
+				conf.Name = Conf.Language(16)
+			}
+		}
+	}
 	return box.saveConf(conf, true)
 }
 
@@ -388,6 +402,8 @@ func syncBoxConfCryptoBackup(boxID string, boxConf *conf.BoxConf) error {
 func (box *Box) saveConf0(data []byte) error {
 	unlock := filesys.LockDocumentConfiguration()
 	defer unlock()
+	finishDocTreeChange := cache.BeginDocTreeMutation(box.ID)
+	defer finishDocTreeChange()
 	if !ast.IsNodeIDPattern(box.ID) {
 		return fmt.Errorf("invalid box ID [%s]", box.ID)
 	}
@@ -532,6 +548,8 @@ func (box *Box) MkdirAll(path string) error {
 }
 
 func (box *Box) Move(oldPath, newPath string) error {
+	finishDocTreeChange := cache.BeginDocTreeMutation(box.ID)
+	defer finishDocTreeChange()
 	if _, err := box.validateBoxPath(oldPath); err != nil {
 		return err
 	}
@@ -559,6 +577,8 @@ func (box *Box) Move(oldPath, newPath string) error {
 }
 
 func (box *Box) Remove(path string) error {
+	finishDocTreeChange := cache.BeginDocTreeMutation(box.ID)
+	defer finishDocTreeChange()
 	if _, err := box.validateBoxPath(path); err != nil {
 		return err
 	}
@@ -791,7 +811,7 @@ func normalizeTree(tree *parse.Tree) (yfmRootID, yfmTitle, yfmUpdated string) {
 		if ast.NodeYamlFrontMatterContent == n.Type {
 			// Parsing YAML Front Matter as document custom attributes when importing Markdown files https://github.com/siyuan-note/siyuan/issues/10878
 			attrs := map[string]any{}
-			parseErr := yaml.Unmarshal(n.Tokens, &attrs)
+			parseErr := loadFrontMatter(n.Tokens, &attrs)
 			if parseErr != nil {
 				logging.LogWarnf("parse YAML front matter [%s] failed: %s", n.Tokens, parseErr)
 				return ast.WalkContinue
@@ -867,7 +887,7 @@ func normalizeTree(tree *parse.Tree) (yfmRootID, yfmTitle, yfmUpdated string) {
 			}
 
 			// Import the YAML at the beginning of the Markdown as a code block https://github.com/siyuan-note/siyuan/issues/16488
-			codeBlock := &ast.Node{Type: ast.NodeCodeBlock, ID: ast.NewNodeID()}
+			codeBlock := &ast.Node{Type: ast.NodeCodeBlock, ID: ast.NewNodeID(), IsFencedCodeBlock: true}
 			codeBlock.SetIALAttr("id", codeBlock.ID)
 			codeBlock.SetIALAttr("updated", codeBlock.ID[:14])
 			openMarker := &ast.Node{Type: ast.NodeCodeBlockFenceOpenMarker, Tokens: []byte("```"), CodeBlockFenceLen: 3}
@@ -1037,10 +1057,25 @@ func ReindexFTS() {
 
 func fullReindex() {
 	fullReindexWithTxFlush(true)
+	debug.FreeOSMemory()
 }
 
-// Snapshot checkout already drained transactions while holding flushLock.
+// 快照恢复已经持有事务锁并完成旧事务；缓存、数据库和文档索引需共享该边界，避免旧索引覆盖编辑。
 func fullReindexWithTxFlush(flushTransactions bool) {
+	if flushTransactions {
+		for {
+			FlushTxQueue()
+			flushLock.Lock()
+			if txQueueSize() == 0 {
+				break
+			}
+			flushLock.Unlock()
+		}
+		defer flushLock.Unlock()
+	}
+	wasFlushing := isFlushing.Swap(true)
+	defer isFlushing.Store(wasFlushing)
+
 	cache.ClearTreeCache()
 	cache.ClearDocsIAL()
 	cache.ClearBlocksIAL()
@@ -1052,10 +1087,6 @@ func fullReindexWithTxFlush(flushTransactions bool) {
 		pushSQLInsertBlocksFTSMsg, pushSQLDeleteBlocksMsg = false, false
 	}()
 
-	if flushTransactions {
-		FlushTxQueue()
-	}
-
 	sql.InitDatabase(true)
 
 	sql.IndexIgnoreCached = false
@@ -1064,7 +1095,6 @@ func fullReindexWithTxFlush(flushTransactions bool) {
 		indexBox(openedBox.ID)
 	}
 	LoadFlashcards()
-	debug.FreeOSMemory()
 }
 
 func ChangeBoxSort(boxIDs []string) {

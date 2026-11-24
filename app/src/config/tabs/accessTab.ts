@@ -1,19 +1,21 @@
+import {openInputDialog} from "../../dialog/inputDialog";
+import {AdaptiveDialog} from "../../dialog/adaptiveDialog";
+import {confirmDialog} from "../../dialog/confirmDialog";
 import {config as configApi} from "../util/configApi";
 import {fetchWithAppId} from "../../util/fetchWithAppId";
 import {escapeHtmlTextAndAttr} from "../../util/escape";
 import type {SettingTabBuilder} from "../setting/builder";
 import {fetchPost, fetchSyncPost} from "../../util/fetch";
 import {ContractFormData} from "../../util/contractFormData";
-import {Dialog} from "../../dialog";
-import {openInputDialog} from "../../dialog/inputDialog";
-import {confirmDialog} from "../../dialog/confirmDialog";
 import {Constants} from "../../constants";
 import {isBrowser, isMobile} from "../../util/functions";
 import {showMessage} from "../../dialog/message";
 /// #if !BROWSER
 import {shell} from "electron";
 /// #endif
-import {isInAndroid, isInHarmony, isInIOS, isInMobileApp, saveExportFile} from "../../protyle/util/compatibility";
+import {
+    isInAndroid, isInHarmony, isInIOS, isInMobileApp, isMac, isWindows, saveExportFile,
+} from "../../protyle/util/compatibility";
 import {openByMobile, openLink} from "../../editor/openLink";
 import {bindPasswordIconaToggle, genConfigItemMainHtml} from "../render/fragments";
 import {
@@ -24,17 +26,14 @@ import {
     updatePublishConfig
 } from "./accessRuntime";
 import {sendAppSetting} from "./appRuntime";
-import {createLazyModuleLoader} from "../../util/lazyModule";
+import zxcvbn = require("zxcvbn");
 import {canOpenExternalURL, getHostCapabilities} from "../../util/hostCapabilities";
 import {openNotebookArchiveDialog, openNotebookArchiveImportDialog} from "../notebookArchive";
 import {genLockScreenWallpaperHtml, mountLockScreenWallpaper} from "./lockScreenWallpaper";
 import {remountOpenSettingTab} from "../setting/mount";
 
-const loadPasswordEstimator = createLazyModuleLoader(() => import("./passwordEstimator").then(module => module.estimatePassword));
-const passwordStrengthVersions = new WeakMap<HTMLElement, number>();
-const getPasswordStrength = async (password: string) => {
-    const estimate = await loadPasswordEstimator();
-    const score = estimate(password);
+const getPasswordStrength = (password: string) => {
+    const score = zxcvbn(password).score;
     if (score <= 1) {
         return "weak";
     }
@@ -44,51 +43,23 @@ const getPasswordStrength = async (password: string) => {
     return "strong";
 };
 
-const updatePasswordStrength = async (element: HTMLElement, password: string) => {
-    const version = (passwordStrengthVersions.get(element) || 0) + 1;
-    passwordStrengthVersions.set(element, version);
+const updatePasswordStrength = (element: HTMLElement, password: string) => {
     if (!password) {
         element.classList.add("fn__none");
         return;
     }
-    try {
-        const strength = await getPasswordStrength(password);
-        if (!element.isConnected || passwordStrengthVersions.get(element) !== version) {
-            return;
-        }
-        element.classList.remove("fn__none");
-        element.setAttribute("data-strength", strength);
-        element.textContent = window.siyuan.languages[`passwordStrength${strength[0].toUpperCase()}${strength.slice(1)}`];
-    } catch (error) {
-        console.error("Load password estimator failed:", error);
-    }
+    const strength = getPasswordStrength(password);
+    element.classList.remove("fn__none");
+    element.setAttribute("data-strength", strength);
+    element.textContent = window.siyuan.languages[`passwordStrength${strength[0].toUpperCase()}${strength.slice(1)}`];
 };
 
-const confirmWeakPassword = async (password: string, confirm: () => void, isCurrent: () => boolean) => {
-    const submit = async () => {
-        try {
-            if (isCurrent()) {
-                await confirm();
-            }
-        } catch (error) {
-            showMessage(String(error));
-        }
-    };
-    try {
-        const strength = await getPasswordStrength(password);
-        if (!isCurrent()) {
-            return;
-        }
-        if (strength !== "weak") {
-            await submit();
-            return;
-        }
-        confirmDialog("⚠️ " + window.siyuan.languages.weakPasswordConfirmTitle, window.siyuan.languages.weakPasswordConfirmTip, () => {
-            void submit();
-        });
-    } catch (error) {
-        showMessage(String(error));
+const confirmWeakPassword = (password: string, confirm: () => void) => {
+    if (getPasswordStrength(password) !== "weak") {
+        confirm();
+        return;
     }
+    confirmDialog({title: "⚠️ " + window.siyuan.languages.weakPasswordConfirmTitle, text: window.siyuan.languages.weakPasswordConfirmTip, confirm: confirm});
 };
 
 const registerAccessAuthGroup = (tab: SettingTabBuilder) => {
@@ -105,7 +76,7 @@ const registerAccessAuthGroup = (tab: SettingTabBuilder) => {
             afterMount: mountAuthCodeButton,
         });
     }
-    if (window.siyuan.config.accessAuthCode && !onWeb) {
+    if (window.siyuan.config.accessAuthCode && !onWeb && (isInMobileApp() || isMac() || isWindows())) {
         group.switch("system.lockScreenMode", {
             title: window.siyuan.languages.about7,
             desc: window.siyuan.languages.about8,
@@ -152,7 +123,8 @@ const mountOIDCButton = (root: HTMLElement) => {
         const config = window.siyuan.config.oidc;
         const escape = (value: string) => escapeHtmlTextAndAttr(value);
         let destroyOIDCDialog: () => void = (): undefined => undefined;
-        const dialog = new Dialog({
+        const dialog = new AdaptiveDialog({
+            mobileSheet: {beforeClose: () => !validationActivating},
             title: window.siyuan.languages.oidcLogin,
             content: `<div class="b3-dialog__content" id="oidcConfigForm">
     <label class="b3-label b3-label--inner fn__flex">
@@ -390,6 +362,7 @@ const mountOIDCButton = (root: HTMLElement) => {
                 restoreMobileCallback();
                 applyActivatedOIDC(activation.data.config);
                 showMessage(window.siyuan.languages.oidcVerificationSuccess);
+                validationActivating = false;
                 dialog.destroy();
             } catch (error) {
                 validationFailed(error instanceof Error ? error.message : String(error), attempt);
@@ -474,9 +447,14 @@ const mountOIDCButton = (root: HTMLElement) => {
                     }).catch((error) => validationFailed(error instanceof Error ? error.message : String(error), attempt));
                     return;
                 }
-                configApi.set("oidc", nextConfig, () => {
-                    dialog.destroy();
-                });
+                if (isMobile()) {
+                    void dialog.runPending(async () => {
+                        await configApi.set("oidc", nextConfig);
+                        return true;
+                    });
+                } else {
+                    configApi.set("oidc", nextConfig, () => dialog.destroy());
+                }
             } catch (error) {
                 showMessage(window.siyuan.languages.oidcConfigInvalid, 6000, "error");
             }
@@ -491,7 +469,14 @@ const mountAuthCodeButton = (root: HTMLElement) => {
             value: window.siyuan.config.accessAuthCode,
             placeholder: window.siyuan.languages.about5,
             description: window.siyuan.languages.about6,
-            onConfirm: (value) => {
+            onConfirm: (value, currentDialog) => {
+                if (isMobile()) {
+                    void currentDialog.runPending(async () => {
+                        await configApi.set("accessAuthCode", value);
+                        return true;
+                    }, {close: false});
+                    return;
+                }
                 configApi.set("accessAuthCode", value);
             },
         });
@@ -762,21 +747,32 @@ const registerEncryptedNotebookGroup = (tab: SettingTabBuilder) => {
             window.siyuan.languages.encryptedNotebook,
             window.siyuan.languages.enableEncryptedNotebook,
             window.siyuan.languages.masterPassword,
-            window.siyuan.languages.changeMasterPassword,
         ],
         html: () =>
             // 开关行：结构与标准 group.switch 一致（label + config-item + b3-switch fn__flex-center）
-            `<label class="fn__flex b3-label config-item">
+            `<label class="fn__flex b3-label config-item" data-config-item-id="access.__slot.encryptedNotebookStatus">
 	    ${genConfigItemMainHtml(window.siyuan.languages.enableEncryptedNotebook, window.siyuan.languages.encryptedNotebookTip + "<br><span class=\"ft__error\">" + window.siyuan.languages.encryptedNotebookRiskTip + "</span><br>" + window.siyuan.languages.featurePreview)}
     <span class="fn__space"></span>
     <input class="b3-switch fn__flex-center" id="encryptedNotebookSwitch" type="checkbox">
 </label>
-<div class="b3-label config-item fn__none" id="encryptedNotebookMigrationAlert">
-    <div class="ft__error">${window.siyuan.languages.masterPasswordMigrationPending}</div>
+<div class="b3-label config-item fn__none" id="encryptedNotebookSyncAlert" data-config-item-id="access.__slot.encryptedNotebookStatus">
+    <div class="ft__error">${window.siyuan.languages["_kernel"]["474"]}</div>
 </div>
-<div class="b3-label config-item fn__none" id="encryptedNotebookActions">
+<div class="b3-label config-item fn__none" id="encryptedNotebookMigrationAlert" data-config-item-id="access.__slot.encryptedNotebookStatus">
+    <div class="ft__error">${window.siyuan.languages.masterPasswordMigrationPending}</div>
+</div>`,
+        afterMount: mountEncryptedNotebook,
+    });
+    group.slot({
+        key: "encryptedNotebookActions",
+        keywords: [
+            window.siyuan.languages.changeMasterPassword,
+            ...(disableImportExport ? [] : [window.siyuan.languages.exportNotebookCryptoBackup,
+                window.siyuan.languages.importNotebookCryptoBackup, window.siyuan.languages.importNotebookCryptoBackupDesc]),
+        ],
+        html: () => `<div class="b3-label config-item fn__none" id="encryptedNotebookActions">
     <div class="fn__flex fn__flex-center">
-        <div class="fn__flex-1"></div>
+        <div class="fn__flex-1"><div id="importCryptoBackupDesc">${genConfigItemMainHtml(window.siyuan.languages.importNotebookCryptoBackup, window.siyuan.languages.importNotebookCryptoBackupDesc)}</div></div>
         <div class="fn__flex fn__flex-center" id="encryptedNotebookEnabledActions">
             <button class="b3-button b3-button--outline fn__flex-center fn__size200" id="changeMasterPasswordBtn">
                 <svg class="svg"><use xlink:href="#iconLock"></use></svg>
@@ -787,7 +783,6 @@ const registerEncryptedNotebookGroup = (tab: SettingTabBuilder) => {
                 <svg class="svg"><use xlink:href="#iconDownload"></use></svg>
                 ${window.siyuan.languages.exportNotebookCryptoBackup}
             </button>
-            <span class="fn__space"></span>
         </div>
         <button class="b3-button b3-button--outline fn__flex-center fn__size200${disableImportExport ? " fn__none" : ""}" id="importCryptoBackupBtn">
             <svg class="svg"><use xlink:href="#iconUpload"></use></svg>
@@ -795,7 +790,6 @@ const registerEncryptedNotebookGroup = (tab: SettingTabBuilder) => {
         </button>
     </div>
 </div>`,
-        afterMount: mountEncryptedNotebook,
     });
     if (!disableImportExport) {
         group.button({
@@ -847,19 +841,37 @@ const registerEncryptedNotebookGroup = (tab: SettingTabBuilder) => {
     }
 };
 
+const isEncryptedNotebookDisableBlockedBySync = () => {
+    const sync = window.siyuan.config.sync;
+    const cloudName = sync?.cloudName?.trim();
+    return Boolean(sync?.configured || sync?.enabled || sync?.synced || sync?.lastResult || (cloudName && cloudName !== "main") ||
+        (sync?.s3?.endpoint?.trim() && sync.s3.bucket?.trim()) || sync?.webdav?.endpoint?.trim() || sync?.local?.endpoint?.trim());
+};
+
 const refreshEncryptedNotebookStatus = (root: HTMLElement) => {
     fetchPost("/api/notebook/getEncryptedNotebookStatus", {}, (response) => {
+        if (response.code !== 0) {
+            return;
+        }
         const enabled = response.data.state === "Enabled";
         const switchElement = root.querySelector<HTMLInputElement>("#encryptedNotebookSwitch");
         if (!switchElement) {
             return;
         }
-        // 待恢复配置也允许关闭；内核仍会阻止清除尚有笔记本或历史依赖的密钥。
         switchElement.checked = response.data.state !== "Disabled";
+        switchElement.disabled = switchElement.checked && isEncryptedNotebookDisableBlockedBySync();
+        root.querySelector("#encryptedNotebookSyncAlert").classList.toggle("fn__none", !switchElement.disabled);
+        if (switchElement.disabled) {
+            switchElement.setAttribute("aria-describedby", "encryptedNotebookSyncAlert");
+        } else {
+            switchElement.removeAttribute("aria-describedby");
+        }
         window.siyuan.config.notebookCrypto.enabled = enabled;
         root.querySelector("#encryptedNotebookEnabledActions").classList.toggle("fn__none", !enabled);
-        root.querySelector("#importCryptoBackupBtn").classList.toggle("fn__none", enabled || !getHostCapabilities().importExport);
-        root.querySelector("#encryptedNotebookActions").classList.remove("fn__none");
+        const canImport = !enabled && getHostCapabilities().importExport;
+        root.querySelector("#importCryptoBackupBtn").classList.toggle("fn__none", !canImport);
+        root.querySelector("#importCryptoBackupDesc")?.classList.toggle("fn__none", !canImport);
+        root.querySelector("#encryptedNotebookActions").classList.toggle("fn__none", !enabled && !canImport);
         root.querySelector("#encryptedNotebookMigrationAlert").classList.toggle("fn__none", !response.data.migrationPending);
         const restoreButton = root.querySelector<HTMLButtonElement>("#restoreEncryptedNotebooks");
         if (restoreButton) {
@@ -905,67 +917,80 @@ const mountEncryptedNotebook = (root: HTMLElement) => {
             }
             // 导入前需输入主密码校验（备份文件不含密码，校验用导入备份对应的主密码）
             openInputDialog({
+                awaitConfirm: true,
                 title: window.siyuan.languages.masterPassword,
                 value: "",
                 type: "password",
                 placeholder: window.siyuan.languages.masterPassword,
                 width: "520px",
-                onConfirm: (value, passwordDialog) => {
+                onConfirm: async (value) => {
                     const password = value.trim();
                     if (!password) {
                         showMessage(window.siyuan.languages.enterMasterPassword);
-                        return;
+                        return false;
                     }
                     const formData = new ContractFormData({file, password});
-                    fetchSyncPost("/api/notebook/importNotebookCryptoBackup", formData, undefined, false).then((response) => {
-                        if (response.code !== 0) {
-                            showMessage(response.msg, 6000, "error");
-                            return;
-                        }
-                        showMessage(window.siyuan.languages.importNotebookCryptoBackupTip);
-                        passwordDialog.destroy();
-                        refresh();
-                    });
+                    const response = await fetchSyncPost("/api/notebook/importNotebookCryptoBackup", formData, undefined, false);
+                    if (response.code !== 0) {
+                        showMessage(response.msg, 6000, "error");
+                        return false;
+                    }
+                    showMessage(window.siyuan.languages.importNotebookCryptoBackupTip);
+                    refresh();
+                    return true;
                 },
             });
         };
         fileInput.click();
     });
 
-    switchElement.addEventListener("change", () => {
+    let disablePending = false;
+    switchElement.addEventListener("change", async () => {
+        if (disablePending) {
+            return;
+        }
         if (switchElement.checked) {
             // 切到 ON：弹设密码框
             // onSuccess/onCancel 都用 refresh：开关状态以后端 enabled 真相为准，
             // 避免成功后 destroy 的 setTimeout 回调把开关错误地翻回 OFF（曾因 onCancel 直接置 false 而覆盖成功态）
             openEnableEncryptedDialog(refresh, refresh);
         } else {
-            // 切到 OFF：没有加密笔记本时允许关闭
-            fetchPost("/api/notebook/getEncryptedNotebookStatus", {}, (response) => {
-                if (response.data.count > 0) {
-                    showMessage(window.siyuan.languages.encryptedNotebookDisableTip.replace("${x}", response.data.count), 4000);
+            disablePending = true;
+            switchElement.disabled = true;
+            try {
+                const response = await fetchSyncPost("/api/notebook/getEncryptedNotebookStatus", {});
+                if (response.code !== 0 || isEncryptedNotebookDisableBlockedBySync()) {
+                    switchElement.checked = true;
+                    refresh();
+                } else if (response.data.count > 0) {
+                    showMessage(window.siyuan.languages.encryptedNotebookDisableTip.replace("${x}", String(response.data.count)), 4000);
                     switchElement.checked = true;
                 } else if (response.data.hasHistoryDependency) {
-                    // 已删除加密笔记本的历史仍依赖当前密钥备份，禁用会让其永久锁死（详见设计 §19）
                     showMessage(window.siyuan.languages["_kernel"]["323"], 6000, "error");
                     switchElement.checked = true;
                 } else {
-                    // 用 sync 调用以便后端因任何原因拒绝时回滚开关，避免 UI 与后端状态不一致
-                    fetchSyncPost("/api/notebook/disableEncryptedNotebooks", {}).then((res: IWebSocketData) => {
-                        if (res.code === -1) {
-                            switchElement.checked = true; // processMessage 已弹出错误，这里只回滚开关
-                            return;
-                        }
+                    const result = await fetchSyncPost("/api/notebook/disableEncryptedNotebooks", {});
+                    if (result.code !== 0) {
+                        switchElement.checked = true;
+                    } else {
                         showMessage(window.siyuan.languages.encryptedNotebookDisabled);
-                        refresh();
-                    });
+                    }
+                    refresh();
                 }
-            });
+            } catch {
+                switchElement.checked = true;
+                showMessage(window.siyuan.languages.confirmActionFailed, 6000, "error");
+                refresh();
+            } finally {
+                disablePending = false;
+                switchElement.disabled = switchElement.checked && isEncryptedNotebookDisableBlockedBySync();
+            }
         }
     });
 };
 
 const openEnableEncryptedDialog = (onSuccess: () => void, onCancel: () => void) => {
-    const dialog = new Dialog({
+    const dialog = new AdaptiveDialog({
         title: "🔐 " + window.siyuan.languages.setMasterPassword,
         content: `<div class="b3-dialog__content">
     <input type="password" placeholder="${window.siyuan.languages.masterPassword}" class="b3-text-field fn__block">
@@ -987,21 +1012,15 @@ const openEnableEncryptedDialog = (onSuccess: () => void, onCancel: () => void) 
     const confirmBtn = btnsElement[1] as HTMLButtonElement;
     const riskCheckbox = dialog.element.querySelector("#encRiskConfirm") as HTMLInputElement;
     const passwordStrength = dialog.element.querySelector(".password-strength") as HTMLElement;
-    (inputs[0] as HTMLInputElement).focus();
+    dialog.focusWhenReady(() => inputs[0] as HTMLInputElement);
     inputs[0].addEventListener("input", () => updatePasswordStrength(passwordStrength, inputs[0].value));
-    let submitting = false;
     riskCheckbox.addEventListener("change", () => {
-        confirmBtn.disabled = submitting || !riskCheckbox.checked;
+        confirmBtn.disabled = !riskCheckbox.checked;
     });
-    let attemptVersion = 0;
     btnsElement[0].addEventListener("click", () => {
         dialog.destroy();
     });
     confirmBtn.addEventListener("click", () => {
-        if (submitting) {
-            return;
-        }
-        const version = ++attemptVersion;
         const pwd1 = (inputs[0] as HTMLInputElement).value;
         const pwd2 = (inputs[1] as HTMLInputElement).value;
         if (!pwd1) {
@@ -1012,32 +1031,23 @@ const openEnableEncryptedDialog = (onSuccess: () => void, onCancel: () => void) 
             showMessage(window.siyuan.languages.passwordNoMatch);
             return;
         }
-        const isCurrent = () => dialog.element.isConnected && attemptVersion === version && riskCheckbox.checked &&
-            inputs[0].value === pwd1 && inputs[1].value === pwd2;
         confirmWeakPassword(pwd1, async () => {
-            if (!isCurrent()) {
-                return;
-            }
-            attemptVersion++;
-            submitting = true;
-            confirmBtn.disabled = true;
-            try {
+            const submit = async () => {
                 const response = await fetchSyncPost("/api/notebook/enableEncryptedNotebooks", {password: pwd1});
-                if (response.code === 0) {
-                    showMessage(window.siyuan.languages.encryptedNotebookEnabled);
-                    dialog.destroy();
-                    onSuccess();
-                }
-            } finally {
-                submitting = false;
-                confirmBtn.disabled = !riskCheckbox.checked;
-            }
-        }, isCurrent);
+                if (response.code !== 0) return false;
+                showMessage(window.siyuan.languages.encryptedNotebookEnabled);
+                if (!isMobile()) dialog.destroy();
+                onSuccess();
+                return true;
+            };
+            if (isMobile()) await dialog.runPending(submit);
+            else await submit();
+        });
     });
 };
 
 const openChangeMasterPasswordDialog = (onChanged?: () => void) => {
-    const dialog = new Dialog({
+    const dialog = new AdaptiveDialog({
         title: "🔐 " + window.siyuan.languages.changeMasterPassword,
         content: `<div class="b3-dialog__content">
     <input type="password" placeholder="${window.siyuan.languages.oldMasterPassword}" class="b3-text-field fn__block">
@@ -1057,17 +1067,10 @@ const openChangeMasterPasswordDialog = (onChanged?: () => void) => {
     const inputs = dialog.element.querySelectorAll("input");
     const passwordStrength = dialog.element.querySelector(".password-strength") as HTMLElement;
     inputs[1].addEventListener("input", () => updatePasswordStrength(passwordStrength, inputs[1].value));
-    let attemptVersion = 0;
-    let submitting = false;
-    const confirmBtn = btnsElement[1] as HTMLButtonElement;
     btnsElement[0].addEventListener("click", () => {
         dialog.destroy();
     });
-    confirmBtn.addEventListener("click", () => {
-        if (submitting) {
-            return;
-        }
-        const version = ++attemptVersion;
+    btnsElement[1].addEventListener("click", () => {
         const oldPwd = (inputs[0] as HTMLInputElement).value;
         const newPwd = (inputs[1] as HTMLInputElement).value;
         const confirmPwd = (inputs[2] as HTMLInputElement).value;
@@ -1078,31 +1081,23 @@ const openChangeMasterPasswordDialog = (onChanged?: () => void) => {
             showMessage(window.siyuan.languages.passwordNoMatch);
             return;
         }
-        const isCurrent = () => dialog.element.isConnected && attemptVersion === version &&
-            inputs[0].value === oldPwd && inputs[1].value === newPwd && inputs[2].value === confirmPwd;
         confirmWeakPassword(newPwd, async () => {
-            if (!isCurrent()) {
-                return;
-            }
-            attemptVersion++;
-            submitting = true;
-            confirmBtn.disabled = true;
-            try {
+            const submit = async () => {
                 const response = await fetchSyncPost("/api/notebook/changeMasterPassword", {
                     oldPassword: oldPwd,
                     newPassword: newPwd
                 });
-                if (response.code === 0) {
-                    showMessage(window.siyuan.languages.changeMasterPasswordSuccessTip);
-                    dialog.destroy();
-                    onChanged?.();
-                } else {
+                if (response.code !== 0) {
                     showMessage(response.msg, 6000, "error");
+                    return false;
                 }
-            } finally {
-                submitting = false;
-                confirmBtn.disabled = false;
-            }
-        }, isCurrent);
+                showMessage(window.siyuan.languages.changeMasterPasswordSuccessTip);
+                if (!isMobile()) dialog.destroy();
+                onChanged?.();
+                return true;
+            };
+            if (isMobile()) await dialog.runPending(submit);
+            else await submit();
+        });
     });
 };

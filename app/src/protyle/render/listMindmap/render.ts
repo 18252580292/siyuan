@@ -123,7 +123,10 @@ export const restoreListMindmapFocus = (root: Element, source: Element, context?
             candidateIDs.push(id);
         }
     }
-    const selection = readListMindmapSelection(context?.undoFocusMindmapSelection);
+    let selection = readListMindmapSelection(context?.undoFocusMindmapSelection);
+    if (typeof context?.undoFocusMindmapViewport === "string") {
+        selection = {...selection, undoFocusMindmapViewport: context.undoFocusMindmapViewport};
+    }
     registered.restoreFocus(list.dataset.nodeId, candidateIDs, selection, list);
     return true;
 };
@@ -154,15 +157,17 @@ export const listMindmapRender = (root: Element, cdn?: string) => {
         return;
     }
     getListMindmapElements(root).forEach(list => {
+        const printLayout = !!list.closest("[data-export-pdf]");
         const previous = previews.get(list);
         if (previous) {
             const host = list.querySelector<HTMLElement>(":scope > .mindmap-view");
             if (host) {
                 syncListMindmapHeight(list, host);
             }
-            previous.refreshLayout();
+            previous.refreshLayout(printLayout);
             return;
         }
+        let view: ListMindmapView | undefined;
         try {
             const model = readListMindmap(list);
             list.querySelector(":scope > .mindmap-view")?.remove();
@@ -171,23 +176,28 @@ export const listMindmapRender = (root: Element, cdn?: string) => {
             syncListMindmapHeight(list, host);
             host.contentEditable = "false";
             list.appendChild(host);
-            const view = new ListMindmapView({
+            const mountedView = new ListMindmapView({
                 host, model, readOnly: true, labels: window.siyuan?.languages || {}, cdn,
-                printLayout: !!list.closest("[data-export-pdf]"),
+                printLayout,
                 onExit: () => {
                     unregisterVisible();
-                    view.destroy();
+                    mountedView.destroy();
                     host.remove();
                     list.removeAttribute("data-mindmap-view-rendered");
                     previews.delete(list);
                 },
             });
-            const unregisterVisible = registerListMindmapView(list, view, host);
-            previews.set(list, view);
+            view = mountedView;
             list.dataset.mindmapViewRendered = "true";
+            if (printLayout) {
+                mountedView.refreshLayout(true);
+            }
+            const unregisterVisible = registerListMindmapView(list, mountedView, host);
+            previews.set(list, mountedView);
         } catch (error) {
             // 无法识别配置时继续显示原列表，避免隐藏源内容。
             console.error(error);
+            view?.destroy();
             list.querySelector(":scope > .mindmap-view")?.remove();
             list.removeAttribute("data-mindmap-view-rendered");
         }

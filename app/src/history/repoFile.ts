@@ -6,7 +6,7 @@ import {Protyle} from "../protyle";
 import {saveExportFile} from "../protyle/util/compatibility";
 import {disabledProtyle, onGet} from "../protyle/util/onGet";
 import {escapeAttr, escapeHtml} from "../util/escape";
-import {fetchPost} from "../util/fetch";
+import {fetchPost, fetchSyncPost} from "../util/fetch";
 import {pathPosix} from "../util/pathName";
 import {getHostCapabilities} from "../util/hostCapabilities";
 import dayjs from "dayjs";
@@ -100,13 +100,16 @@ export const rollbackRepoFile = (element: Element) => {
 
     const name = element.getAttribute("data-title") || element.querySelector(".b3-list-item__text").textContent.trim();
     const time = dayjs(parseInt(element.getAttribute("data-created"))).format("YYYY-MM-DD HH:mm:ss");
-    confirmDialog("⚠️ " + window.siyuan.languages.rollback,
-        window.siyuan.languages.rollbackConfirm.replace("${name}", () => escapeHtml(name)).replace("${time}", time),
-        () => {
-            fetchPost("/api/repo/rollbackRepoSnapshotFile", {
+    confirmDialog({
+        title: "⚠️ " + window.siyuan.languages.rollback,
+        text: window.siyuan.languages.rollbackConfirm.replace("${name}", () => escapeHtml(name)).replace("${time}", time),
+        confirm: async () => {
+            const response = await fetchSyncPost("/api/repo/rollbackRepoSnapshotFile", {
                 id: element.getAttribute("data-id")
             });
-        });
+            return response.code === 0;
+        },
+    });
 };
 
 export const saveRepoFile = (element: Element) => {
@@ -121,7 +124,7 @@ export const saveRepoFile = (element: Element) => {
 };
 
 export const renderRepoFile = (app: App, element: Element, contentElement: Element,
-                               onEditor?: (editor: Protyle) => void) => {
+                               onEditor?: (editor: Protyle) => void, onTitle?: (title: string) => void) => {
     const fileId = element.getAttribute("data-id");
     const snapshotId = element.getAttribute("data-snapshot") || "";
     const requestId = (++repoFileRequestId).toString();
@@ -134,6 +137,7 @@ export const renderRepoFile = (app: App, element: Element, contentElement: Eleme
         if (!contentElement.isConnected || contentElement.getAttribute("data-request-id") !== requestId) {
             return;
         }
+        onTitle?.(response.data.title);
         const type = pathPosix().extname(response.data.content).toLowerCase();
         if (Constants.SIYUAN_ASSETS_IMAGE.concat(Constants.SIYUAN_ASSETS_AUDIO).concat(Constants.SIYUAN_ASSETS_VIDEO).includes(type)) {
             contentElement.firstElementChild.innerHTML = renderAssetsPreview(response.data.content);

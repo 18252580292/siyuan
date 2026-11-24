@@ -1,7 +1,7 @@
+import {confirmDialog} from "../../../../dialog/confirmDialog";
 import {Menu} from "../../../../plugin/Menu";
 import {Constants} from "../../../../constants";
 import {transaction} from "../../../wysiwyg/transaction";
-import {confirmDialog} from "../../../../dialog/confirmDialog";
 import dayjs from "dayjs";
 import {getAVData} from "../virtualScroll";
 import {
@@ -45,10 +45,10 @@ export const openKanbanGroupMenu = (options: {
         label: window.siyuan.languages.delete,
         warning: true,
         click() {
-            confirmDialog(
-                window.siyuan.languages.deleteKanbanGroupConfirm,
-                window.siyuan.languages.deleteKanbanGroupTip,
-                () => {
+            confirmDialog({
+                title: window.siyuan.languages.deleteKanbanGroupConfirm,
+                text: window.siyuan.languages.deleteKanbanGroupTip,
+                confirm: () => {
                     transaction(options.protyle, [{
                         action: "removeAttrViewColOption",
                         id: colID,
@@ -67,9 +67,8 @@ export const openKanbanGroupMenu = (options: {
                         data: colOptions,
                     }]);
                 },
-                undefined,
-                true
-            );
+                isDelete: true,
+            });
         }
     });
     menu.addItem({

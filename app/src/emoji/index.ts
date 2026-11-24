@@ -1,42 +1,23 @@
+import {getDocTreeItem} from "../layout/dock/docTree/rowData";
+import {bindDatePicker} from "../datePicker/binding";
+import {IColorPickerHandle, openInternalColorPicker} from "../colorPicker";
+import {parseColor} from "../colorPicker/model";
+import {updateNotebookBreadcrumbIcon} from "../protyle/breadcrumb/iconRefresh";
 import {config as configApi} from "../config/util/configApi";
 import {getRandom, isMobile} from "../util/functions";
 import {fetchPost} from "../util/fetch";
 import {ContractFormData} from "../util/contractFormData";
 import {Constants} from "../constants";
-/// #if !MOBILE
-import {Files} from "../layout/dock/Files";
-import {getDockByType} from "../layout/tabUtil";
-/// #endif
 import {getAllEditor, getAllModels} from "../layout/getAll";
 import {Dialog} from "../dialog";
 import {setPosition} from "../util/setPosition";
 import {setStorageVal, updateHotkeyTip} from "../protyle/util/compatibility";
 import {getLuteInstance} from "../protyle/render/setLute";
 import dayjs from "dayjs";
-import {
-    bindDynamicIconTarget,
-    getIconSearchText,
-    getIconValueKind,
-    getNetworkIconName,
-    normalizeNetworkIconURL,
-    normalizeRecentIconValue,
-    parseBase64Image,
-    unicode2Emoji,
-    updateRecentIconValues,
-} from "./iconValue";
+import {bindDynamicIconTarget, getIconSearchText, getIconValueKind, getNetworkIconName, normalizeNetworkIconURL, normalizeRecentIconValue, parseBase64Image, unicode2Emoji, updateRecentIconValues} from "./iconValue";
 import {showMessage} from "../dialog/message";
 import {escapeAttr, escapeHtml} from "../util/escape";
-import {
-    collectEmojiMatches,
-    getActiveEmojiCategory,
-    getEmojiItemMap,
-    getEmojiPanelResizeAction,
-    getEmojiVirtualChunks,
-    getRandomEmojiCategories,
-    groupCustomEmojiItems,
-    type TEmojiPanelPageMode,
-    type TRandomEmojiScope,
-} from "./panel";
+import {collectEmojiMatches, getActiveEmojiCategory, getEmojiItemMap, getEmojiPanelResizeAction, getEmojiVirtualChunks, getRandomEmojiCategories, groupCustomEmojiItems, type TEmojiPanelPageMode, type TRandomEmojiScope} from "./panel";
 import {getFileTreeIconHTML, updateFileTreeItemIcon} from "./fileTreeIcon";
 import {bindBottomSheetDialog} from "../mobile/util/bindBottomSheetDialog";
 import {activeBlur} from "../mobile/util/keyboardToolbar";
@@ -187,6 +168,7 @@ export class EmojiPanelController {
     private virtualTimer = 0;
     private virtualKey = 0;
     private columnCount = 10;
+    private panelWidth = 0;
     private rowHeight = 34;
     private rowGap = 0;
     private measuredItem?: HTMLElement;
@@ -199,8 +181,20 @@ export class EmojiPanelController {
 
     constructor(private panelElement: HTMLElement, private typeElement: HTMLElement, private options: TEmojiPanelOptions) {
         this.panelElement.addEventListener("scroll", this.handleScroll, {passive: true});
-        this.resizeObserver = new ResizeObserver(() => {
-            if (!this.active || this.pageMode === "search" || this.panelElement.clientWidth === 0) {
+        this.resizeObserver = new ResizeObserver((entries) => {
+            if (!this.active || this.pageMode === "search") {
+                return;
+            }
+            if (this.panelElement.clientWidth === 0) {
+                this.panelWidth = 0;
+                return;
+            }
+            if (this.panelElement.clientWidth === this.panelWidth &&
+                !entries.some(entry => entry.target === this.measuredItem)) {
+                if (this.pageMode === "common") {
+                    this.renderVisibleBuiltInChunks(this.categoryID);
+                    this.ensureCurrentSelection();
+                }
                 return;
             }
             const rowHeight = this.rowHeight;
@@ -476,6 +470,7 @@ export class EmojiPanelController {
             return this.columnCount;
         }
         // 在面板内测量实际样式，使虚拟占位尺寸与主题设置的按钮尺寸保持一致。
+        this.panelWidth = this.panelElement.clientWidth;
         const section = document.createElement("div");
         section.className = "emojis__section";
         section.style.visibility = "hidden";
@@ -901,8 +896,11 @@ export const openEmojiPanel = (
         }
     };
 
-    let disposeSheet: (() => void) | undefined;
+    let disposeSheet: ReturnType<typeof bindBottomSheetDialog> | undefined;
     let disposeSelection: (() => void) | undefined;
+    let dynamicColorPicker: IColorPickerHandle;
+    let dynamicColorPending = false;
+    let dynamicColorSequence = 0;
     const dialog = new Dialog({
         disableAnimation: !isMobile(),
         transparent: !isMobile(),
@@ -910,6 +908,8 @@ export const openEmojiPanel = (
         width: isMobile() ? "100vw" : "368px",
         height: isMobile() ? "min(40vh, 360px)" : "50vh",
         destroyCallback: () => {
+            dynamicDatePicker?.destroy();
+            dynamicColorPicker?.destroy();
             disposeSheet?.();
             disposeSelection?.();
             clearPastedCustomIcon();
@@ -955,7 +955,7 @@ export const openEmojiPanel = (
                 <div class="color__square fn__pointer${dynamicCurrentObj.color === "#93627f" ? " color__square--current" : ""}" style="background-color:#93627f"></div>
                 <div class="color__square fn__pointer${dynamicCurrentObj.color === "#5f6368" ? " color__square--current" : ""}" style="background-color:#5f6368"></div>
                 <div class="fn__space--small fn__flex-1"></div>
-                <input type="color" class="b3-text-field fn__flex-center" value="${dynamicCurrentObj.color}" aria-label="${window.siyuan.languages.colorFont}">
+                <button type="button" data-type="dynamic-color" class="b3-button b3-button--outline fn__flex-center" aria-label="${window.siyuan.languages.colorFont}">${escapeHtml(dynamicCurrentObj.color)}</button>
             </div>
             <div class="fn__flex">
                 <span class="fn__space"></span>
@@ -1003,7 +1003,7 @@ export const openEmojiPanel = (
                 <span class="fn__space"></span>
                 <span class="fn__flex-center ft__on-surface" style="flex: 0 0 89px;overflow-wrap: anywhere">${window.siyuan.languages.custom}</span>
                 <span class="fn__space--small"></span>
-                <input type="text" class="b3-text-field fn__flex-1" value="">
+                <input type="text" data-role="dynamic-text" class="b3-text-field fn__flex-1" value="">
                 <span class="fn__space"></span>
             </div>
             <div>
@@ -1076,6 +1076,7 @@ export const openEmojiPanel = (
     if (isMobile()) {
         const destroyDialog = dialog.destroy.bind(dialog);
         dialog.destroy = (destroyOptions?: IObject) => {
+            disposeSheet?.freeze();
             if (dialog.element.contains(document.activeElement)) {
                 activeBlur(true);
             }
@@ -1459,7 +1460,14 @@ export const openEmojiPanel = (
                     unicode = target.getAttribute("data-unicode");
                     dialog.destroy();
                 } else if (target.classList.contains("emoji__dynamic-item")) {
-                    unicode = getDynamicIconValue(target.getAttribute("src"));
+                    if (dynamicColorPending || !dynamicDateElement.checkValidity()) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        break;
+                    }
+                    const url = new URLSearchParams(target.getAttribute("src").replace(dynamicURL, ""));
+                    url.set("color", dynamicCurrentObj.color);
+                    unicode = getDynamicIconValue(dynamicURL + url.toString());
                     dialog.destroy();
                 } else {
                     // 随机
@@ -1533,8 +1541,11 @@ export const openEmojiPanel = (
                 }
                 break;
             } else if (target.classList.contains("color__square")) {
-                dynamicColorElement.value = target.getAttribute("style").replace("background-color:", "");
-                dynamicColorElement.dispatchEvent(new CustomEvent("input"));
+                dynamicColorSequence++;
+                dynamicColorPicker?.destroy();
+                dynamicColorPending = false;
+                dynamicCurrentObj.color = target.getAttribute("style").replace("background-color:", "");
+                renderDynamicColor(dynamicCurrentObj.color);
                 break;
             } else if ("clearDate" === target.dataset.action) {
                 dynamicDateElement.value = "";
@@ -1565,28 +1576,53 @@ export const openEmojiPanel = (
         });
     });
     const dynamicDateElement = dialog.element.querySelector('[data-type="tab-dynamic"] [type="date"]') as HTMLInputElement;
+    const dynamicDatePicker = bindDatePicker(dynamicDateElement);
     dynamicDateElement.addEventListener("change", () => {
+        if (!dynamicDateElement.checkValidity()) { return; }
         dialog.element.querySelectorAll(".fn__flex-wrap .emoji__dynamic-item").forEach(item => {
             const url = new URLSearchParams(item.getAttribute("src").replace(dynamicURL, ""));
             url.set("date", dynamicDateElement.value ? dayjs(dynamicDateElement.value).format("YYYY-MM-DD") : "");
             item.setAttribute("src", dynamicURL + url.toString());
         });
     });
-    const dynamicColorElement = dialog.element.querySelector<HTMLInputElement>('[data-type="tab-dynamic"] [type="color"]');
-    const dynamicTextElement = dialog.element.querySelector<HTMLInputElement>('[data-type="tab-dynamic"] input[type="text"]');
+    const dynamicColorElement = dialog.element.querySelector<HTMLButtonElement>('[data-type="dynamic-color"]');
+    const dynamicTextElement = dialog.element.querySelector<HTMLInputElement>('[data-role="dynamic-text"]');
     const dynamicTextImgElement = dialog.element.querySelector('.emoji__dynamic-item[data-type="text"]');
-    dynamicColorElement.addEventListener("input", () => {
+    const renderDynamicColor = (color: string) => {
         dialog.element.querySelectorAll(".emoji__dynamic-item").forEach(item => {
             const url = new URLSearchParams(item.getAttribute("src").replace(dynamicURL, ""));
-            url.set("color", dynamicColorElement.value);
+            url.set("color", color);
             item.setAttribute("src", dynamicURL + url.toString());
         });
         dialog.element.querySelectorAll(".color__square").forEach((item: HTMLElement) => {
-            if (item.getAttribute("style").replace("background-color:", "") === dynamicColorElement.value) {
+            if (item.getAttribute("style").replace("background-color:", "") === color) {
                 item.classList.add("color__square--current");
             } else {
                 item.classList.remove("color__square--current");
             }
+        });
+        dynamicColorElement.textContent = dynamicCurrentObj.color;
+    };
+    dynamicColorElement.addEventListener("click", () => {
+        const color = parseColor(dynamicCurrentObj.color);
+        if (!color) { showMessage(window.siyuan.languages.invalidColor); return; }
+        const sequence = ++dynamicColorSequence;
+        dynamicColorPending = true;
+        dynamicColorPicker = openInternalColorPicker({ownerElement: dynamicColorElement, value: color.hex,
+            title: window.siyuan.languages.color,
+            onPreview: value => {
+                if (sequence === dynamicColorSequence && !window.siyuan.config.readonly) { renderDynamicColor(value.hex); }
+            },
+            onPreviewEnd: () => {
+                if (sequence === dynamicColorSequence) { renderDynamicColor(dynamicCurrentObj.color); }
+            },
+        });
+        void dynamicColorPicker.result.then(result => {
+            if (sequence !== dynamicColorSequence) { return; }
+            dynamicColorPending = false;
+            if (result.type === "confirm" && dialog.element.isConnected && !dialog.element.dataset.dialogClosing &&
+                !window.siyuan.config.readonly) { dynamicCurrentObj.color = result.value.hex; }
+            renderDynamicColor(dynamicCurrentObj.color);
         });
     });
     dynamicTextElement.value = dynamicCurrentObj.content;
@@ -1615,42 +1651,17 @@ export const updateFileTreeEmoji = (unicode: string, id: string, icon = "iconFil
             return;
         }
         if (notebook) {
-            notebook.icon = unicode;
+            updateNotebookBreadcrumbIcon(id, unicode);
             if (notebook.encrypted && notebook.closed) {
                 return;
             }
         }
     }
-    let emojiElement;
-    /// #if MOBILE
-    if (!isNotebookIcon) {
-        emojiElement = document.querySelector(
-            `[data-type="sidebar-file"] [data-node-id="${id}"] .b3-list-item__icon`
-        );
-    } else {
-        emojiElement = document.querySelector(
-            `[data-type="sidebar-file"] ul[data-url="${id}"] > li[data-type="navigation-root"] .b3-list-item__icon`
-        ) || document.querySelector(
-            `[data-type="sidebar-file"] li[data-url="${id}"] .b3-list-item__icon`
-        );
-    }
-    /// #else
-    const dockFile = getDockByType("file");
-    if (dockFile) {
-        const files = dockFile.data.file as Files;
-        if (!isNotebookIcon) {
-            emojiElement = files.element.querySelector(`[data-node-id="${id}"] .b3-list-item__icon`);
-        } else {
-            emojiElement = files.element.querySelector(`[data-node-id="${id}"] .b3-list-item__icon`) || files.element.querySelector(`[data-url="${id}"] .b3-list-item__icon`) || files.closeElement.querySelector(`[data-url="${id}"] .b3-list-item__icon`);
+    document.querySelectorAll<HTMLElement>(".sy__file li[data-tree-key], [data-type=sidebar-file] li[data-tree-key], .file-tree__pins li[data-tree-key]").forEach(row => {
+        const item = getDocTreeItem(row);
+        if (item?.id === id && ((item.kind === "notebook") === isNotebookIcon || row.closest(".file-tree__pins"))) {
+            updateFileTreeItemIcon(row, unicode, isNotebookIcon ? "notebook" : undefined);
         }
-    }
-    /// #endif
-    const liElement = emojiElement?.closest("li") as HTMLElement | null;
-    if (liElement) {
-        updateFileTreeItemIcon(liElement, unicode, isNotebookIcon ? "notebook" : undefined);
-    }
-    document.querySelectorAll<HTMLElement>(`.file-tree__pins [data-pin-row][data-node-id="${id}"]`).forEach(row => {
-        updateFileTreeItemIcon(row, unicode);
     });
 };
 

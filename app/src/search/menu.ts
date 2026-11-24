@@ -1,11 +1,13 @@
-import {removeSearchCriterion} from "../config/util/resourceConfig";
+import {searchConfigApi} from "../config/tabs/searchRuntime";
+import {AdaptiveDialog} from "../dialog/adaptiveDialog";
+import {removeSearchCriterion, removeSearchCriterionSync} from "../config/util/resourceConfig";
 import {Dialog} from "../dialog";
 import {openInputDialog} from "../dialog/inputDialog";
 import {isMobile, objEquals} from "../util/functions";
 import {MenuItem} from "../menus/Menu";
 import {Constants} from "../constants";
 import {showMessage} from "../dialog/message";
-import {fetchPost} from "../util/fetch";
+import {fetchPost, fetchSyncPost} from "../util/fetch";
 import {escapeHtml} from "../util/escape";
 import {isDisabledFeature, isSensitiveSearchConfig, setStorageVal} from "../protyle/util/compatibility";
 import {confirmDialog} from "../dialog/confirmDialog";
@@ -21,6 +23,7 @@ const withSearchMethodAvailability = (item: IMenu, enabled: boolean): IMenu => (
     bind: (element) => {
         item.bind?.(element);
         setSearchControlAvailability(element, enabled, item.label, !enabled);
+        element.classList.toggle("ariaLabel", !enabled);
     },
 });
 
@@ -29,7 +32,7 @@ export const filterMenu = (config: Config.IUILayoutTabSearchConfig, cb: () => vo
         return;
     }
     config.types = normalizeSearchTypes(config.types);
-    const filterDialog = new Dialog({
+    const filterDialog = new AdaptiveDialog({
         title: window.siyuan.languages.searchType,
         content: `<div class="b3-dialog__content">
     ${(["mindmap", "mindmapItem"] as const).map(type => `<label class="fn__flex b3-label"><svg class="ft__on-surface svg fn__flex-center"><use xlink:href="#${type === "mindmap" ? "iconMindmap" : "iconListItem"}"></use></svg><span class="fn__space"></span><div class="fn__flex-1 fn__flex-center">${window.siyuan.languages[type]} <sup>[1]</sup></div><input class="b3-switch fn__flex-center" data-type="${type}" type="checkbox"${config.types[type] ? " checked" : ""}></label>`).join("")}
@@ -283,7 +286,7 @@ export const replaceFilterMenu = (config: Config.IUILayoutTabSearchConfig) => {
     <input class="b3-switch fn__flex-center" data-type="${key}" type="checkbox"${config.replaceTypes[key] ? " checked" : ""}>
 </label>`;
     });
-    const filterDialog = new Dialog({
+    const filterDialog = new AdaptiveDialog({
         title: window.siyuan.languages.replaceType,
         content: `<div class="b3-dialog__content">${html}</div>
 <div class="b3-dialog__action">
@@ -381,7 +384,30 @@ const saveCriterionData = (config: Config.IUILayoutTabSearchConfig,
                            criteriaData: Config.IUILayoutTabSearchConfig[],
                            element: Element,
                            value: string,
-                           saveDialog: Dialog) => {
+                           saveDialog: Dialog, removeNames: string[] = []) => {
+    if (isMobile()) {
+        void (saveDialog as AdaptiveDialog).runPending(async () => {
+            const criterion = {...config, removed: false, name: value};
+            if ((await fetchSyncPost("/api/storage/setCriterion", {criterion})).code !== 0) return false;
+            for (const name of removeNames.filter(name => name !== value)) {
+                if ((await removeSearchCriterionSync(name)).code !== 0) return false;
+            }
+            Object.assign(config, criterion);
+            removeCriterionData(criteriaData, [value, ...removeNames]);
+            criteriaData.push({...criterion});
+            window.siyuan.storage[Constants.LOCAL_SEARCHDATA] = {...config};
+            setStorageVal(Constants.LOCAL_SEARCHDATA, window.siyuan.storage[Constants.LOCAL_SEARCHDATA]);
+            const criteriaElement = element.querySelector("#criteria").firstElementChild;
+            Array.from(criteriaElement.children).forEach(item => {
+                if ([value, ...removeNames].includes(item.textContent)) item.remove();
+            });
+            criteriaElement.classList.remove("fn__none");
+            criteriaElement.querySelector(".b3-chip--current")?.classList.remove("b3-chip--current");
+            criteriaElement.insertAdjacentHTML("beforeend", `<div data-type="set-criteria" class="b3-chip b3-chip--current b3-chip--middle b3-chip--pointer">${escapeHtml(criterion.name)}<svg class="b3-chip__close" data-type="remove-criteria"><use xlink:href="#iconClose"></use></svg></div>`);
+            return true;
+        });
+        return;
+    }
     config.removed = false;
     const criterion = config;
     criterion.name = value;
@@ -435,41 +461,65 @@ export const saveCriterion = (config: Config.IUILayoutTabSearchConfig,
             });
             inputElement.blur();
             if (hasSameName && !hasSameConfig) {
-                confirmDialog(window.siyuan.languages.confirm, window.siyuan.languages.searchOverwrite, () => {
-                    Array.from(criteriaElement.children).forEach(item => {
-                        if (item.textContent === value) {
-                            item.remove();
+                confirmDialog({
+                    title: window.siyuan.languages.confirm,
+                    text: window.siyuan.languages.searchOverwrite,
+                    confirm: () => {
+                        if (isMobile()) {
+                            saveCriterionData(config, criteriaData, element, value, saveDialog);
+                            return;
                         }
-                    });
-                    removeCriterionData(criteriaData, [value]);
-                    saveCriterionData(config, criteriaData, element, value, saveDialog);
+                        Array.from(criteriaElement.children).forEach(item => {
+                            if (item.textContent === value) {
+                                item.remove();
+                            }
+                        });
+                        removeCriterionData(criteriaData, [value]);
+                        saveCriterionData(config, criteriaData, element, value, saveDialog);
+                    },
                 });
             } else if (hasSameName && hasSameConfig) {
                 if (hasSameName === hasSameConfig) {
                     saveDialog.destroy();
                 } else {
                     const removeName = hasSameName === value ? hasSameConfig : hasSameName;
-                    confirmDialog(window.siyuan.languages.confirm, window.siyuan.languages.searchRemoveName.replace("${x}", () => escapeHtml(removeName)).replace("${y}", () => escapeHtml(value)), () => {
-                        Array.from(criteriaElement.children).forEach(item => {
-                            if (item.textContent === hasSameConfig || item.textContent === hasSameName) {
-                                item.remove();
+                    confirmDialog({
+                        title: window.siyuan.languages.confirm,
+                        text: window.siyuan.languages.searchRemoveName.replace("${x}", () => escapeHtml(removeName)).replace("${y}", () => escapeHtml(value)),
+                        confirm: () => {
+                            if (isMobile()) {
+                                saveCriterionData(config, criteriaData, element, value, saveDialog, [hasSameConfig, hasSameName]);
+                                return;
                             }
-                        });
-                        removeSearchCriterion(removeName);
-                        removeCriterionData(criteriaData, [hasSameConfig, hasSameName]);
-                        saveCriterionData(config, criteriaData, element, value, saveDialog);
+                            Array.from(criteriaElement.children).forEach(item => {
+                                if (item.textContent === hasSameConfig || item.textContent === hasSameName) {
+                                    item.remove();
+                                }
+                            });
+                            removeSearchCriterion(removeName);
+                            removeCriterionData(criteriaData, [hasSameConfig, hasSameName]);
+                            saveCriterionData(config, criteriaData, element, value, saveDialog);
+                        },
                     });
                 }
             } else if (!hasSameName && hasSameConfig) {
-                confirmDialog(window.siyuan.languages.confirm, window.siyuan.languages.searchUpdateName.replace("${x}", () => escapeHtml(hasSameConfig)).replace("${y}", () => escapeHtml(value)), () => {
-                    Array.from(criteriaElement.children).forEach(item => {
-                        if (item.textContent === hasSameConfig) {
-                            item.remove();
+                confirmDialog({
+                    title: window.siyuan.languages.confirm,
+                    text: window.siyuan.languages.searchUpdateName.replace("${x}", () => escapeHtml(hasSameConfig)).replace("${y}", () => escapeHtml(value)),
+                    confirm: () => {
+                        if (isMobile()) {
+                            saveCriterionData(config, criteriaData, element, value, saveDialog, [hasSameConfig]);
+                            return;
                         }
-                    });
-                    removeSearchCriterion(hasSameConfig);
-                    removeCriterionData(criteriaData, [hasSameConfig]);
-                    saveCriterionData(config, criteriaData, element, value, saveDialog);
+                        Array.from(criteriaElement.children).forEach(item => {
+                            if (item.textContent === hasSameConfig) {
+                                item.remove();
+                            }
+                        });
+                        removeSearchCriterion(hasSameConfig);
+                        removeCriterionData(criteriaData, [hasSameConfig]);
+                        saveCriterionData(config, criteriaData, element, value, saveDialog);
+                    },
                 });
             } else {
                 saveCriterionData(config, criteriaData, element, value, saveDialog);
@@ -493,6 +543,15 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
     }
     window.siyuan.menus.menu.remove();
     window.siyuan.menus.menu.element.setAttribute("data-name", Constants.MENU_SEARCH_MORE);
+    const updateSearch = () => {
+        cb();
+        window.siyuan.storage[Constants.LOCAL_SEARCHDATA] = resolvePersistedSearchConfig(
+            config,
+            window.siyuan.storage[Constants.LOCAL_SEARCHDATA],
+            hasSearchConfigTemporaryPath(config),
+        );
+        setStorageVal(Constants.LOCAL_SEARCHDATA, window.siyuan.storage[Constants.LOCAL_SEARCHDATA]);
+    };
     /// #if MOBILE
     window.siyuan.menus.menu.append(new MenuItem({
         iconHTML: "",
@@ -521,7 +580,7 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
     const searchMethodSubmenu = [{
         icon: "iconExact",
         label: window.siyuan.languages.keyword,
-        current: config.method === 0,
+        checked: config.method === 0,
         click() {
             config.method = 0;
             config.page = 1;
@@ -530,7 +589,7 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
     }, {
         icon: "iconQuote",
         label: window.siyuan.languages.querySyntax,
-        current: config.method === 1,
+        checked: config.method === 1,
         click() {
             config.method = 1;
             config.page = 1;
@@ -539,7 +598,7 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
     }, {
         icon: "iconDatabase",
         label: "SQL",
-        current: config.method === 2,
+        checked: config.method === 2,
         click() {
             config.method = 2;
             config.page = 1;
@@ -548,7 +607,7 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
     }, {
         icon: "iconRegex",
         label: window.siyuan.languages.regex,
-        current: config.method === 3,
+        checked: config.method === 3,
         click() {
             config.method = 3;
             config.page = 1;
@@ -559,7 +618,7 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
         searchMethodSubmenu.push({
             icon: "iconSparkles",
             label: window.siyuan.languages.semanticSearch,
-            current: config.method === 4,
+            checked: config.method === 4,
             click() {
                 config.method = 4;
                 config.page = 1;
@@ -577,68 +636,68 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
     const sortMenu: IMenu[] = [{
         iconHTML: "",
         label: window.siyuan.languages.type,
-        current: config.sort === 0,
+        checked: config.sort === 0,
         click() {
             config.sort = 0;
-            cb();
+            updateSearch();
         }
     }, {
         iconHTML: "",
         label: window.siyuan.languages.createdASC,
-        current: config.sort === 1,
+        checked: config.sort === 1,
         click() {
             config.sort = 1;
-            cb();
+            updateSearch();
         }
     }, {
         iconHTML: "",
         label: window.siyuan.languages.createdDESC,
-        current: config.sort === 2,
+        checked: config.sort === 2,
         click() {
             config.sort = 2;
-            cb();
+            updateSearch();
         }
     }, {
         iconHTML: "",
         label: window.siyuan.languages.modifiedASC,
-        current: config.sort === 3,
+        checked: config.sort === 3,
         click() {
             config.sort = 3;
-            cb();
+            updateSearch();
         }
     }, {
         iconHTML: "",
         label: window.siyuan.languages.modifiedDESC,
-        current: config.sort === 4,
+        checked: config.sort === 4,
         click() {
             config.sort = 4;
-            cb();
+            updateSearch();
         }
     }, {
         iconHTML: "",
         label: window.siyuan.languages.sortByRankAsc,
-        current: config.sort === 6,
+        checked: config.sort === 6,
         click() {
             config.sort = 6;
-            cb();
+            updateSearch();
         }
     }, {
         iconHTML: "",
         label: window.siyuan.languages.sortByRankDesc,
-        current: config.sort === 7,
+        checked: config.sort === 7,
         click() {
             config.sort = 7;
-            cb();
+            updateSearch();
         }
     }];
     if (config.group === 1) {
         sortMenu.push({
             iconHTML: "",
             label: window.siyuan.languages.sortByContent,
-            current: config.sort === 5,
+            checked: config.sort === 5,
             click() {
                 config.sort = 5;
-                cb();
+                updateSearch();
             }
         });
     }
@@ -657,7 +716,7 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
         submenu: [{
             iconHTML: "",
             label: window.siyuan.languages.noGroupBy,
-            current: config.group === 0,
+            checked: config.group === 0,
             click() {
                 if (isMobile()) {
                     element.querySelector('[data-type="expand"]').classList.add("fn__none");
@@ -669,12 +728,12 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
                 if (config.sort === 5) {
                     config.sort = 0;
                 }
-                cb();
+                updateSearch();
             }
         }, {
             iconHTML: "",
             label: window.siyuan.languages.groupByDoc,
-            current: config.group === 1,
+            checked: config.group === 1,
             click() {
                 if (isMobile()) {
                     element.querySelector('[data-type="expand"]').classList.remove("fn__none");
@@ -683,13 +742,28 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
                     element.querySelector("#searchCollapse").parentElement.classList.remove("fn__none");
                 }
                 config.group = 1;
-                cb();
+                updateSearch();
             }
         }].map(item => withSearchMethodAvailability(item, capabilities.group)),
     }, capabilities.group)).element);
+    window.siyuan.menus.menu.append(new MenuItem({
+        iconHTML: "",
+        label: window.siyuan.languages.searchGroupState,
+        type: "submenu",
+        disabled: config.group !== 1 || !capabilities.group,
+        submenu: [false, true].map(groupFolded => withSearchMethodAvailability({
+            iconHTML: "",
+            label: window.siyuan.languages[groupFolded ? "collapseByDefault" : "expandByDefault"],
+            checked: Boolean(window.siyuan.config.search.groupFolded) === groupFolded,
+            click() {
+                void searchConfigApi.patch("groupFolded", groupFolded, () => cb());
+            }
+        }, config.group === 1 && capabilities.group)),
+    }).element);
     if (layoutMenu) {
         layoutMenu();
     }
+    /// #if MOBILE
     window.siyuan.menus.menu.append(new MenuItem({type: "separator"}).element);
     window.siyuan.menus.menu.append(new MenuItem({
         label: window.siyuan.languages.saveCriterion,
@@ -705,6 +779,7 @@ export const moreMenu = async (config: Config.IUILayoutTabSearchConfig,
             removeCriterion();
         }
     }).element);
+    /// #endif
 };
 
 const configIsSame = (config: Config.IUILayoutTabSearchConfig, config2: Config.IUILayoutTabSearchConfig) => {

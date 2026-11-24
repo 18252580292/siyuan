@@ -4,6 +4,7 @@ import {readFileSync} from "node:fs";
 import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 import {ModuleKind, transpileModule} from "typescript";
+import {getAVHostIdentity, getAVRelationHost} from "./host";
 
 const compiled = transpileModule(readFileSync("src/dialog/anchoredInputPosition.ts", "utf8"), {
     compilerOptions: {module: ModuleKind.CommonJS},
@@ -264,7 +265,7 @@ const openInput = (positionByMenu = false) => {
     let inserted = false;
     let selector = "";
     const input = Object.assign(new EventTarget(), {
-        value: "", dataset: {}, select: () => {}, focus: () => {
+        value: "draft", dataset: {}, select: () => {}, focus: () => {
             assert.ok(positionByMenu ? menuPositioned : getAnchor, "positioning must be bound before focus");
         },
     });
@@ -274,7 +275,7 @@ const openInput = (positionByMenu = false) => {
         dataset: {},
         getBoundingClientRect: () => rect(40, 500, 220, 36),
         matches: () => false,
-        querySelector: (name: string) => name === ".av__celltext" ? {textContent: "draft"} : null,
+        querySelector: (name: string) => name === ".av__celltext" ? {textContent: "draft", getAttribute: () => "draft"} : null,
         getAttribute: () => "column-id",
         closest: (name: string) => name.includes("av__body") ? {dataset: {groupId: "group-id"}} :
             {dataset: {id: "row-id"}, classList: {contains: () => true}},
@@ -293,20 +294,22 @@ const openInput = (positionByMenu = false) => {
     const exports: {popTextCell?: (protyle: unknown, cells: unknown[], type: string, options: unknown) => void} = {};
     runInNewContext(popCompiled, {
         ...capabilities,
-        exports, isTableLikeView: () => true, hasClosestBlock: () => block, hasClosestByClassName: (): null => null,
+        getAVHostIdentity, getAVRelationHost,
+        exports, isTableLikeView: () => true, getAVHost: () => block, hasClosestByClassName: (): null => null,
         getComputedStyle: () => ({}), getStoredCellValueByElement: (): undefined => undefined,
-        escapeAttr: (value: string) => value,
+        createCellInputTarget: () => () => ({cells: [] as import("./selectionState").IAVSelectedCell[]}),
+        escapeAttr: (value: string) => value, escapeHtml: (value: string) => value,
         AV_CELL_EDITOR_CLOSE_EVENT: "close", callMobileAppShowKeyboard: () => {},
         window: {siyuan: {menus: {menu: {remove: () => {}}}, zIndex: 0}},
         document: {querySelector: () => inserted ? mask : null, body: {insertAdjacentHTML: () => {inserted = true;}}},
         bindAnchoredInputPosition: (_input: unknown, getter: () => unknown) => {getAnchor = getter;},
         setPosition: () => {menuPositioned = true;},
     });
-    exports.popTextCell({}, cells, "block", {scrollIntoView: false, positionByMenu});
+    exports.popTextCell({}, cells, "url", {scrollIntoView: false, positionByMenu});
     return {cell, cells, replacement, input, getAnchor, menuPositioned, getSelector: () => selector};
 };
 
-test("opening a primary cell binds positioning before focus and retains its group identity after redraw", () => {
+test("opening a URL cell binds positioning before focus and retains its group identity after redraw", () => {
     const fixture = openInput();
     assert.equal(fixture.input.value, "draft");
     fixture.cell.isConnected = false;

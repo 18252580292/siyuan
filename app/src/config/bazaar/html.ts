@@ -1,3 +1,4 @@
+import {escapeAttr} from "../../util/escape";
 import {BAZAAR_PACKAGE_CONFIG} from "./packageConfig";
 
 const genSortOptionsHTML = (sortValue: string) => `<option ${sortValue === "0" ? "selected" : ""} value="0">${window.siyuan.languages.sortByUpdateTimeDesc}</option>
@@ -5,7 +6,9 @@ const genSortOptionsHTML = (sortValue: string) => `<option ${sortValue === "0" ?
 <option ${sortValue === "2" ? "selected" : ""} value="2">${window.siyuan.languages.sortByDownloadsDesc}</option>
 <option ${sortValue === "3" ? "selected" : ""} value="3">${window.siyuan.languages.sortByDownloadsAsc}</option>
 <option ${sortValue === "4" ? "selected" : ""} value="4">${window.siyuan.languages.sortByRatingDesc}</option>
-<option ${sortValue === "5" ? "selected" : ""} value="5">${window.siyuan.languages.sortByRatingAsc}</option>`;
+<option ${sortValue === "5" ? "selected" : ""} value="5">${window.siyuan.languages.sortByRatingAsc}</option>
+<option ${sortValue === "6" ? "selected" : ""} value="6">${window.siyuan.languages.sortByReleaseTimeDesc}</option>
+<option ${sortValue === "7" ? "selected" : ""} value="7">${window.siyuan.languages.sortByReleaseTimeAsc}</option>`;
 
 const genThemeModeSelectHTML = () => `<div class="fn__space"></div>
 <select id="bazaarSelect" class="b3-select">
@@ -14,7 +17,11 @@ const genThemeModeSelectHTML = () => `<div class="fn__space"></div>
     <option value="1">${window.siyuan.languages.themeDark}</option>
 </select>`;
 
-export const genBazaarPackagePanelHTML = (bazaarType: TBazaarType, sortValue: string, loadingHTML: string) => {
+export const genBazaarPackagePanelHTML = (
+    bazaarType: TBazaarType,
+    sortValue: string,
+    loadingHTML: string,
+) => {
     const config = BAZAAR_PACKAGE_CONFIG[bazaarType];
     return `<div class="config-bazaar__panel fn__none" data-type="${config.tabType}">
     <div class="fn__flex config-bazaar__title">
@@ -26,7 +33,10 @@ export const genBazaarPackagePanelHTML = (bazaarType: TBazaarType, sortValue: st
         ${bazaarType === "themes" ? genThemeModeSelectHTML() : ""}
         <div class="fn__space"></div>
         <div class="fn__flex config-bazaar__filter-row">
-            <input spellcheck="false" class="b3-text-field" placeholder="${window.siyuan.languages.enterKey} ${window.siyuan.languages.search}">
+            <button type="button" class="block__icon block__icon--show block__icon--touch block__icon--inset block__icon--tap ariaLabel" data-bazaar-filter-menu aria-label="${window.siyuan.languages.filter}" data-position="north" aria-haspopup="menu" aria-expanded="false">
+                <svg><use xlink:href="#iconFilter"></use></svg>
+            </button>
+            <input spellcheck="false" class="b3-text-field" placeholder="${escapeAttr(window.siyuan.languages.searchPlaceholder)}">
             <div class="counter counter--bg fn__flex-center ariaLabel" data-position="north" aria-label="${window.siyuan.languages.total}"></div>
         </div>
     </div>

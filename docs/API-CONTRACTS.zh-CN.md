@@ -22,6 +22,8 @@
 
 对于受 `ControlConcurrency` 控制的 JSON 接口，请求先通过鉴权和准入检查，再由 `contractHandler` 完成解码并接收剩余请求体，之后才获取按路径划分的业务锁，避免排队请求耗尽 HTTP/2 连接的接收窗口。外层中间件在响应处理和笔记本租约清理完成后释放锁。新增适配器必须保持这一顺序；原始数据流和表单上传保留既有的并发控制路径。
 
+对于已注册的 `/api/` 路由，处理函数在发送响应头前发生 panic 时，恢复中间件返回 HTTP 500 和内核错误信封，并在服务端记录诊断信息。响应已经开始时，恢复过程保留原有状态码和载荷。这个中间件响应与端点声明的响应独立。
+
 `kernel/apicontract/` 下的各模块文件定义请求、响应和端点，`contracts.go` 将其汇总到端点注册表。契约包独立于内核启动、数据库和持久化模型，因此生成器可以单独运行。API 入口通过 `contractHandler` 绑定端点，请求参数和成功返回值受到 Go 泛型签名约束；响应载荷通过构造函数设置，不能直接给通用 `ret.Data` 赋值。校验辅助函数返回错误；`FailureFrom` 保留 `Rejection` 的错误码和消息，其他错误使用 `-1`。支持的错误载荷通过端点构造函数设置，数据为 null 的成功响应使用 `SuccessWithoutData`。
 
 生成器从同一组 Go 类型生成 `app/src/types/api/index.d.ts` 和 `kernel/apicontract/schema.json`。后者包含共享的 `$defs` 和每个端点的请求、响应 schema，测试使用同一套 schema 检查实际 HTTP 响应。类型声明不会在运行时验证 JSON，CI 中的处理函数测试负责验证序列化结果。
@@ -199,4 +201,6 @@ go test -tags "fts5 sqlcipher" ./... -count=1
 
 预发布工作流 `.github/workflows/cd.yml` 执行语言校验、契约和类型检查，在 Linux 上运行所有内核包的测试，在 Windows 上运行前端、Electron 和打包脚本测试。它仅由预发布标签推送（`*-alpha*`、`*-beta*`、`*-rc*`）或手动调度触发，普通分支推送和 PR 不触发该工作流。部分测试步骤，包括 Linux 内核全量测试和前端测试，设置了 `continue-on-error: true`。因此，任务成功或版本发布不代表所有测试通过；报告验证结果前，应检查实际步骤结果、日志和测试报告。此处说明不改变工作流的发布门禁。
 
-前端测试发现范围限定为 `src/**/*.test.ts`、`tests/**/*.test.js`、`electron/**/*.test.js` 和 `scripts/**/*.test.js`，因此排除 `app/build` 下的打包副本。测试文件在独立进程中运行，根据可用 CPU 核心数选择并发度，上限为 4，以限制 Electron 进程启动争用。通过 `pnpm test --test-concurrency=1` 可串行执行。这些位置新增的回归测试会自动纳入；新增测试位置或文件命名约定时，须同步更新测试命令和本文档。Go 契约回归测试的名称应保留 `Contract`，以便单独运行。
+前端测试发现范围限定为 `src/**/*.test.ts`、`tests/**/*.test.js`、`electron/**/*.test.ts` 和 `scripts/**/*.test.js`，因此排除 `app/build` 下的打包副本。测试文件在独立进程中运行，根据可用 CPU 核心数选择并发度，上限为 4，以限制 Electron 进程启动争用。通过 `pnpm test --test-concurrency=1` 可串行执行。这些位置新增的回归测试会自动纳入；新增测试位置或文件命名约定时，须同步更新测试命令和本文档。Go 契约回归测试的名称应保留 `Contract`，以便单独运行。
+
+`pnpm test` 仍是全量入口，传入文件也不会缩小范围。指定文件请使用 `pnpm run test:focused scripts/test-changed.test.js`，可传一个或多个现存 `.test.ts`、`.test.js` 或 `.test.mjs` 文件，不接受运行参数或未展开的 glob；空列表、错误路径会在启动测试前失败。先用 `pnpm run test:changed --explain` 预览，再运行 `pnpm run test:affected`：标准输出仍是文件清单，标准错误显示基准、数量及代表性依赖链。默认基准是 `HEAD`，检查已提交的分支改动时使用 `--base <版本>`。解释不会截断选测范围。未找到关联测试表示尚未建立覆盖依据，不代表改动没有影响；动态依赖仍需人工判断。

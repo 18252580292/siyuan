@@ -1,7 +1,7 @@
 import {toggleMenu} from "../menus/menuToggle";
 import * as path from "path";
-import {fetchPost} from "./fetch";
-import {Dialog} from "../dialog";
+import {fetchPost, fetchSyncPost} from "./fetch";
+import {AdaptiveDialog as Dialog} from "../dialog/adaptiveDialog";
 import {escapeAriaLabel, escapeHtml, escapeHtmlTextAndAttr} from "./escape";
 import {genFileTreeDocAriaLabel} from "./fileTreeTooltip";
 import {isMobile} from "./functions";
@@ -24,6 +24,7 @@ import {getHostCapabilities} from "./hostCapabilities";
 import {highlightSearchText} from "./searchHighlight";
 import {addClearButton} from "./addClearButton";
 import {normalizeSiYuanUri} from "./normalizeSiYuanUri";
+import {isNodeID} from "./nodeID";
 
 export const useShell = (cmd: "showItemInFolder" | "openPath", filePath: string) => {
     if (!getHostCapabilities().localFileSystem) {
@@ -69,16 +70,16 @@ export const parseSiYuanUriInfo = (uri: URL | string | null | undefined): ISiYua
             return null;
         }
         const uriObj = normalizeSiYuanUri(parsedURI);
-        if (uriObj.hostname === "blocks" && /^\/\d{14}-\w{7}/.test(uriObj.pathname)) {
+        const id = uriObj.pathname.substring(1, 23);
+        if (uriObj.hostname === "blocks" && uriObj.pathname.startsWith("/") && isNodeID(id)) {
             const avItemID = uriObj.searchParams.get("avItemID") || undefined;
             const avViewID = uriObj.searchParams.get("avViewID") || undefined;
             const avGroupID = uriObj.searchParams.get("avGroupID") || undefined;
-            const isNodeID = (id?: string) => !id || /^\d{14}-\w{7}$/.test(id);
-            if (!isNodeID(avItemID) || !isNodeID(avViewID) || !isNodeID(avGroupID)) {
+            if ([avItemID, avViewID, avGroupID].some(value => value && !isNodeID(value))) {
                 return null;
             }
             return {
-                id: uriObj.pathname.substring(1, 1 + 22),
+                id,
                 focus: uriObj.searchParams.get("focus") === "1",
                 fullscreen: uriObj.searchParams.get("fullscreen") === "1",
                 avItemID,
@@ -251,15 +252,16 @@ export const isMoveTargetAllowed = (sourceNotebookIds: string[] = [], targetNote
 };
 
 export const moveToPath = (fromPaths: string[], toNotebook: string, toPath: string) => {
-    fetchPost("/api/filetree/moveDocs", {
+    return fetchSyncPost("/api/filetree/moveDocs", {
         toNotebook,
         fromPaths,
         toPath,
-    });
+    }).then(response => response.code === 0);
 };
 
 export const movePathTo = (options: {
-    cb: (toPath: string[], toNotebook: string[]) => void,
+    cb: (toPath: string[], toNotebook: string[]) => void | boolean | Promise<void | boolean>,
+    awaitConfirm?: boolean,
     validate?: (toPath: string[], toNotebook: string[]) => boolean,
     paths?: string[],
     range?: Range,
@@ -358,6 +360,10 @@ export const movePathTo = (options: {
         const paths = items.map(item => item.path);
         const notebooks = items.map(item => item.notebook);
         if (!options.validate || options.validate(paths, notebooks)) {
+            if (options.awaitConfirm) {
+                void dialog.runPending(async () => await options.cb(paths, notebooks) === true);
+                return;
+            }
             options.cb(paths, notebooks);
             dialog.destroy();
         }
@@ -778,6 +784,7 @@ export const movePathTo = (options: {
         inputElement.focus();
         /// #endif
     });
+    return dialog;
 };
 
 const getLeaf = (liElement: HTMLElement, flashcard: boolean, onRender?: (root: Element) => void) => {

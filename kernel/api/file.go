@@ -307,7 +307,11 @@ var copyFile = contractHandler(apicontract.CopyFile, func(c *gin.Context, reques
 	// 例外：dest 在工作区外且非加密 box 时允许解密复制（用户导出的场景）
 	if rejectEncryptedBoxPath(src) || rejectEncryptedBoxPath(dest) {
 		if !rejectEncryptedBoxPath(dest) && !gulu.File.IsSubPath(util.WorkspaceDir, dest) {
-			// dest 在工作区外且非加密 box，允许解密后复制
+			// dest 在工作区外且非加密 box，允许解密后复制；解密出的明文与普通导出同样受写入目标限制
+			if util.IsSensitiveWritePath(dest) {
+				logging.LogErrorf("refuse to copy sensitive file [%s]", dest)
+				return apicontract.Failure[apicontract.Null](-2, fmt.Sprintf("refuse to copy sensitive file [%s]", dest))
+			}
 			boxID := util.BoxIDFromDataPath(src)
 			if err = holdEncryptedBoxRequest(c, boxID); err != nil {
 				return apicontract.Failure[apicontract.Null](-1, model.Conf.Language(314))
@@ -333,7 +337,7 @@ var copyFile = contractHandler(apicontract.CopyFile, func(c *gin.Context, reques
 		return apicontract.FailureWithTimeout[apicontract.Null](-1, "Field [src]: path is a directory", 5000)
 	}
 
-	if util.IsSensitivePath(dest) {
+	if util.IsSensitiveWritePath(dest) {
 		logging.LogErrorf("refuse to copy sensitive file [%s]", dest)
 		return apicontract.Failure[apicontract.Null](-2, fmt.Sprintf("refuse to copy sensitive file [%s]", dest))
 	}
@@ -441,7 +445,7 @@ var getFile = contractHandler(apicontract.GetFile, func(c *gin.Context, request 
 	if info.IsDir() {
 		return apicontract.Failure[apicontract.BinaryContent](http.StatusConflict, "path is a directory")
 	}
-	data, err := filelock.ReadFile(fileAbsPath)
+	data, err := util.ReadUserFile(fileAbsPath)
 	if err != nil {
 		logging.LogErrorf("read file [%s] failed: %s", fileAbsPath, err)
 		return apicontract.Failure[apicontract.BinaryContent](http.StatusInternalServerError, err.Error())
@@ -663,17 +667,7 @@ var removeFile = contractHandler(apicontract.RemoveFile, func(c *gin.Context, re
 var putFileLock sync.Mutex
 
 var putFile = contractHandler(apicontract.PutFile, func(c *gin.Context, request apicontract.PutFileRequest) apicontract.Response[apicontract.Null] {
-	// 表单已由 contractHandler 接收完成，串行保护路径检查、文件写入、时间更新和变更通知。
-	putFileLock.Lock()
-	defer putFileLock.Unlock()
-
-	isDirStr := request.IsDir
-	isDir, _ := strconv.ParseBool(isDirStr)
-	app := resolveRequestAppID(c, request.App)
-
-	var err error
-	filePath := request.Path
-	filePath = strings.TrimSpace(filePath)
+	filePath := strings.TrimSpace(request.Path)
 	if filePath == "" {
 		return apicontract.Failure[apicontract.Null](http.StatusBadRequest, "path must not be empty")
 	}
@@ -681,6 +675,26 @@ var putFile = contractHandler(apicontract.PutFile, func(c *gin.Context, request 
 	if err != nil {
 		return apicontract.Failure[apicontract.Null](http.StatusForbidden, err.Error())
 	}
+
+	ctx := c.Request.Context()
+	isDir, _ := strconv.ParseBool(request.IsDir)
+	if !isDir {
+		release, waitErr := model.HoldPutFileForSync(ctx, fileAbsPath)
+		if waitErr != nil {
+			return apicontract.Failure[apicontract.Null](-1, waitErr.Error())
+		}
+		if release != nil {
+			defer release()
+		}
+	}
+
+	// 等待期间允许其他上传写入不参与同步的路径。
+	putFileLock.Lock()
+	defer putFileLock.Unlock()
+	if err = ctx.Err(); err != nil {
+		return apicontract.Failure[apicontract.Null](-1, err.Error())
+	}
+	app := resolveRequestAppID(c, request.App)
 
 	// 加密笔记本的任何文件都不允许通过原始文件 API 写入（不只 .sy）：
 	if util.IsPluginDevelopmentRawPathForbidden(fileAbsPath, true) {
@@ -739,6 +753,9 @@ var putFile = contractHandler(apicontract.PutFile, func(c *gin.Context, request 
 			}
 
 			if err = model.CheckDocumentAddressingFileWrite(fileAbsPath, data, false); err != nil {
+				break
+			}
+			if err = ctx.Err(); err != nil {
 				break
 			}
 			dir := filepath.Dir(fileAbsPath)

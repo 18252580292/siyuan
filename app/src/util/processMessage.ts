@@ -1,16 +1,33 @@
 /// #if !MOBILE
 import {reloadUI} from "../layout/util";
 import {closeSettingsWindow} from "../config/setting/windowContext";
+/// #else
+import {reloadMobileUI} from "../mobile/util/reloadUI";
 /// #endif
 import {hideMessage, showMessage} from "../dialog/message";
-import {setStorageVal} from "../protyle/util/compatibility";
-import {Constants} from "../constants";
 import {fetchPost} from "./fetch";
 import {isBrowser} from "./functions";
 import {applySettingTask} from "../config/setting/taskBlocker";
 import {notifyOCRChanged} from "../config/ocrRuntime";
 
+const shownSyncNotices = new Set<string>();
+
 export const processMessage = (response: IWebSocketData) => {
+    if (response.cmd === "notebookIconChanged") {
+        const {updateNotebookBreadcrumbIcon}: typeof import("../protyle/breadcrumb/iconRefresh") = require("../protyle/breadcrumb/iconRefresh");
+        updateNotebookBreadcrumbIcon(response.data.boxID, response.data.icon);
+    }
+    if (response.cmd === "closeBox" || response.cmd === "removeBox") {
+        const {clearTemplateHTTPConfirmations}: typeof import("../template/httpConfirmHandoff") = require("../template/httpConfirmHandoff");
+        clearTemplateHTTPConfirmations();
+        const {invalidateRelatedAVSecurity}: typeof import("../protyle/render/av/relatedView") = require("../protyle/render/av/relatedView");
+        invalidateRelatedAVSecurity();
+    }
+    if (response.cmd === "templateHTTPConfirm" || response.cmd === "templateHTTPStatus") {
+        const {processTemplateHTTPEvent}: typeof import("../template/http") = require("../template/http");
+        processTemplateHTTPEvent(response.cmd, response.data);
+        return false;
+    }
     if (response.cmd === "assetContentIndexCompleted" && response.code === 0) {
         const {refreshAssetContentSearch}: typeof import("../search/assets") = require("../search/assets");
         refreshAssetContentSearch();
@@ -37,7 +54,18 @@ export const processMessage = (response: IWebSocketData) => {
         return false;
     }
     if ("msg" === response.cmd) {
-        const id = showMessage(response.msg, response.data.closeTimeout, response.code === 0 ? "info" : "error", response.data.id);
+        const noticeId = response.data.id;
+        const syncNotice = typeof noticeId === "string" && /^sync-notice-[a-z0-9]{16}$/.test(noticeId);
+        if (syncNotice && shownSyncNotices.has(noticeId)) {
+            return false;
+        }
+        const id = showMessage(response.msg, response.data.closeTimeout, response.code === 0 ? "info" : "error", noticeId);
+        if (syncNotice) {
+            shownSyncNotices.add(noticeId);
+            if (shownSyncNotices.size > 256) {
+                shownSyncNotices.delete(shownSyncNotices.values().next().value);
+            }
+        }
         document.querySelector("#message #addMicrosoftDefenderExclusion")?.addEventListener("click", (event) => {
             const button = event.currentTarget as HTMLButtonElement;
             if (button.disabled) {
@@ -74,22 +102,11 @@ export const processMessage = (response: IWebSocketData) => {
         /// #if !MOBILE
         if (closeSettingsWindow()) return false;
         /// #endif
-        if (response.data?.resetScroll) {
-            window.siyuan.storage[Constants.LOCAL_FILEPOSITION] = {};
-            setStorageVal(Constants.LOCAL_FILEPOSITION, window.siyuan.storage[Constants.LOCAL_FILEPOSITION], () => {
-                /// #if MOBILE
-                window.location.reload();
-                /// #else
-                void reloadUI();
-                /// #endif
-            });
-        } else {
-            /// #if MOBILE
-            window.location.reload();
-            /// #else
-            void reloadUI();
-            /// #endif
-        }
+        /// #if MOBILE
+        void reloadMobileUI(!!response.data?.resetScroll);
+        /// #else
+        void reloadUI(!!response.data?.resetScroll);
+        /// #endif
         return false;
     }
     if ("reloadpublishpage" === response.cmd) {

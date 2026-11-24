@@ -2,6 +2,8 @@ import {config as configApi} from "../util/configApi";
 /// #if MOBILE
 import {saveScroll} from "../../protyle/scroll/saveScroll";
 /// #else
+import {syncStatusBarVisibility} from "../../layout/statusHover";
+import {syncFloatingDockBarPreference} from "../../layout/dock/barVisibility";
 import {adjustDockPadding} from "../../layout/dock/util";
 import {reloadUI as reloadDesktopUI} from "../../layout/util";
 import {syncHideToolbarLayout, updateBarModeIcon} from "../../layout/topBar";
@@ -26,8 +28,7 @@ import {syncLockScreenWallpaper} from "./lockScreenWallpaper";
 import {refreshDynamicIcons} from "../../emoji/dynamicIcon";
 import {closeSettingsWindow, isSettingsWindow} from "../setting/windowContext";
 import {syncAppearancePreferences} from "./appearancePreferences";
-import {canSyncAppearanceSettings} from "./appearanceChanges";
-import {syncAppearanceSettings} from "./appearanceSettings";
+import {syncAppearanceFontInputs} from "./appearanceFontSettings";
 
 /** 主题模式下拉框初值：合并 mode / modeOS */
 export const appearanceThemeModeValue = (): number =>
@@ -58,15 +59,6 @@ interface IAppearanceRefresh {
     revision: string;
 }
 
-const applyAppearanceBars = (old: Config.IAppearance, next: Config.IAppearance) => {
-    document.getElementById("status")?.classList.toggle("fn__none", next.hideStatusBar);
-    /// #if !MOBILE
-    if (!isSettingsWindow() && next.hideStatusBar !== old.hideStatusBar) adjustDockPadding();
-    if (!isSettingsWindow() && next.hideToolbar !== old.hideToolbar) syncHideToolbarLayout();
-    if (!isSettingsWindow() && (next.mode !== old.mode || next.modeOS !== old.modeOS)) updateBarModeIcon();
-    /// #endif
-};
-
 const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppearanceRefresh) => {
     if (data.lang !== window.siyuan.config.appearance.lang) {
         if (isSettingsWindow()) {
@@ -86,25 +78,14 @@ const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppear
     const changedPackages = refresh && invalidateAppearancePackages(refresh.themes || [], refresh.icons || [], refresh.revision);
     const themeChanged = changedPackages?.themes.some(name => name === getCurrentThemeName(prevAppearance) ||
         name === getCurrentThemeName(data));
-    // 独立控件与主题包列表原位同步，只有当前外观资源发生变化才重新加载。
+    // 阅读和控件偏好原位应用，避免整页重建期间的布局变化引起滚动抖动。
     // 启动初始化传入当前配置本身，需要完整加载外观资源；重复推送仍使用原位同步。
-    const localUpdate = prevAppearance !== data && canSyncAppearanceSettings(prevAppearance, data);
-    const assetKeys: Array<keyof Config.IAppearance> = ["mode", "modeOS", "themeVer", "themeJS", "icon", "iconVer",
-        "codeBlockThemeLight", "codeBlockThemeDark"];
-    const assetsChanged = !localUpdate || themeChanged || changedPackages?.icons.includes(data.icon) ||
-        getCurrentThemeName(prevAppearance) !== getCurrentThemeName(data) ||
-        isCurrentThemeSupported(prevAppearance, getFrontend()) !== isCurrentThemeSupported(data, getFrontend()) ||
-        assetKeys.some(key => JSON.stringify(prevAppearance[key]) !== JSON.stringify(data[key]));
-    if (!assetsChanged) {
-        window.siyuan.config.appearance = data;
-        syncAppearancePreferences();
-        if (JSON.stringify(prevAppearance.lockScreenWallpaper) !== JSON.stringify(data.lockScreenWallpaper)) syncLockScreenWallpaper();
-        applyAppearanceBars(prevAppearance, data);
-        setBodyHighlight(data.bodyGradient);
-        syncBodyGradient();
-        syncAppearanceSettings();
-        return;
-    }
+    const appearanceKeys = Object.keys({...prevAppearance, ...data}) as Array<keyof Config.IAppearance>;
+    const inPlaceKeys = new Set(["bodyGradient", "compactMode", "globalFontFamilies", "menuMouseScroll", "pdfTheme",
+        "outlineKeepCurrentExpand", "mobileBars", "lockScreenWallpaper", "showFloatingDockBar", "showFloatingStatusBar"]);
+    const inPlace = !refresh && prevAppearance !== data &&
+        appearanceKeys.every(key => inPlaceKeys.has(key) ||
+            JSON.stringify(prevAppearance[key]) === JSON.stringify(data[key]));
     const unloadChangedTheme = themeChanged && prevAppearance.themeJS && isCurrentThemeSupported(prevAppearance, getFrontend());
     if ((unloadChangedTheme || shouldUnloadThemeScript(prevAppearance, data, getFrontend())) && !await unloadThemeScript()) {
         if (closeSettingsWindow()) return;
@@ -131,7 +112,7 @@ const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppear
             apply: () => { syncLockScreenWallpaper(); },
         }, {
             name: "gradient",
-            changed: () => !assetsChanged,
+            changed: () => inPlace,
             apply: () => {
                 setBodyHighlight(data.bodyGradient);
                 syncBodyGradient();
@@ -139,26 +120,37 @@ const applyAppearanceConfig = async (data: Config.IAppearance, refresh?: IAppear
         }, {
             name: "bars",
             changed: () => true,
-            apply: applyAppearanceBars,
-        }, {
-            name: "appearance-resources",
-            changed: () => assetsChanged,
-            apply: async (old, next) => {
-                await loadAssets(next);
-                if (JSON.stringify(next.globalFontFamilies) !== JSON.stringify(old.globalFontFamilies)) {
-                    await setInlineStyle();
-                    refreshHeadingNumberMeasurements();
-                    refreshDynamicIcons();
-                }
-                if (localUpdate) {
-                    syncBodyGradient();
-                    syncAppearanceSettings();
-                    return;
-                }
+            apply: (old, next) => {
+                document.getElementById("status")?.classList.toggle("fn__none", next.hideStatusBar);
                 /// #if !MOBILE
-                void remountOpenSettingTab("appearance");
+                syncStatusBarVisibility();
+                if (!isSettingsWindow() && next.hideStatusBar !== old.hideStatusBar) adjustDockPadding();
+                if (!isSettingsWindow() && next.hideToolbar !== old.hideToolbar) syncHideToolbarLayout();
+                if (!isSettingsWindow() && next.showFloatingDockBar !== old.showFloatingDockBar) syncFloatingDockBarPreference();
+                if (!isSettingsWindow()) updateBarModeIcon();
                 /// #endif
             },
+        }, {
+            name: "appearance-resources",
+            changed: () => !inPlace,
+            apply: (_old, next) => loadAssets(next),
+        }, {
+            name: "global-fonts",
+            changed: (old, next) => JSON.stringify(old.globalFontFamilies) !== JSON.stringify(next.globalFontFamilies),
+            apply: async () => {
+                await setInlineStyle();
+                refreshHeadingNumberMeasurements();
+                refreshDynamicIcons();
+                syncAppearanceFontInputs("globalFontFamilies");
+            },
+        /// #if !MOBILE
+        }, {
+            name: "appearance-tab",
+            changed: () => !inPlace,
+            apply: () => {
+                void remountOpenSettingTab("appearance");
+            },
+        /// #endif
         }],
     }).apply(data);
 };

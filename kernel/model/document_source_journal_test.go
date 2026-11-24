@@ -6,14 +6,79 @@ package model
 
 import (
 	"bytes"
-	"errors"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/88250/lute/ast"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
+
+func TestNotebookDocumentSourceJournalPath(t *testing.T) {
+	box := ast.NewNodeID()
+	for _, file := range []*documentSourceFile{
+		{Kind: "notebook", Box: box, Path: "/.siyuan/conf.json"},
+		{Kind: "notebook", Box: "../" + box, Path: "/.siyuan/conf.json"},
+		{Kind: "notebook", Box: box, Path: "/.siyuan/../conf.json"},
+		{Kind: "notebook", Box: box, Path: "/.siyuan/crypt-backup.json"},
+		{Kind: "notebook", Box: "", Path: "/.siyuan/conf.json"},
+	} {
+		filename, err := file.filename()
+		valid := file.Box == box && file.Path == "/.siyuan/conf.json"
+		if valid != (err == nil) || valid && filename != filepath.Join(util.DataDir, box, ".siyuan", "conf.json") {
+			t.Fatalf("unexpected notebook recovery path: %+v, %q, %v", file, filename, err)
+		}
+	}
+}
+
+func TestDocumentSourceJournalConcurrentScanAndWrites(t *testing.T) {
+	oldQueue := util.QueueDir
+	util.QueueDir = t.TempDir()
+	t.Cleanup(func() { util.QueueDir = oldQueue })
+	j := &documentSourceJournal{Version: 1, ID: ast.NewNodeID(), State: "pending", Files: []*documentSourceFile{
+		{Box: ast.NewNodeID(), Path: "/" + ast.NewNodeID() + ".sy", Before: []byte("before"), After: []byte("after")},
+	}}
+	if err := j.save(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case <-done:
+				result <- nil
+				return
+			default:
+				if _, err := readDocumentSourceJournals(); err != nil {
+					result <- fmt.Errorf("scan: %w", err)
+					return
+				}
+			}
+		}
+	}()
+	var writeErr error
+	for i := 0; i < 100 && writeErr == nil; i++ {
+		if writeErr = j.save(); writeErr == nil {
+			writeErr = j.remove()
+		}
+		if writeErr == nil {
+			writeErr = j.save()
+		}
+	}
+	close(done)
+	if err := <-result; err != nil {
+		t.Error(err)
+	}
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+}
 
 func TestDocumentSourceRecoveryPreservesConflictsAndCorruptRecords(t *testing.T) {
 	for _, corrupt := range []bool{false, true} {
@@ -33,6 +98,10 @@ func TestDocumentSourceRecoveryPreservesConflictsAndCorruptRecords(t *testing.T)
 			if err = j.save(); err != nil {
 				t.Fatal(err)
 			}
+			originalJournal, err := os.ReadFile(j.filename())
+			if err != nil {
+				t.Fatal(err)
+			}
 			newer := append(append([]byte{}, original...), '\n')
 			if err = os.WriteFile(filename, newer, 0600); err != nil {
 				t.Fatal(err)
@@ -43,8 +112,8 @@ func TestDocumentSourceRecoveryPreservesConflictsAndCorruptRecords(t *testing.T)
 				}
 			}
 			err = recoverDocumentSources()
-			if err == nil || (!corrupt && !errors.Is(err, util.ErrFileChanged)) {
-				t.Fatalf("unsafe recovery was not rejected: %v", err)
+			if corrupt && err == nil || !corrupt && err != nil {
+				t.Fatalf("unexpected recovery result: %v", err)
 			}
 			current, readErr := os.ReadFile(filename)
 			if readErr != nil || !bytes.Equal(current, newer) {
@@ -53,6 +122,63 @@ func TestDocumentSourceRecoveryPreservesConflictsAndCorruptRecords(t *testing.T)
 			if _, statErr := os.Stat(j.filename()); statErr != nil {
 				t.Fatal("unsafe recovery discarded recovery evidence", statErr)
 			}
+			if !corrupt {
+				archived, err := os.ReadFile(documentSourceArchivePath(j.ID))
+				if err != nil || !bytes.Equal(archived, originalJournal) {
+					t.Fatal("archive did not preserve exact recovery bytes", err)
+				}
+			}
 		})
+	}
+}
+
+func TestDocumentSourceJournalEnvelopeCompatibility(t *testing.T) {
+	oldQueue := util.QueueDir
+	util.QueueDir = t.TempDir()
+	t.Cleanup(func() { util.QueueDir = oldQueue })
+	for _, forward := range []bool{false, true} {
+		for _, state := range []string{"pending", "committed", "recovered"} {
+			t.Run(fmt.Sprintf("forward=%t/%s", forward, state), func(t *testing.T) {
+				j := &documentSourceJournal{Version: 1, Forward: forward, ID: ast.NewNodeID(), State: state, Files: []*documentSourceFile{
+					{Box: ast.NewNodeID(), Path: "/" + ast.NewNodeID() + ".sy", Before: []byte{0, 255, '<', '>', '&', '\n'}, After: bytes.Repeat([]byte("changed source"), 1000)},
+					{Box: ast.NewNodeID(), Path: "/" + ast.NewNodeID() + ".sy", Before: nil, After: []byte{}},
+				}}
+				persisted := *j
+				if forward {
+					persisted.Files = make([]*documentSourceFile, len(j.Files))
+					for i, entry := range j.Files {
+						copy := *entry
+						copy.Before, copy.After = nil, nil
+						persisted.Files[i] = &copy
+					}
+				}
+				data, err := json.Marshal(&persisted)
+				if err != nil {
+					t.Fatal(err)
+				}
+				digest := sha256.Sum256(data)
+				expected, err := json.Marshal(struct {
+					Data   json.RawMessage `json:"data"`
+					Digest string          `json:"sha256"`
+				}{data, hex.EncodeToString(digest[:])})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = j.save(); err != nil {
+					t.Fatal(err)
+				}
+				actual, err := os.ReadFile(j.filename())
+				if err != nil || !bytes.Equal(expected, actual) {
+					t.Fatalf("journal wire bytes changed: %v", err)
+				}
+				decoded, err := parseDocumentSourceJournal(actual, filepath.Base(j.filename()))
+				if err != nil || !reflect.DeepEqual(decoded, &persisted) {
+					t.Fatalf("journal recovery source changed: %v", err)
+				}
+				if !bytes.Equal(j.Files[0].Before, []byte{0, 255, '<', '>', '&', '\n'}) || j.Files[1].After == nil {
+					t.Fatal("saving mutated in-memory source images")
+				}
+			})
+		}
 	}
 }

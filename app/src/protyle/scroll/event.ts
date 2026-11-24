@@ -11,6 +11,9 @@ export const destroyScrollEvent = (element: HTMLElement) => {
     scrollCleanups.get(element)?.();
     scrollCleanups.delete(element);
 };
+/// #if !MOBILE
+import {scheduleAVHorizontalScrollbar} from "../render/av/horizontalScrollbar";
+/// #endif
 
 export const scrollEvent = (protyle: IProtyle, element: HTMLElement) => {
     destroyScrollEvent(element);
@@ -47,6 +50,10 @@ export const scrollEvent = (protyle: IProtyle, element: HTMLElement) => {
                 });
             });
         }
+
+        /// #if !MOBILE
+        scheduleAVHorizontalScrollbar(protyle);
+        /// #endif
 
         if (!protyle.element.classList.contains("block__edit") && !isMobile()) {
             protyle.contentElement.setAttribute("data-scrolltop", element.scrollTop.toString());

@@ -32,21 +32,28 @@ export const bindClearRecentDocs = (button: HTMLButtonElement, getSortBy: () => 
             pending = false;
             update();
         };
-        confirmDialog(window.siyuan.languages.clearRecentDocs, window.siyuan.languages.confirmClearRecentDocs, async () => {
-            try {
-                if (!canWrite() || !isActive()) {
-                    return;
+        confirmDialog({
+            title: window.siyuan.languages.clearRecentDocs,
+            text: window.siyuan.languages.confirmClearRecentDocs,
+            confirm: async () => {
+                try {
+                    if (!canWrite() || !isActive()) {
+                        return false;
+                    }
+                    const response = await fetchSyncPost("/api/storage/clearRecentDocs", {});
+                    if (response.code === 0 && isActive()) {
+                        onCleared();
+                    }
+                    return response.code === 0;
+                } catch (error) {
+                    showMessage(error.message, 0, "error");
+                    return false;
+                } finally {
+                    finish();
                 }
-                const response = await fetchSyncPost("/api/storage/clearRecentDocs", {});
-                if (response.code === 0 && isActive()) {
-                    onCleared();
-                }
-            } catch (error) {
-                showMessage(error.message, 0, "error");
-            } finally {
-                finish();
-            }
-        }, finish);
+            },
+            cancel: finish,
+        });
     });
     update();
     return update;

@@ -16,6 +16,7 @@ import {showMessage} from "../dialog/message";
 import type {App} from "../index";
 import {initMirror} from "../protyle/undo/globalUndo";
 import {getDocByScroll, saveScroll} from "../protyle/scroll/saveScroll";
+import {getDocPosition} from "../protyle/scroll/docPosition";
 import {isEncryptedBox} from "../util/pathName";
 import {bindMobileBarsScroll, pauseMobileBarsScroll} from "./util/mobileBars";
 import {forEachPluginSubscriber} from "../plugin/EventBusCore";
@@ -113,13 +114,8 @@ export const loadMobileFileById = (app: App, id: string, action: TProtyleAction[
             void window.siyuan.mobile.docks.file?.selectOpenedFile(protyle.notebookId, protyle.path);
         }
         afterOpen?.(protyle);
-        const titleElement = document.getElementById("toolbarName") as HTMLInputElement;
-        if (isValid() && action.includes(Constants.CB_GET_OPENNEW) && !protyle.disabled &&
-            titleElement && !titleElement.readOnly && !titleElement.disabled) {
-            // 新建文档加载完成后聚焦标题，通过移动端焦点桥接唤起键盘。
-            protyle.contentElement.scrollTop = 0;
-            titleElement.focus({preventScroll: true});
-            titleElement.setSelectionRange(titleElement.value.length, titleElement.value.length);
+        if (isValid() && action.includes(Constants.CB_GET_OPENNEW) && !protyle.disabled) {
+            void protyle.title?.openEditor();
         }
     };
     const fail = (invalid = false) => {
@@ -193,7 +189,7 @@ export const loadMobileFileById = (app: App, id: string, action: TProtyleAction[
         blockInfoParam.notebook = targetNotebookId;
     }
     let blockInfoHandled = false;
-    void fetchPost("/api/block/getBlockInfo", blockInfoParam, (data) => {
+    void fetchPost("/api/block/getBlockInfo", blockInfoParam, async (data) => {
         blockInfoHandled = true;
         if (!isValid()) {
             fail();
@@ -207,6 +203,21 @@ export const loadMobileFileById = (app: App, id: string, action: TProtyleAction[
         if (data.code !== 0 || !data.data?.rootID) {
             fail();
             return;
+        }
+        const currentEditor = window.siyuan.mobile.editor;
+        const pendingTitle = currentEditor?.protyle.title?.prepareForDocumentSwitch?.(data.data.rootID);
+        if (pendingTitle) {
+            try {
+                await pendingTitle;
+            } catch (error) {
+                showMessage(error instanceof Error ? error.message : window.siyuan.languages.settingsPendingSaveError);
+                fail();
+                return;
+            }
+            if (!isValid() || window.siyuan.mobile.editor !== currentEditor) {
+                fail();
+                return;
+            }
         }
         const isRootFocus = id === data.data.rootID &&
             action.includes(Constants.CB_GET_ALL) &&
@@ -265,7 +276,9 @@ export const loadMobileFileById = (app: App, id: string, action: TProtyleAction[
             }
             // 保留正文直到新文档返回，跨文档切换时显式更新只读状态
             const updateReadonly = previousRootID !== data.data.rootID ? true : undefined;
-            const targetScrollAttr = scrollAttr || window.siyuan.storage[Constants.LOCAL_FILEPOSITION][data.data.rootID];
+            const targetScrollAttr = actionList.includes(Constants.CB_GET_SCROLL) ?
+                await getDocPosition(data.data.rootID, scrollAttr) : undefined;
+            if (!isValid()) { fail(); return; }
             if (actionList.includes(Constants.CB_GET_SCROLL) && targetScrollAttr) {
                 getDocByScroll({
                     protyle: window.siyuan.mobile.editor.protyle,
@@ -312,7 +325,8 @@ export const loadMobileFileById = (app: App, id: string, action: TProtyleAction[
                     }
                     try {
                         if (preserveContent) {
-                            const prepared = await prepareDatabaseAttributePanel(editor.protyle, id);
+                            const prepared = await prepareDatabaseAttributePanel(editor.protyle, id,
+                                () => isValid() && window.siyuan.mobile.editor === editor);
                             if (!prepared || !isValid() || window.siyuan.mobile.editor !== editor) {
                                 fail();
                                 return;
@@ -329,6 +343,7 @@ export const loadMobileFileById = (app: App, id: string, action: TProtyleAction[
                             updateReadonly,
                             scrollPosition,
                             isValid,
+                            onAVRenderError: () => fail(),
                             afterCB() {
                                 if (!isValid()) {
                                     fail();

@@ -34,7 +34,7 @@ var Mode = "prod"
 // SystemTempDir 保存工作空间初始化重定向之前的系统临时目录。
 var SystemTempDir = os.TempDir()
 
-const Ver = "3.8.9"
+const Ver = "3.8.12"
 
 // IsReleaseVer 判断是否为正式版（不含 alpha、beta、rc 等预发布标识）。
 func IsReleaseVer(ver string) bool {
@@ -47,6 +47,7 @@ var (
 	SiYuanAccessAuthCodeBypass = false // 是否跳过空锁屏密码检查
 	AttachUI                   = false // 是否绑定桌面 UI 进程生命周期（Electron 拉起时为 true，手动 serve 为 false）
 	EnablePprof                = false // 是否注册未鉴权的调试端点，仅调试时显式开启，切勿在对外开放的实例上使用
+	FixedPortEnabled           = true  // 是否启动额外的 6806 固定端口反代，不影响主服务监听端口
 )
 
 func initEnvVars() {
@@ -109,9 +110,10 @@ func InitWorkspace(workspacePath, wdPath string) {
 }
 
 // BootWithFlags 接收已解析的启动参数，完成环境变量回退、全局变量赋值、工作空间初始化与加锁。
-func BootWithFlags(workspacePath, wdPath, port, readOnly, accessAuthCode, lang, mode string, ssl, attachUI, safeMode, enablePprof bool) {
+func BootWithFlags(workspacePath, wdPath, port, readOnly, accessAuthCode, lang, mode string, ssl, attachUI, safeMode, enablePprof, fixedPort bool) {
 	SafeMode = safeMode
 	EnablePprof = enablePprof
+	FixedPortEnabled = fixedPort
 	// Fallback to env vars if commandline args are not set
 	// valid only for CLI args that default to "", as the
 	// others have explicit (sane) defaults
@@ -158,19 +160,67 @@ func BootWithFlags(workspacePath, wdPath, port, readOnly, accessAuthCode, lang, 
 	logBootInfo()
 }
 
+type BootStage int
+
+const (
+	BootStageNone              BootStage = 0
+	BootStageIndexingDocuments BootStage = 56
+	BootStageStarting          BootStage = 299
+	BootStageFinished          BootStage = 300
+	BootStageDatabase          BootStage = 301
+	BootStageAppearance        BootStage = 302
+	BootStageListingFiles      BootStage = 303
+	BootStageResolvingRefs     BootStage = 304
+	BootStageIndexingRefs      BootStage = 305
+	BootStageSyncing           BootStage = 307
+	BootStageSyncReindexing    BootStage = 308
+)
+
 var bootDetailsLock = sync.Mutex{}
 
-func setBootDetails(details string) {
+func (stage BootStage) details() string {
+	switch stage {
+	case BootStageIndexingDocuments:
+		return BootL10n(int(stage), "Indexing documents...")
+	case BootStageStarting:
+		return BootL10n(int(stage), "Booting kernel...")
+	case BootStageFinished:
+		return BootL10n(int(stage), "Finishing boot...")
+	case BootStageDatabase:
+		return BootL10n(int(stage), "Initializing database...")
+	case BootStageAppearance:
+		return BootL10n(int(stage), "Initializing appearance...")
+	case BootStageListingFiles:
+		return BootL10n(int(stage), "Listing files...")
+	case BootStageResolvingRefs:
+		return BootL10n(int(stage), "Resolving refs...")
+	case BootStageIndexingRefs:
+		return BootL10n(int(stage), "Indexing refs...")
+	case BootStageSyncing:
+		return BootL10n(int(stage), "Syncing data from the cloud...")
+	case BootStageSyncReindexing:
+		return BootL10n(int(stage), "Sync reindexing...")
+	default:
+		return ""
+	}
+}
+
+func setBootStage(stage BootStage, completed, total int64) {
+	details := stage.details()
+	if details != "" {
+		if total > 0 {
+			details += fmt.Sprintf(" [%d/%d]", completed, total)
+		} else if completed > 0 {
+			details += fmt.Sprintf(" [%d]", completed)
+		}
+	}
 	bootDetailsLock.Lock()
 	bootDetails = "v" + Ver + " " + details
 	bootDetailsLock.Unlock()
 }
 
-func SetBootDetails(details string) {
-	if 100 <= bootProgress.Load() {
-		return
-	}
-	setBootDetails(details)
+func SetBootStage(stage BootStage) {
+	IncBootProgress(0, stage)
 }
 
 // BootL10n 返回启动进度文案的本地化字符串。
@@ -188,12 +238,17 @@ func BootL10n(num int, fallback string) string {
 	return fallback
 }
 
-func IncBootProgress(progress int32, details string) {
+func IncBootProgress(progress int32, stage BootStage) {
+	UpdateBootProgress(progress, stage, 0, 0)
+}
+
+// 任务计数在整数百分比不变时也能让启动界面检测到进展。
+func UpdateBootProgress(progress int32, stage BootStage, completed, total int64) {
 	if 100 <= bootProgress.Load() {
 		return
 	}
 	bootProgress.Add(progress)
-	setBootDetails(details)
+	setBootStage(stage, completed, total)
 }
 
 func IsBooted() bool {
@@ -216,7 +271,7 @@ func SetBooted() {
 	// 先置进度为 100 再写 details，保证前端轮询/SSE 读到 progress>=100 时一定满足跳转条件，
 	// 避免 "先写 details 后写 progress" 造成的 "Finishing boot... 但进度未满" 竞态窗口
 	bootProgress.Store(100)
-	setBootDetails(BootL10n(300, "Finishing boot..."))
+	setBootStage(BootStageFinished, 0, 0)
 	logging.LogInfof("kernel booted")
 }
 

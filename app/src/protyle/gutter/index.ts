@@ -48,6 +48,7 @@ import {highlightRender} from "../render/highlightRender";
 import {blockRender} from "../render/blockRender";
 import {embedBreadcrumbMenu} from "./embedBreadcrumbMenu";
 import {embedOpenMenu} from "./embedOpenMenu";
+import {embedConversionMenu} from "./embedConversion";
 import {toggleListMindmap} from "../render/listMindmap";
 import {getBlockHeightTarget, setBlockHeight} from "./height";
 import {orderGutterTurnIntoItems} from "./turnIntoMenu";
@@ -115,7 +116,6 @@ import {openMobileFileById} from "../../mobile/editor";
 /// #endif
 /// #if !MOBILE
 import {openFileById} from "../../editor/util";
-import {getDockByType} from "../../layout/tabUtil";
 import * as path from "path";
 /// #endif
 import {showMessage} from "../../dialog/message";
@@ -139,6 +139,7 @@ import {
     getFixedGutterPosition,
     getGutterFixedContainerRect,
     getGutterMarginHeight,
+    getGutterPaneRect,
     getListGutterAnchorLeft
 } from "./layout";
 import {closeSubElement} from "../toolbar/subElementLifecycle";
@@ -165,7 +166,8 @@ const restoreGutterRange = (protyle: IProtyle) => {
         range.setStart(mindmap, 0);
         range.collapse(true);
         protyle.toolbar.range = range;
-        focusByRange(range);
+        // 脑图容器内的原生光标会使 Chromium 在菜单悬停时反复进行昂贵的布局和绘制。
+        window.getSelection()?.removeAllRanges();
         return;
     }
     const range = protyle.toolbar.range;
@@ -576,6 +578,9 @@ export class Gutter {
                 return;
             }
             if (isOnlyMeta(event)) {
+                if (buttonElement.dataset.embedId) {
+                    return;
+                }
                 if (protyle.options.backlinkData) {
                     checkFold(id, (zoomIn, action) => {
                         openFileById({
@@ -1534,10 +1539,7 @@ export class Gutter {
         }
         const embedID = (element as HTMLElement).dataset.embedId;
         const viewOccurrenceID = (element as HTMLElement).dataset.viewOccurrenceId;
-        return Array.from(protyle.wysiwyg.element.querySelectorAll(`[data-node-id="${id}"]`)).find(item => {
-            if (!this.isMatchNode(item)) {
-                return false;
-            }
+        const candidates = Array.from(protyle.wysiwyg.element.querySelectorAll(`[data-node-id="${id}"]`)).filter(item => {
             if (viewOccurrenceID && encodeURIComponent(getViewFoldOccurrenceID(protyle, item)) !== viewOccurrenceID) {
                 return false;
             }
@@ -1548,6 +1550,11 @@ export class Gutter {
             }
             return !embedElement;
         });
+        // 完整层级的整列位置可能偏离内容行，唯一的上下文匹配直接使用块身份定位。
+        if (this.element.classList.contains("protyle-gutters--full") && candidates.length === 1) {
+            return candidates[0];
+        }
+        return candidates.find(item => this.isMatchNode(item));
     }
 
     public renderMenu(protyle: IProtyle, buttonElement: Element) {
@@ -1600,9 +1607,6 @@ export class Gutter {
             embedContext.targetElement.querySelectorAll(":scope > [data-type=\"NodeListItem\"]").length === 1;
         const allowRemoval = allowStructuralMutation && !isOnlyTargetListItem;
         const type = nodeElement.getAttribute("data-type");
-        if (type === "NodeAttributeView") {
-            window.siyuan.menus.menu.element.setAttribute("data-sheet-expandable", "true");
-        }
         const subType = nodeElement.getAttribute("data-subtype");
         const turnIntoSubmenu: IMenu[] = [];
         hideElements(["select"], protyle);
@@ -2528,7 +2532,6 @@ export class Gutter {
                 }, ...embedBreadcrumbMenu(protyle, nodeElement), {
                     id: "headingEmbedMode",
                     label: window.siyuan.languages.headingEmbedMode,
-                    iconHTML: "",
                     type: "submenu",
                     submenu: [{
                         id: "showHeadingWithBlocks",
@@ -2611,7 +2614,7 @@ export class Gutter {
                             });
                         }
                     }))
-                }]
+                }, ...embedConversionMenu(protyle, nodeElement)]
             }).element);
         } else if (type === "NodeHeading" && !protyle.disabled) {
             window.siyuan.menus.menu.append(new MenuItem({id: "separator_1", type: "separator"}).element);
@@ -2764,7 +2767,7 @@ export class Gutter {
             }
         }
         window.siyuan.menus.menu.append(new MenuItem({id: "separator_2", type: "separator"}).element);
-        if (!protyle.options.backlinkData) {
+        if (!protyle.options.backlinkData && !isEmbedMenu) {
             window.siyuan.menus.menu.append(new MenuItem({
                 id: "enter",
                 icon: "iconEnter",
@@ -2783,7 +2786,7 @@ export class Gutter {
                     enterBack(protyle, id);
                 }
             }).element);
-        } else {
+        } else if (!isEmbedMenu) {
             window.siyuan.menus.menu.append(new MenuItem({
                 id: "enter",
                 icon: "iconEnter",
@@ -3700,10 +3703,24 @@ export class Gutter {
         const fullGutter = !isMultiSelect && window.siyuan.config.editor.blockGutterMode;
         let html = "";
         let nodeElement = selectedElement || element;
+        const foldedListItem = fullGutter ? nodeElement.closest('[data-type="NodeListItem"][fold="1"]') : null;
+        if (foldedListItem) {
+            nodeElement = foldedListItem;
+        }
         const listItemContainer = isMultiSelect ? undefined : getListItemGutterContainer(nodeElement, fullGutter);
-        if (listItemContainer && (nodeElement === listItemContainer.parentElement ||
+        if (listItemContainer && !foldedListItem && (nodeElement === listItemContainer.parentElement ||
             nodeElement.classList.contains("protyle-action"))) {
             nodeElement = listItemContainer;
+        }
+        if (fullGutter) {
+            while (["NodeList", "NodeListItem", "NodeBlockquote", "NodeSuperBlock"].includes(nodeElement.getAttribute("data-type")) &&
+                nodeElement.getAttribute("fold") !== "1" && nodeElement.getAttribute(Constants.CUSTOM_SY_LIST_MINDMAP) !== "1") {
+                const first = nodeElement.querySelector(":scope > [data-node-id]");
+                if (!first) {
+                    break;
+                }
+                nodeElement = first;
+            }
         }
         const mindmapElement = (nodeElement.getAttribute("data-type") === "NodeMindmap" ||
             nodeElement.getAttribute("data-type") === "NodeList" &&
@@ -3876,12 +3893,11 @@ data-type="fold"${viewOccurrenceID ? ` data-view-occurrence-id="${encodeURICompo
                 while (previousBlock && !previousBlock.getAttribute("data-node-id")) {
                     previousBlock = previousBlock.previousElementSibling;
                 }
-                // 精简模式的正文块标只显示到当前页签项，页签栏用于操作整个容器。
+                // 页签栏和提示标题有独立的操作入口，正文块标在所属内容边界结束。
                 const isTabItemBoundary = type === "NodeTabItem" && nodeElement.parentElement.classList.contains("tabs");
                 if ((previousBlock && previousBlock.getAttribute("data-node-id")) ||
                     nodeElement.parentElement.classList.contains("callout-content") || isTabItemBoundary) {
-                    // 前一个块存在时，精简模式只显示到当前层级。
-                    hideParent = !fullGutter;
+                    hideParent = true;
                     // 由于折叠块的第二个子块在界面上不显示，因此移除块标 https://github.com/siyuan-note/siyuan/issues/14304
                     if (parentElement && parentElement.getAttribute("fold") === "1") {
                         return;
@@ -4042,7 +4058,7 @@ data-type="fold"${viewOccurrenceID ? ` data-view-occurrence-id="${encodeURICompo
             this.element.insertAdjacentHTML("beforeend", `<button class="protyle-gutters__line" data-type="gutterLineBefore" style="display:none"></button><button class="protyle-gutters__line" data-type="gutterLineAfter" style="display:none"></button><button class="protyle-gutters__plus ariaLabel" data-type="gutterPlusBefore" data-position="4west" aria-label="${window.siyuan.languages.insertBefore}" style="display:none"><svg><use xlink:href="#iconAdd"></use></svg></button><button class="protyle-gutters__plus ariaLabel" data-type="gutterPlusAfter" data-position="4west" aria-label="${window.siyuan.languages.insertAfter}" style="display:none"><svg><use xlink:href="#iconAdd"></use></svg></button>`);
         }
         const viewportRect = protyle.contentElement.getBoundingClientRect();
-        const paneRect = protyle.element.closest(".layout-tab-container")?.getBoundingClientRect() || viewportRect;
+        const paneRect = getGutterPaneRect(protyle.element, viewportRect);
         const viewportLeft = Math.max(viewportRect.left, paneRect.left);
         const viewportRight = Math.min(viewportRect.right, paneRect.right);
         const viewportBottom = Math.min(viewportRect.bottom, paneRect.bottom);
@@ -4101,12 +4117,6 @@ data-type="fold"${viewOccurrenceID ? ` data-view-occurrence-id="${encodeURICompo
     }
 }
 
-// 仅声明调用所需的最小接口，避免在 gutter 中 import AgentChat 类而引入
-// gutter → AgentChat → platformUtils → compatibility → gutter 的循环依赖（TDZ）。
-interface AgentChatLike {
-    insertBlockMentions: (mentions: Array<{ id: string; label: string }>) => void;
-}
-
 // 将选中的块以区块引用形式追加到智能体会话发送框末尾，等价于拖拽块到发送框或在框内搜索选块。
 export const addBlockToAgent = async (blockIds: string[]) => {
     const ids = blockIds.filter(Boolean);
@@ -4127,30 +4137,7 @@ export const addBlockToAgent = async (blockIds: string[]) => {
         }
         return {id, label};
     }));
-    /// #if MOBILE
-    const {insertMobileAgentMentions} = await import("../../mobile/agent/MobileAgentChat");
-    insertMobileAgentMentions(window.siyuan.ws.app, mentions);
-    /// #else
-    const dock = getDockByType("agentChat");
-    if (!dock) {
-        return;
-    }
-    // 智能体面板首次打开前 dock.data.agentChat 是占位值（非 AgentChat 实例）。
-    const isReady = (m: unknown): m is AgentChatLike =>
-        !!m && typeof (m as AgentChatLike).insertBlockMentions === "function";
-    let agentChat = dock.data.agentChat;
-    // 实例未就绪（面板从未打开）或面板被折叠时，先 toggleModel 打开/展开：
-    // show=true 既会同步 new AgentChat() 构造常驻实例，也会把折叠的面板重新展开。
-    const dockItem = document.querySelector(".dock__item[data-type=\"agentChat\"]");
-    const isCollapsed = !dockItem || !dockItem.classList.contains("dock__item--active");
-    if (!isReady(agentChat) || isCollapsed) {
-        dock.toggleModel("agentChat", true);
-        agentChat = dock.data.agentChat;
-    }
-    if (!isReady(agentChat)) {
-        // 极端情况下实例仍未就绪，放弃插入避免报错。
-        return;
-    }
-    agentChat.insertBlockMentions(mentions);
-    /// #endif
+    const {openEditorAgent} = await import("../../ai/editorAgent");
+    const chat = await openEditorAgent(window.siyuan.ws.app);
+    chat?.insertBlockMentions(mentions);
 };

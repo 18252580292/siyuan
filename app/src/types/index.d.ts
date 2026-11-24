@@ -164,6 +164,7 @@ interface Window {
     webkit: {
         nativeCallbacks: { [key: string]: (id: number) => void },
         messageHandlers: {
+            openMarkdownEditor?: { postMessage: (data: string) => void }
             finishKeyboardComposition?: { postMessage: (data: string) => Promise<boolean> }
             showTextMenu?: { postMessage: (data: string) => Promise<boolean> }
             pickPhotos?: { postMessage: (data: string) => Promise<Array<{
@@ -201,12 +202,14 @@ interface Window {
     };
     siyuan: ISiyuan;
     JSAndroid: {
+        openMarkdownEditor?(): void
         openAuthURL(url: string): void
         returnDesktop(): void
         openExternal(url: string): void
         exportByDefault(url: string): void
         saveExportFile(url: string): void
         saveExportFileV2?(url: string, requestID: string): void
+        saveAssetToGallery?(url: string): void
         changeStatusBarColor(color: string, mode: number): void
         writeClipboard(text: string): void
         writeHTMLClipboard(text: string, html: string): void
@@ -229,6 +232,7 @@ interface Window {
         logInputEvent?(details: string): void
     };
     JSHarmony: {
+        openMarkdownEditor?(): void
         getSystemFonts?(): Promise<string>
         openAuthURL(url: string): void
         showKeyboard(): void
@@ -392,7 +396,10 @@ interface IRefDefs {
 
 interface IFilesPath {
     notebookId: string,
-    openPaths: string[]
+    openPaths: string[],
+    version?: 2,
+    expandedIDs?: {id: string, kind: "document" | "notebook"}[],
+    scrollAnchor?: {id: string, offset: number},
 }
 
 interface IPosition {
@@ -406,7 +413,7 @@ interface IPosition {
 
 interface ISaveLayout {
     name: string,
-    layout: IObject
+    layout: Config.IUiLayout & import("./api").APIPOSTRoutes["/api/system/setUILayout"]["request"]["layout"]
     time: number
     filesPaths: IFilesPath[]
 }
@@ -560,6 +567,19 @@ interface INotebook {
     state?: "Locked" | "Unlocking" | "Unlocked" | "Locking" | "Error";
 }
 
+/**
+ * 语言包：普通顶层键为字符串；`_kernel` 等分组按二级键再索引。
+ * 分组声明为可选，使只含字符串键的局部语言包也能赋值。
+ */
+type ILanguages = {[key: string]: string} & {
+    replaceTypes?: {[key: string]: string};
+    _time?: {[key: string]: string};
+    _taskAction?: {[key: string]: string};
+    _trayMenu?: {[key: string]: string};
+    _attrView?: {[key: string]: string};
+    _kernel?: {[key: number]: string};
+};
+
 interface ISiyuan {
     /** 当前内核的只读文档标题能力，普通构建默认为 2，不持久化为用户设置。 */
     zIndex: number
@@ -672,9 +692,7 @@ interface ISiyuan {
         screenY: number,
     },
     menus?: import("../menus").Menus
-    languages?: {
-        [key: string]: any;
-    }
+    languages?: ILanguages
     bookmarkLabel?: string[]
     blockPanels: import("../block/Panel").BlockPanel[],
     dialogs: import("../dialog").Dialog[],
@@ -778,6 +796,7 @@ interface ICommand {
     execute?: (context: ICommandContext) => void | Promise<void>
     callback?: (context?: ICommandContext) => void   // 其余回调存在时将不会触发
     globalCallback?: (context?: ICommandContext) => void // 焦点不在应用内时执行的回调
+    /** 文档树命令接收 Files 实例；通过 getSelectedItems() 获取完整选择，避免通过可视区 DOM 枚举。 */
     fileTreeCallback?: (
         file: import("../layout/dock/Files").Files,
         context?: ICommandContext
@@ -922,6 +941,9 @@ interface IFile {
     path: string;
     name: string;
     titleEmpty?: boolean;
+    titleFormat?: "plain" | "inline-ast";
+    titleRevision?: string;
+    specTooNew?: boolean;
     hMtime: string;
     hCtime: string;
     hSize: string;
@@ -1073,6 +1095,7 @@ interface IBazaarItem {
     stars: number;
     author: string;
     updated: string;
+    created?: string;
     downloads: number;
     ratingAvailable?: boolean;
     rating?: IBazaarRating;
@@ -1101,6 +1124,7 @@ interface IBazaarItem {
     invalidReason?: TBazaarPackageInvalidReason;
     installedIncompatible?: boolean; // 仅插件/主题
     bazaarIncompatible?: boolean; // 仅插件/主题
+    bazaarVersionUnsupported?: boolean;
     enabled?: boolean; // 仅 plugin
     userDisabledInPublish?: boolean; // 仅 plugin
     hasStorageData?: boolean; // 仅插件
@@ -1132,7 +1156,32 @@ interface IAVCustomColor extends IAVColor {
     hidden?: boolean;
 }
 
+interface IAVSubItemsConfig {
+    enabled: boolean;
+    parentKeyID: string;
+    childrenKeyID: string;
+}
+
+interface IAVNestedResult {
+    page: number;
+    pageSize: number;
+    rootCount: number;
+    rootLoaded: number;
+    matchedCount: number;
+    childPaging: Record<string, {page: number; pageSize: number; total: number; loaded: number}>;
+}
+
+interface IAVItemHierarchy {
+    parentID?: string;
+    depth: number;
+    childCount: number;
+    context: boolean;
+    expanded: boolean;
+}
+
 interface IAV {
+    pendingHTTPTemplates?: string[];
+    subItems?: IAVSubItemsConfig;
     id: string;
     name: string;
     view: IAVTable | IAVGallery;
@@ -1166,6 +1215,7 @@ interface IAVContextFilterField {
 }
 
 interface IAVRenderTarget {
+    ancestorIDs?: string[];
     status: "visible" | "filtered" | "itemNotFound" | "groupHidden";
     itemID: string;
     groupID?: string;
@@ -1198,8 +1248,10 @@ interface IAVNewItemTemplate {
     saveLocation?: IAVNewItemSaveLocation;
     contentTemplatePath?: string;
     hideInFileTree?: boolean;
-    /** 创建后分屏打开条目；省略时保留旧行为（仅日历自动打开），false 表示不打开。 */
+    /** 创建后打开条目；省略时仅日历自动打开，false 表示不打开。 */
     openAfterCreate?: boolean;
+    /** 自动打开时使用当前分屏；省略或 false 时向右分屏打开。 */
+    openInCurrentTab?: boolean;
 }
 
 /** 单字段条件颜色规则按顺序匹配，默认背景同样占据优先级。 */
@@ -1218,6 +1270,8 @@ interface IAVItemConditionalColors {
 }
 
 interface IAVView {
+    subItemsDisplay?: "flat" | "nested";
+    nested?: IAVNestedResult;
     conditionalColors?: IAVConditionalColorRule[];
     name?: string;
     desc?: string;
@@ -1227,6 +1281,7 @@ interface IAVView {
     hideAttrViewName?: boolean;
     pageSize?: number;
     showIcon?: boolean;
+    showRelationIcon?: boolean;
     wrapField?: boolean;
     groupHidden?: number,  // 0：显示，1：空白隐藏，2：手动隐藏
     groupFolded?: boolean,
@@ -1431,6 +1486,7 @@ interface IAVColumn {
 }
 
 interface IAVRow {
+    hierarchy?: IAVItemHierarchy;
     conditionalColors?: IAVItemConditionalColors;
     id: string,
     cells: IAVCell[]
@@ -1485,6 +1541,8 @@ interface IAVCellValue {
     mAsset?: IAVCellAssetValue[]
     block?: {
         content: string,
+        rich?: {spec: 1, format: "inline-ast" | "kramdown", content: string} | null,
+        richBlockDOM?: string,
         id?: string,
         /** 游离条目可独立设置图标；绑定条目与目标块共享图标，无图标的普通块在绑定时继承条目图标。 */
         icon?: string,
@@ -1556,6 +1614,11 @@ interface IAVCellAssetValue {
 }
 
 interface IAVColumnRelation {
+    detailView?: {
+        spec: number;
+        enabled: boolean;
+        viewID: string;
+    };
     avID?: string;
     backKeyID?: string;
     isTwoWay?: boolean;

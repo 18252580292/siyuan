@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/88250/gulu"
@@ -444,6 +445,21 @@ func filterFileTreeBlockIDsByPublishDiscoverability(c *gin.Context, ids []string
 	return
 }
 
+// clearFileTreePublishPasswordMetadata 清除发布读者未通过密码校验的文档元数据，保留树导航所需的标题、图标与路径。
+func clearFileTreePublishPasswordMetadata(c *gin.Context, boxID string, files []*model.File) {
+	if !model.IsReadOnlyRoleContext(c) {
+		return
+	}
+
+	publishAccess := model.GetPublishAccess()
+	for _, file := range files {
+		passwordID, password := model.GetPathPasswordByPublishAccess(boxID, file.Path, publishAccess)
+		if "" != password && !model.CheckPublishAuthCookie(c, passwordID, password) {
+			file.Name1, file.Alias, file.Memo, file.Bookmark = "", "", "", ""
+		}
+	}
+}
+
 var moveDocs = contractHandler(apicontract.MoveDocs, moveDocsContract)
 
 func moveDocsContract(c *gin.Context, request apicontract.FileTreeMoveRequest) apicontract.Response[apicontract.Null] {
@@ -657,7 +673,7 @@ func createDocContract(c *gin.Context, request apicontract.FileTreeCreateRequest
 	title := request.Title
 	md := request.MD
 	sorts := append([]string(nil), request.Sorts...)
-	tree, err := model.CreateDocByMd(notebook, p, title, md, sorts, fileTreeCreateContext(request.FileTreeCreateOptions))
+	tree, err := model.CreateDocByMdSync(notebook, p, title, md, sorts, fileTreeCreateContext(request.FileTreeCreateOptions))
 	if err != nil {
 		return apicontract.FailureWithTimeout[apicontract.FileTreeCreateData](-1, err.Error(), 7000)
 	}
@@ -667,30 +683,49 @@ func createDocContract(c *gin.Context, request apicontract.FileTreeCreateRequest
 
 var createDailyNote = contractHandler(apicontract.CreateDailyNote, createDailyNoteContract)
 
-func createDailyNoteContract(c *gin.Context, request apicontract.FileTreeDailyNoteRequest) apicontract.Response[apicontract.FileTreeCreateData] {
+func createDailyNoteContract(c *gin.Context, request apicontract.FileTreeDailyNoteRequest) apicontract.Response[apicontract.DailyNoteCreateResult] {
 
 	notebook := request.Notebook
 	if err := holdEncryptedBoxRequest(c, notebook); err != nil {
-		return apicontract.Failure[apicontract.FileTreeCreateData](-1, model.Conf.Language(314))
+		return apicontract.Failure[apicontract.DailyNoteCreateResult](-1, model.Conf.Language(314))
 	}
+	execution, executionErr := startTemplateHTTP(c, "daily-note:"+notebook)
+	if executionErr != nil {
+		return apicontract.Failure[apicontract.DailyNoteCreateResult](-1, executionErr.Error())
+	}
+	defer execution.Close()
 	var p string
 	var existed bool
-	var err error
+	selection, err := documentSelectionModel(request.Selection)
+	if err != nil {
+		return apicontract.Failure[apicontract.DailyNoteCreateResult](-1, err.Error())
+	}
+	create := func(date *time.Time) (string, bool, error) {
+		if execution != nil {
+			return model.CreateDailyNoteWithSelection(notebook, date, execution.Runtime, selection)
+		}
+		return model.CreateDailyNoteWithSelection(notebook, date, nil, selection)
+	}
 	if request.Date == "" {
-		p, existed, err = model.CreateDailyNote(notebook)
+		p, existed, err = create(nil)
 	} else {
 		date, dateErr := parseDailyNoteDate(request.Date)
 		err = dateErr
 		if err == nil {
-			p, existed, err = model.CreateDailyNoteAt(notebook, date)
+			p, existed, err = create(&date)
 		}
 	}
 	if err != nil {
+		if failure, leaseErr := documentSelectionFailure(c, err); leaseErr != nil {
+			return apicontract.Failure[apicontract.DailyNoteCreateResult](-1, leaseErr.Error())
+		} else if failure != nil {
+			return apicontract.CreateDailyNote.FailureWithData(-1, err.Error(), apicontract.NewDailyNoteSelectionFailure(*failure))
+		}
 		code := -1
 		if errors.Is(err, model.ErrBoxNotFound) {
 			code = 1
 		}
-		return apicontract.Failure[apicontract.FileTreeCreateData](code, err.Error())
+		return apicontract.Failure[apicontract.DailyNoteCreateResult](code, err.Error())
 	}
 
 	model.FlushTxQueue()
@@ -698,7 +733,7 @@ func createDailyNoteContract(c *gin.Context, request apicontract.FileTreeDailyNo
 	luteEngine := util.NewLute()
 	tree, err := filesys.LoadTree(box.ID, p, luteEngine)
 	if err != nil {
-		return apicontract.Failure[apicontract.FileTreeCreateData](-1, err.Error())
+		return apicontract.Failure[apicontract.DailyNoteCreateResult](-1, err.Error())
 	}
 
 	if !existed {
@@ -706,7 +741,7 @@ func createDailyNoteContract(c *gin.Context, request apicontract.FileTreeDailyNo
 		// Creating a dailynote existed no longer expands the doc tree https://github.com/siyuan-note/siyuan/issues/9959
 		app, decodeErr := request.AppID()
 		if decodeErr != nil {
-			return apicontract.Failure[apicontract.FileTreeCreateData](-1, decodeErr.Error())
+			return apicontract.Failure[apicontract.DailyNoteCreateResult](-1, decodeErr.Error())
 		}
 		evt := util.NewCmdResult("createdailynote", 0, util.PushModeBroadcast)
 		evt.AppId = app
@@ -717,7 +752,7 @@ func createDailyNoteContract(c *gin.Context, request apicontract.FileTreeDailyNo
 		util.PushEvent(evt)
 	}
 
-	return apicontract.Success(apicontract.FileTreeCreateData{ID: tree.Root.ID})
+	return apicontract.Success(apicontract.NewDailyNoteCreateResult(tree.Root.ID))
 }
 
 var createDocWithMd = contractHandler(apicontract.CreateDocWithMd, createDocWithMdContract)
@@ -1042,6 +1077,15 @@ func searchDocsContract(c *gin.Context, request apicontract.FileTreeSearchReques
 	if model.IsReadOnlyRoleContext(c) {
 		publishAccess := model.GetPublishAccess()
 		docs = model.FilterSearchDocsByPublishAccess(c, publishAccess, docs)
+		// 合成笔记本行的闪卡计数聚合了读者不可见的文档，与笔记本列表的读者口径一致清零
+		for _, doc := range docs {
+			if "/" != doc["path"] {
+				continue
+			}
+			if _, ok := doc["flashcardCount"]; ok {
+				doc["newFlashcardCount"], doc["dueFlashcardCount"], doc["flashcardCount"] = "0", "0", "0"
+			}
+		}
 	}
 	return apicontract.Success(fileTreeSearchContracts(docs))
 }
@@ -1113,6 +1157,7 @@ func listDocsByPathContract(c *gin.Context, request apicontract.FileTreeListRequ
 		}
 		files = tempFiles
 	}
+	clearFileTreePublishPasswordMetadata(c, notebook, files)
 	if maxListCount < totals {
 		// API `listDocsByPath` add an optional parameter `ignoreMaxListHint` https://github.com/siyuan-note/siyuan/issues/10290
 		ignoreHint, app, hintErr := request.HintOptions()
@@ -1150,13 +1195,25 @@ func getDocContract(c *gin.Context, request apicontract.FileTreeGetDocRequest) a
 	if decodeErr != nil {
 		return apicontract.Failure[apicontract.FileTreeGetDocData](-1, decodeErr.Error())
 	}
+	mode := int(options.Mode)
 	includeDocInfo := options.IncludeDocInfo
-	if includeDocInfo && model.IsReadOnlyRoleContext(c) {
-		includeDocInfo = isBlockPublishAccessible(c, id, requestedNotebook)
+	var publishDocAccess func(string, string) bool
+	publishReader := model.IsReadOnlyRoleContext(c)
+	if publishReader {
+		publishIgnore := model.GetDisablePublishAccess(model.GetPublishAccess())
+		publishDocAccess = func(box, docPath string) bool {
+			return model.CheckPathAccessableByPublishIgnore(box, docPath, publishIgnore)
+		}
+		if bt := treenode.GetBlockTree(id); bt != nil && !publishDocAccess(bt.BoxID, bt.Path) {
+			return getDocUnavailable(mode)
+		}
+		if includeDocInfo {
+			includeDocInfo = isBlockPublishAccessible(c, id, requestedNotebook)
+		}
 	}
 	index, query, queryMethod := int(options.Index), options.Query, int(options.QueryMethod)
 	queryTypes, querySubTypes := options.QueryTypes, options.QuerySubTypes.Selected()
-	mode, size := int(options.Mode), 102400
+	size := 102400
 	if options.Size != nil {
 		size = int(*options.Size)
 	}
@@ -1184,16 +1241,20 @@ func getDocContract(c *gin.Context, request apicontract.FileTreeGetDocRequest) a
 	var headingNumbers map[string]string
 	var docInfo *model.BlockInfo
 	var err error
+	publishRefAccess := model.NewPublishRefAccessChecker(c)
 	// 加密笔记本的打开文档走 InBox 版（查加密 blocktree + content db）
 	if requestedNotebook != "" && model.IsEncryptedBox(requestedNotebook) {
 		blockCount, content, parentID, parent2ID, rootID, typ, eof, scroll, boxID, docPath, isBacklinkExpand, keywords, headingNumbers, docInfo, err =
-			model.GetDocInBox(startID, endID, id, index, query, queryTypes, querySubTypes, queryMethod, mode, size, isBacklink, originalRefBlockIDs, highlight, includeDocInfo, requestedNotebook)
+			model.GetDocInBox(startID, endID, id, index, query, queryTypes, querySubTypes, queryMethod, mode, size, isBacklink, originalRefBlockIDs, highlight, includeDocInfo, requestedNotebook, publishDocAccess, publishRefAccess)
 	} else {
 		blockCount, content, parentID, parent2ID, rootID, typ, eof, scroll, boxID, docPath, isBacklinkExpand, keywords, headingNumbers, docInfo, err =
-			model.GetDoc(startID, endID, id, index, query, queryTypes, querySubTypes, queryMethod, mode, size, isBacklink, originalRefBlockIDs, highlight, includeDocInfo)
+			model.GetDoc(startID, endID, id, index, query, queryTypes, querySubTypes, queryMethod, mode, size, isBacklink, originalRefBlockIDs, highlight, includeDocInfo, publishDocAccess, publishRefAccess)
 	}
 	if errors.Is(err, model.ErrBlockNotFound) {
 		return apicontract.Failure[apicontract.FileTreeGetDocData](3, "")
+	}
+	if errors.Is(err, treenode.ErrSpecTooNew) {
+		return apicontract.Failure[apicontract.FileTreeGetDocData](1, model.Conf.Language(275))
 	}
 
 	if err != nil {
@@ -1204,9 +1265,12 @@ func getDocContract(c *gin.Context, request apicontract.FileTreeGetDocRequest) a
 	isSyncing := model.IsSyncingFile(rootID)
 
 	publishAccessRequired := false
-	if model.IsReadOnlyRoleContext(c) {
+	if publishReader {
 		publishAccess := model.GetPublishAccess()
 		newContent, publishAccessStatus := model.FilterContentByPublishAccessWithStatus(c, publishAccess, boxID, docPath, content, false)
+		if publishAccessStatus == model.PublishAccessDenied {
+			return getDocUnavailable(mode)
+		}
 		publishAccessRequired = publishAccessStatus == model.PublishAccessPasswordRequired
 		if model.PublishAccessAllowed != publishAccessStatus {
 			content = newContent
@@ -1230,6 +1294,13 @@ func getDocContract(c *gin.Context, request apicontract.FileTreeGetDocRequest) a
 		IsSyncing: isSyncing, IsBacklinkExpand: isBacklinkExpand, Keywords: keywords, HeadingNumbers: headingNumbers,
 		PublishAccessRequired: publishAccessRequired, ReqID: options.ReqID, DocInfo: docInfoContract(docInfo),
 	})
+}
+
+func getDocUnavailable(mode int) apicontract.Response[apicontract.FileTreeGetDocData] {
+	if 0 == mode {
+		return apicontract.Failure[apicontract.FileTreeGetDocData](1, model.ErrTreeNotFound.Error())
+	}
+	return apicontract.Failure[apicontract.FileTreeGetDocData](3, "")
 }
 
 var setPublishAccess = contractHandler(apicontract.SetPublishAccess, setPublishAccessContract)
@@ -1338,32 +1409,45 @@ func authFilePublishAccessContract(c *gin.Context, request apicontract.FileTreeA
 		return apicontract.FailureFrom[apicontract.Null](denied)
 	}
 
-	// 按来源 IP 对发布密码认证进行限流，防止无限次暴力破解密码 https://github.com/siyuan-note/siyuan/security/advisories/GHSA-v362-968x-gp2v
-	ip := c.ClientIP()
-	if retryAfter := util.AuthThrottleCheck(ip); 0 < retryAfter {
+	publishAccess := model.GetPublishAccess()
+	var target *model.PublishAccessItem
+	for _, item := range publishAccess {
+		if item.ID == ID {
+			target = item
+			break
+		}
+	}
+
+	// 发布密码限流按来源 IP 和目标文档分别计数，任一文档认证成功不得清除其他文档的失败次数
+	// https://github.com/siyuan-note/siyuan/security/advisories/GHSA-82v2-rmqc-pprc
+	throttleKey := publishThrottleKey(c.ClientIP(), "")
+	if target != nil {
+		throttleKey = publishThrottleKey(c.ClientIP(), ID)
+	}
+	if retryAfter := util.AuthThrottleCheck(throttleKey); 0 < retryAfter {
 		// 锁定期间持续记录失败，不断延长锁定时间
-		util.AuthThrottleFail(ip)
+		util.AuthThrottleFail(throttleKey)
 		c.Header("Retry-After", strconv.Itoa(retryAfter))
 		return apicontract.AuthFilePublishAccess.WithHTTPStatus(
 			apicontract.Failure[apicontract.Null](-1, model.Conf.Language(354)), http.StatusTooManyRequests)
 	}
 
-	publishAccess := model.GetPublishAccess()
-	for _, item := range publishAccess {
-		if item.ID != ID {
-			continue
-		}
-		if item.Disable || item.Password == "" || !util.AuthCodeEquals(item.Password, password) {
-			// 恒定时间比较，避免通过响应时间差异猜测密码
-			util.AuthThrottleFail(ip)
-			return apicontract.FailureFrom[apicontract.Null](denied)
-		}
-		util.AuthThrottleReset(ip)
+	// 恒定时间比较，避免通过响应时间差异猜测密码
+	if target != nil && !target.Disable && target.Password != "" && util.AuthCodeEquals(target.Password, password) {
+		util.AuthThrottleReset(throttleKey)
 		model.SetPublishAuthCookie(c, ID, password)
 		return apicontract.Failure[apicontract.Null](0, "")
 	}
 
-	// 目标 ID 不在发布配置中，同样记录失败以限制尝试次数
-	util.AuthThrottleFail(ip)
+	// 未知目标与错误密码同样记录失败，避免绕过尝试次数限制
+	util.AuthThrottleFail(throttleKey)
 	return apicontract.FailureFrom[apicontract.Null](denied)
+}
+
+// publishThrottleKey 返回发布密码限流键：目标文档参与计数，未知目标共用该来源 IP 的键。
+func publishThrottleKey(ip, id string) string {
+	if id == "" {
+		return "publish-auth|" + ip
+	}
+	return "publish-auth|" + ip + "|" + id
 }

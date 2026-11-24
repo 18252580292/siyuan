@@ -101,8 +101,17 @@ const cases = async () => {
     assert.equal(window.transactions.length, 1);
     assert.equal(window.transactions[0][1][0].action, "setAttrViewBlockView");
     window.transactions.length = 0;
-    click(carrier.querySelector('[data-type="av-group-fold"]'));
+    const group = carrier.querySelector('[data-type="av-group-fold"]');
+    const wasOpen = group.firstElementChild.classList.contains("av__group-arrow--open");
+    click(group);
+    const foldOperation = {
+        action: "foldAttrViewGroup", avID: "database", blockID: "carrier", viewID: "first", id: "a",
+    };
+    assert.deepEqual(window.transactions, [[protyle, [{...foldOperation, data: wasOpen}],
+        [{...foldOperation, data: !wasOpen}]]]);
+    window.transactions.length = 0;
     protyle.disabled = true;
+    click(group);
     await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal(window.transactions.length, 0);
     window.avAssets.editAssetItem({protyle});
@@ -143,12 +152,15 @@ const runElectron = async () => {
             window.readonlyAV = {};
             new Function("exports", "require", ${JSON.stringify(compile("protyle/render/av/readonlyState.ts"))})(
                 window.readonlyAV, () => ({Constants: {CUSTOM_SY_AV_VIEW: "custom-sy-av-view"}}));
+            window.avHost = {};
+            new Function("exports", "require", ${JSON.stringify(compile("protyle/render/av/host.ts"))})(
+                window.avHost, () => ({hasClosestBlock: element => element.closest('[data-type="NodeAttributeView"]')}));
             window.avAction = {}; window.avRenders = [];
             const avDependencies = new Proxy({
                 ...window.publishAV,
                 ...window.readonlyAV,
+                locateRequests: new WeakMap(),
                 Constants: {CUSTOM_SY_AV_VIEW: "custom-sy-av-view", TIMEOUT_COUNT: 1},
-                hasClosestBlock: element => element.closest('[data-type="NodeAttributeView"]'),
                 hasClosestByClassName: (element, name) => element.closest("." + name),
                 transaction: (...args) => window.transactions.push(args),
                 getGroupFoldedStates: () => ({a: false, b: false}),
@@ -156,10 +168,10 @@ const runElectron = async () => {
                 avRender: element => window.avRenders.push(element),
             }, {get: (target, key) => key in target ? target[key] : () => {}});
             new Function("exports", "require", ${JSON.stringify(compile("protyle/render/av/action.ts"))})(
-                window.avAction, () => avDependencies);
+                window.avAction, name => name === "./host" ? window.avHost : avDependencies);
             window.avAssets = {};
             new Function("exports", "require", ${JSON.stringify(compile("protyle/render/av/asset.ts"))})(
-                window.avAssets, () => avDependencies);
+                window.avAssets, name => name === "./host" ? window.avHost : avDependencies);
         `);
         await win.webContents.executeJavaScript(`(${cases.toString()})()`);
         console.log("Publish read-only fold cases passed");

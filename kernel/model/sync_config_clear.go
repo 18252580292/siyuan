@@ -26,6 +26,9 @@ func ClearSyncProviderConfig(provider int) error {
 		if err := requireCompleteAssetDownloads(); err != nil {
 			return err
 		}
+		if err := prepareSyncSourceChange(); err != nil {
+			return err
+		}
 		if err := clearAssetDownloadState(); err != nil {
 			return err
 		}
@@ -47,6 +50,7 @@ func persistClearedSyncProviderConfig(provider int) error {
 	next := Conf.cloneSettings()
 	// 深复制同步配置段，避免与生效配置共享子结构
 	syncConfig := cloneConfSection(Conf.Sync.Load())
+	syncConfig.Configured = syncConfig.HasConfiguredSync()
 	if provider == syncConfig.Provider {
 		syncConfig.Enabled = false
 	}
@@ -68,6 +72,7 @@ func persistClearedSyncProviderConfig(provider int) error {
 	if err = atomicWriteFile(filepath.Join(util.ConfDir, "conf.json"), data); err != nil {
 		return err
 	}
+	util.RestrictConfFilePermissions()
 	recordPersistedConf(data)
 	Conf.Sync.Store(next.Sync.Load())
 	return nil

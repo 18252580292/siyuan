@@ -1,6 +1,6 @@
+import {AdaptiveDialog} from "../dialog/adaptiveDialog";
 import {openInputDialog} from "../dialog/inputDialog";
 import {showMessage} from "../dialog/message";
-import {Dialog} from "../dialog";
 import {confirmDialog} from "../dialog/confirmDialog";
 import {Constants} from "../constants";
 import {Protyle} from "../protyle";
@@ -67,7 +67,7 @@ const renderDoc = (element: HTMLElement, currentPage: number, id: string, readon
         pageNumElement.textContent = currentPage.toString();
         const pageInfoElement = nextElement.nextElementSibling.nextElementSibling;
         pageInfoElement.classList.remove("fn__none");
-        pageInfoElement.textContent = window.siyuan.languages.pageCountAndHistoryCount.replace("${x}", response.data.pageCount).replace("${y}", response.data.totalCount);
+        pageInfoElement.textContent = window.siyuan.languages.pageCountAndHistoryCount.replace("${x}", String(response.data.pageCount)).replace("${y}", String(response.data.totalCount));
         const histories = response.data.histories || [];
         if (histories.length === 0) {
             listElement.innerHTML = `${genCurrentVersionItem()}<li class="b3-list--empty">${window.siyuan.languages.emptyContent}</li>`;
@@ -261,7 +261,7 @@ export const openDocHistory = (options: {
         </div>
     </div>
 </div>`;
-    const dialog = new Dialog({
+    const dialog = new AdaptiveDialog({
         title: escapeHtml(options.pathString),
         content: contentHTML,
         width: isMobile() ? "100vw" : "90vw",
@@ -461,10 +461,15 @@ export const openDocHistory = (options: {
                     isLoading = false;
                     const confirmTip = window.siyuan.languages.rollbackConfirm.replace("${name}", escapeHtml(item.title))
                         .replace("${time}", historyItemElement.querySelector(".b3-list-item__text").textContent.trim());
-                    confirmDialog("⚠️ " + window.siyuan.languages.rollback, confirmTip, () => {
-                        fetchPost("/api/history/rollbackDocHistory", {
-                            historyPath: dataPath
-                        });
+                    confirmDialog({
+                        title: "⚠️ " + window.siyuan.languages.rollback,
+                        text: confirmTip,
+                        confirm: async () => {
+                            const response = await fetchSyncPost("/api/history/rollbackDocHistory", {
+                                historyPath: dataPath
+                            });
+                            return response.code === 0;
+                        },
                     });
                 });
                 event.stopPropagation();
@@ -520,14 +525,14 @@ export const openDocHistory = (options: {
             } else if (type === "jumpRepoPage") {
                 const totalPage = parseInt(target.getAttribute("data-totalpage") || "1");
                 openInputDialog({
-                    title: window.siyuan.languages.jumpToPage.replace("${x}", totalPage),
+                    title: window.siyuan.languages.jumpToPage.replace("${x}", String(totalPage)),
                     value: String(pageNumElement.textContent),
                     type: "number",
                     min: "1",
                     max: String(totalPage),
                     onConfirm: (value, dialog) => {
                         if (!Number.isFinite(parseInt(value))) {
-                            showMessage(window.siyuan.languages.jumpToPage.replace("${x}", totalPage));
+                            showMessage(window.siyuan.languages.jumpToPage.replace("${x}", String(totalPage)));
                             return;
                         }
                         renderDoc(fileElement, Math.max(1, Math.min(parseInt(value), totalPage)), options.id, readonly);
@@ -544,14 +549,14 @@ export const openDocHistory = (options: {
             } else if (type === "jumpSnapshotPage") {
                 const totalPage = parseInt(target.getAttribute("data-totalpage") || "1");
                 openInputDialog({
-                    title: window.siyuan.languages.jumpToPage.replace("${x}", totalPage),
+                    title: window.siyuan.languages.jumpToPage.replace("${x}", String(totalPage)),
                     value: String(target.textContent),
                     type: "number",
                     min: "1",
                     max: String(totalPage),
                     onConfirm: (value, dialog) => {
                         if (!Number.isFinite(parseInt(value))) {
-                            showMessage(window.siyuan.languages.jumpToPage.replace("${x}", totalPage));
+                            showMessage(window.siyuan.languages.jumpToPage.replace("${x}", String(totalPage)));
                             return;
                         }
                         renderRepo(repoElement, Math.max(1, Math.min(parseInt(value), totalPage)), options.id, readonly);

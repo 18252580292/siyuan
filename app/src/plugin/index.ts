@@ -1,4 +1,6 @@
 import {sendGlobalShortcut} from "../boot/globalEvent/globalShortcut";
+import {cancelPluginColorPickers, registerColorPickerOwner} from "../colorPicker/owners";
+import {cancelPluginDatePickers, registerDatePickerOwner} from "../datePicker/owners";
 import type {App} from "../index";
 import {EventBus} from "./EventBus";
 import type {subMenu} from "../menus/Menu";
@@ -41,6 +43,7 @@ import {isBuiltinToolbarItemName} from "../protyle/toolbar/defaults";
 import {getLegacyPluginTopBarEntryKey, getPluginTopBarEntryKey} from "./topBarKey";
 import {applyTopBarEntryVisibility} from "../config/entryVisibility/runtime";
 import {getSettingsWindowHost, isSettingsWindow} from "../config/setting/windowContext";
+import {resolveCustomTabOwner, setCustomTabOwner} from "./customTabOwner";
 
 export type TPluginDataChangeReason = "sync" | "overwrite";
 
@@ -57,6 +60,8 @@ const getPluginStoragePath = (plugin: Plugin, storageName: string) => {
 const getInvalidStorageNameError = (): IWebSocketData => ({code: 400, msg: "Invalid storage name", data: null});
 
 export const markPluginDisposed = (plugin: Plugin) => {
+    cancelPluginColorPickers(plugin);
+    cancelPluginDatePickers(plugin);
     disposedPlugins.add(plugin);
     clearPluginToolbarItems(plugin);
 };
@@ -122,6 +127,8 @@ export class Plugin {
         displayName: string,
         i18n: Record<string, import("../types/api").JSONValue>
     }) {
+        registerColorPickerOwner(this);
+        registerDatePickerOwner(this);
         this.app = options.app;
         this.i18n = options.i18n;
         this.displayName = options.displayName;
@@ -594,12 +601,13 @@ export class Plugin {
         const tabs: { [key: string]: Custom[] } = {};
         const modelKeys = Object.keys(this.models);
         modelKeys.forEach(item => {
-            tabs[item.replace(this.name, "")] = [];
+            tabs[item.startsWith(this.name) ? item.slice(this.name.length) : item] = [];
         });
         /// #if !MOBILE
-        getAllModels().custom.find(item => {
-            if (modelKeys.includes(item.type)) {
-                tabs[item.type.replace(this.name, "")].push(item);
+        getAllModels().custom.forEach(item => {
+            if (item.tab?.headElement && resolveCustomTabOwner(this.app, item.type, item.tab) === this.name) {
+                const type = item.type.startsWith(this.name) ? item.type.slice(this.name.length) : item.type;
+                (tabs[type] ||= []).push(item);
             }
         });
         /// #endif
@@ -620,6 +628,7 @@ export class Plugin {
         /// #if !MOBILE
         const type2 = this.name + options.type;
         this.models[type2] = (arg: { data: any, tab: Tab }) => {
+            setCustomTabOwner(arg.tab, this.name);
             const customObj = new Custom({
                 app: this.app,
                 tab: arg.tab,

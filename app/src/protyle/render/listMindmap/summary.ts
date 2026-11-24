@@ -1,4 +1,5 @@
-import type {ListMindmapModel, ListMindmapPosition} from "./model";
+import type {ListMindmapModel, ListMindmapNodeStyle, ListMindmapPosition} from "./model";
+import {getMindmapTextColor, isMindmapColor} from "./appearance";
 
 export interface ListMindmapSummary {
     id: string;
@@ -23,6 +24,20 @@ export interface ListMindmapSummaryRange {
     parentId: string;
     nodeIds: string[];
 }
+
+export const resolveListMindmapSummaryStyle = (model: ListMindmapModel, summary: ListMindmapSummary,
+                                              themed: Map<string, ListMindmapNodeStyle>) => {
+    const id = summary.nodeIds[0];
+    const style = model.metadata.nodes[id];
+    const theme = themed.get(id);
+    const backgroundColor = id === model.root.id ? style?.backgroundColor || theme?.backgroundColor : undefined;
+    return {
+        textColor: summary.color || style?.textColor || (backgroundColor ?
+            isMindmapColor(backgroundColor) ? getMindmapTextColor(backgroundColor) : theme?.textColor : undefined),
+        lineColor: summary.color || style?.lineColor || theme?.lineColor,
+        backgroundColor,
+    };
+};
 
 export const isListMindmapSummaryCrossing = (a: string[], b: string[]) => {
     const members = new Set(a);
@@ -222,7 +237,7 @@ export const layoutListMindmapSummaries = (model: ListMindmapModel, positions: M
             right = Math.max(right, position.x + position.width);
             const y = position.y - (id === model.root.id ? 1 : 3);
             top = Math.min(top, y);
-            bottom = Math.max(bottom, y + position.height);
+            bottom = Math.max(bottom, position.y + position.height);
         });
         result.forEach(inner => {
             if ([...coverage.get(inner.id)].every(id => members.has(id))) {

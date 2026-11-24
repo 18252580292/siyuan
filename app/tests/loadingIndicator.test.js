@@ -74,16 +74,55 @@ const browserCases = async (sources, entries, themes) => {
     check.equal(forced.maskImage, "none");
     check.equal(forced.backgroundImage, "none");
     check.equal(forced.borderTopWidth, "2px");
-    await ipcRenderer.invoke("loading-media", []);
+    await ipcRenderer.invoke("loading-media", [{name: "prefers-reduced-motion", value: "no-preference"}]);
+
+    for (const entry of ["base", "mobile", "export"]) {
+        for (const theme of ["light", "dark"]) {
+            styles.textContent = entries[entry] + themes[theme];
+            for (const fontSize of [14, 24]) {
+                for (const variant of ["", "b3-button--outline"]) {
+                    host.innerHTML = '<div class="memory-manager__actions"><button class="b3-button ' + variant +
+                        '" disabled aria-busy="true"><span class="b3-loading b3-loading--small" aria-hidden="true"></span></button></div>';
+                    const button = host.querySelector("button");
+                    button.append(document.createTextNode(sources.memoryButtonLabel));
+                    button.style.fontSize = `${fontSize}px`;
+                    const spinner = button.querySelector(".b3-loading");
+                    check.equal(getComputedStyle(button).opacity, "1", `${entry}/${theme}: busy text is not faded`);
+                    check.equal(getComputedStyle(button).cursor, "progress");
+                    check.equal(getComputedStyle(spinner).color, getComputedStyle(button).color,
+                        `${entry}/${theme}: spinner follows the button foreground`);
+                    check.ok(spinner.getBoundingClientRect().width > 0);
+                    let clicks = 0;
+                    button.addEventListener("click", () => { clicks++; });
+                    button.click();
+                    check.equal(clicks, 0, "busy native buttons still reject duplicate clicks");
+                    if (!variant) {
+                        await ipcRenderer.invoke("capture-loading", `${entry}-${theme}-busy-button-${fontSize}`);
+                    }
+                    custom.textContent = ":root{--b3-loading-color:#345678}";
+                    check.equal(getComputedStyle(spinner).color, "rgb(52, 86, 120)");
+                    custom.textContent = "";
+                    button.setAttribute("aria-busy", "false");
+                    check.equal(getComputedStyle(button).opacity, "0.38", "ordinary disabled buttons keep their appearance");
+                    button.disabled = false;
+                    check.equal(getComputedStyle(button).opacity, "1");
+                    button.click();
+                    check.equal(clicks, 1);
+                }
+            }
+        }
+    }
 
     const progress = {};
     new Function("exports", sources.progress)(progress);
-    window.siyuan = {zIndex: 1};
+    window.siyuan = {zIndex: 1, languages: {_kernel: {35: "Rebuilding index, please wait..."}}};
     for (const entry of ["base", "mobile"]) {
         for (const theme of ["light", "dark"]) {
             styles.textContent = entries[entry] + themes[theme];
             host.replaceChildren();
             progress.progressLoading({code: 1, msg: "Rebuilding index, please wait..."});
+            progress.updateReindexProgressStatus("Indexed 64, remaining 128");
+            check.equal(document.querySelector('#progress [data-type="message"]').textContent, "Indexed 64, remaining 128");
             const panel = document.querySelector(".b3-dialog__loading");
             const track = panel.querySelector('[role="progressbar"]');
             const bar = track.firstElementChild;
@@ -108,8 +147,10 @@ const browserCases = async (sources, entries, themes) => {
             await ipcRenderer.invoke("loading-media", [{name: "forced-colors", value: "active"}]);
             check.equal(getComputedStyle(bar, "::before").backgroundImage, "none");
             check.notEqual(getComputedStyle(bar, "::before").backgroundColor, "rgba(0, 0, 0, 0)");
-            await ipcRenderer.invoke("loading-media", []);
+            await ipcRenderer.invoke("loading-media", [{name: "prefers-reduced-motion", value: "no-preference"}]);
             progress.progressLoading({code: 0, msg: "Rebuilding index", data: {current: 42, total: 100}});
+            progress.updateReindexProgressStatus("Unrelated status");
+            check.equal(document.querySelector('#progress [data-type="message"]').textContent, "Rebuilding index");
             check.equal(document.querySelector('[role="progressbar"]').getAttribute("aria-valuenow"), "42");
             check.equal(getComputedStyle(document.querySelector(".b3-dialog__progressbar"), "::before").content, "none");
             await ipcRenderer.invoke("capture-loading", `progress-determinate-${entry}-${theme}`);
@@ -140,11 +181,18 @@ const browserCases = async (sources, entries, themes) => {
     for (const name of ["MobileBookmarks", "MobileTags"]) {
         const requests = [];
         const exports = {};
+        const docTree = {};
+        const tagTree = {};
+        new Function("exports", sources.docTreeWindow)(docTree);
         const modules = {
             "../../layout/dock/panelSearch": {bindPanelSearch() {}},
-            "../../util/fetch": {fetchPost: (_url, _data, callback) => requests.push(callback)},
-            "../../constants": {Constants: {SIYUAN_APPID: "loading-test"}},
-            "../../layout/dock/tagFilter": {getTagFilterKeywords: () => []},
+            "../../util/fetch": {
+                fetchPost: (_url, _data, callback) => requests.push(callback),
+                fetchSyncPost: () => new Promise(resolve => requests.push(resolve)),
+            },
+            "../../constants": {Constants: {SIYUAN_APPID: "loading-test"}, TAG_SORT_MANUAL: 6},
+            "../../layout/dock/TagTree": tagTree,
+            "./docTree/DocTreeModel": docTree,
             "../../util/Tree": {Tree: class {
                 updateData() {}
                 getExpandIds() { return []; }
@@ -152,6 +200,7 @@ const browserCases = async (sources, entries, themes) => {
                 setExpandIds() {}
             }},
         };
+        new Function("require", "exports", sources.TagTree)(module => modules[module] || {}, tagTree);
         new Function("require", "exports", sources[name])(module => modules[module] || {}, exports);
         const panel = new exports[name]({}, host);
         const loading = host.lastElementChild;
@@ -161,15 +210,20 @@ const browserCases = async (sources, entries, themes) => {
         const indicator = loading.querySelector(".b3-loading").getBoundingClientRect();
         check.ok(Math.abs(indicator.x + indicator.width / 2 - bounds.x - bounds.width / 2) < 1);
         check.ok(Math.abs(indicator.y + indicator.height / 2 - bounds.y - bounds.height / 2) < 1);
+        const finishRequest = async () => {
+            requests.shift()({code: 0, data: []});
+            await wait(0);
+        };
         panel.update();
-        requests.shift()({data: []});
+        await finishRequest();
         check.equal(getComputedStyle(loading).display, "flex", "queued refresh keeps the indicator visible");
-        requests.shift()({data: []});
+        await finishRequest();
         check.equal(getComputedStyle(loading).display, "none", "mobile completion hides the outer container");
         panel.update();
         check.equal(getComputedStyle(loading).display, "flex");
-        requests.shift()({data: []});
+        await finishRequest();
         check.equal(getComputedStyle(loading).display, "none");
+        check.equal(requests.length, 0);
     }
 
     host.innerHTML = '<div id="packages">' + sources.bazaarLoader + "<img data-content-image>" + spinnerHTML + "</div>";
@@ -203,10 +257,13 @@ if (process.versions.electron && process.type === "browser") {
                 .declarationList.declarations[0].initializer;
             const method = bazaarObject.properties.find(property => property.name?.getText(bazaarAST) === "_onBazaar");
             const sources = {
+                memoryButtonLabel: JSON.parse(read("appearance/langs/zh-CN.json")).aiMemoryOrganize,
                 progress: compile(read("src/dialog/progress.ts")),
                 editor: compile(declarations("src/protyle/ui/initUI.ts", ["addLoading", "removeLoading"])),
                 MobileBookmarks: compile(read("src/mobile/dock/MobileBookmarks.ts")),
                 MobileTags: compile(read("src/mobile/dock/MobileTags.ts")),
+                TagTree: compile(read("src/layout/dock/TagTree.ts")),
+                docTreeWindow: compile(declarations("src/layout/dock/docTree/DocTreeModel.ts", ["getDocTreeWindow"])),
                 bazaar: compile(`const bazaar = {element, _isBazaarRequestCurrent: () => true, ${method.getText(bazaarAST)}};`) + "return bazaar;",
                 bazaarLoader: bazaarText.match(/<div data-type="img-loading"[^>]*>[\s\S]*?<\/div>/)[0],
             };

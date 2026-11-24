@@ -1,4 +1,4 @@
-import {Dialog} from "../../../dialog";
+import {AdaptiveDialog} from "../../../dialog/adaptiveDialog";
 import {confirmDialog} from "../../../dialog/confirmDialog";
 import {showMessage} from "../../../dialog/message";
 import {Constants} from "../../../constants";
@@ -307,7 +307,8 @@ export const getModelPickerKeywords = (group: ModelPickerGroup): string[] => {
     ];
     if (group === "editing") {
         keywords.push(
-            window.siyuan.languages.aiEditingModelPickerTip
+            window.siyuan.languages.aiEditingModelPickerTip,
+            window.siyuan.languages.aiEdit,
         );
     } else if (group === "agent") {
         keywords.push(
@@ -320,14 +321,16 @@ export const getModelPickerKeywords = (group: ModelPickerGroup): string[] => {
     return keywords;
 };
 
-const showDeleteConfirm = (title: string, onConfirm: () => void) => {
-    confirmDialog(
-        window.siyuan.languages.deleteOpConfirm,
-        window.siyuan.languages.confirmDeleteTip.replace("${x}", escapeHtmlTextAndAttr(title)),
-        onConfirm,
-        undefined,
-        true,
-    );
+const showDeleteConfirm = (title: string, onConfirm: () => Promise<unknown>) => {
+    confirmDialog({
+        title: window.siyuan.languages.deleteOpConfirm,
+        text: window.siyuan.languages.confirmDeleteTip.replace("${x}", escapeHtmlTextAndAttr(title)),
+        confirm: async () => {
+            await onConfirm();
+            return true;
+        },
+        isDelete: true,
+    });
 };
 
 export const getMcpServersBlockKeywords = (): string[] => [
@@ -526,7 +529,7 @@ export const mountMcpServersBlock = (root: HTMLElement) => {
                 return;
             }
             showDeleteConfirm(server.name, () => {
-                saveMcpServers(root, window.siyuan.config.ai.mcp.servers.filter((item) => item.name !== serverName));
+                return saveMcpServers(root, window.siyuan.config.ai.mcp.servers.filter((item) => item.name !== serverName));
             });
             return;
         }
@@ -546,14 +549,17 @@ export const mountMcpServersBlock = (root: HTMLElement) => {
         if (type === "disconnectAiMcpOAuth") {
             const serverID = getMcpServerID(actionEl);
             if (serverID) {
-                confirmDialog(window.siyuan.languages.mcpDisconnectAuthorization,
-                    window.siyuan.languages.mcpDisconnectAuthorizationConfirm, () => {
+                confirmDialog({
+                    title: window.siyuan.languages.mcpDisconnectAuthorization,
+                    text: window.siyuan.languages.mcpDisconnectAuthorizationConfirm,
+                    confirm: () => {
                         fetchPost("/api/ai/mcpOAuthDisconnect", {id: serverID}, (response) => {
                             if (response.code !== 0) {
                                 showMessage(response.msg);
                             }
                         });
-                    });
+                    },
+                });
             }
             event.preventDefault();
             event.stopPropagation();
@@ -747,7 +753,7 @@ const openMcpServerDialogWithEnvironment = (root: HTMLElement, serverName: strin
         ? ""
         : JSON.stringify(initialServer.headers, null, 2);
 
-    const dialog = new Dialog({
+    const dialog = new AdaptiveDialog({
         title: isNew ? window.siyuan.languages.addAiMcpServer : window.siyuan.languages.aiMcpServerSettings,
         width: isMobile() ? "92vw" : "520px",
         height: "80vh",
@@ -907,6 +913,13 @@ const openMcpServerDialogWithEnvironment = (root: HTMLElement, serverName: strin
         const nextServers = isNew
             ? [...servers, nextServer]
             : servers.map((item) => item.name !== serverName ? item : nextServer);
+        if (isMobile()) {
+            void dialog.runPending(async () => {
+                await saveMcpServers(root, nextServers);
+                return true;
+            }, {close: true});
+            return;
+        }
         saveMcpServers(root, nextServers);
         dialog.destroy();
     });
@@ -922,5 +935,5 @@ const findMcpServer = (serverName: string) =>
     window.siyuan.config.ai.mcp.servers.find((server) => server.name === serverName);
 
 const saveMcpServers = (root: HTMLElement, servers: Config.IMCPServer[]) => {
-    aiConfigApi.patch("mcp.servers", servers, () => renderMcpServerList(root));
+    return aiConfigApi.patch("mcp.servers", servers, () => renderMcpServerList(root));
 };

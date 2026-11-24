@@ -6,6 +6,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -83,13 +84,27 @@ var getNetwork = contractHandler(apicontract.GetNetwork, func(c *gin.Context, re
 	return apicontract.Success(apicontract.NetworkData{Proxy: proxy})
 })
 
-var getChangelog = contractHandler(apicontract.SystemGetChangelog, func(c *gin.Context, request apicontract.SystemChangelogRequest) (ret apicontract.Response[apicontract.SystemChangelogData]) {
-	ret = apicontract.Success(apicontract.SystemChangelogData{})
+var getReleaseChangelog = model.GetReleaseChangelog
 
-	force := request.Force
+var getChangelog = contractHandler(apicontract.SystemGetChangelog, func(c *gin.Context, request apicontract.SystemChangelogRequest) apicontract.Response[apicontract.SystemChangelogData] {
+	return loadChangelog(c.Request.Context(), request.Force, util.Ver)
+})
 
+func loadChangelog(ctx context.Context, force bool, version string) (ret apicontract.Response[apicontract.SystemChangelogData]) {
 	data := apicontract.SystemChangelogData{}
 	ret = apicontract.Success(data)
+
+	if !util.IsReleaseVer(version) {
+		if !force {
+			return
+		}
+		content, err := getReleaseChangelog(ctx, version)
+		if err != nil {
+			logging.LogWarnf("get changelog for v%s failed: %s", version, err)
+			return apicontract.Failure[apicontract.SystemChangelogData](-1, "release changelog is unavailable")
+		}
+		return apicontract.Success(apicontract.SystemChangelogData{Show: true, HTML: content, Version: version})
+	}
 
 	changelogsDir := filepath.Join(util.WorkingDir, "changelogs")
 	if !gulu.File.IsDir(changelogsDir) {
@@ -100,19 +115,13 @@ var getChangelog = contractHandler(apicontract.SystemGetChangelog, func(c *gin.C
 		return
 	}
 
-	if !force && !util.IsReleaseVer(util.Ver) {
-		model.Conf.ShowChangelog = false
-		model.Conf.Save()
-		return
-	}
-
-	changelogVer := util.Ver
+	changelogVer := version
 	changelogPath := getChangelogPath(changelogsDir, changelogVer)
 	if force && changelogPath == "" {
-		changelogVer, changelogPath = getLatestChangelog(changelogsDir, util.Ver)
+		changelogVer, changelogPath = getLatestChangelog(changelogsDir, version)
 	}
 	if changelogPath == "" {
-		logging.LogErrorf("changelog not found for v%s", util.Ver)
+		logging.LogErrorf("changelog not found for v%s", version)
 		return
 	}
 
@@ -135,7 +144,7 @@ var getChangelog = contractHandler(apicontract.SystemGetChangelog, func(c *gin.C
 	data.Version = changelogVer
 	ret = apicontract.Success(data)
 	return
-})
+}
 
 func getChangelogPath(changelogsDir, ver string) string {
 	verDir := filepath.Join(changelogsDir, "v"+ver)
@@ -198,13 +207,25 @@ var getEmojiConf = contractHandler(apicontract.SystemGetEmojiConf, func(c *gin.C
 		TitleZhCN: "自定义",
 		TitleJaJP: "カスタム",
 	}
-	items := []*apicontract.SystemEmoji{}
-	custom.Items = items
+	custom.Items = []*apicontract.SystemEmoji{}
 	if gulu.File.IsDir(customConfDir) {
-		model.ClearCustomEmojis()
-		readCustomEmojis(customConfDir, "", &items)
+		if model.IsReadOnlyRoleContext(c) {
+			for _, name := range model.PublishedEmojiPaths(c, model.GetPublishAccess()) {
+				if !util.IsValidExistingEmojiFileName(html.UnescapeString(filepath.Base(name))) {
+					continue
+				}
+				file, openErr := util.OpenPublishReaderFile(customConfDir, name)
+				if openErr != nil {
+					continue
+				}
+				file.Close()
+				custom.Items = append(custom.Items, customEmojiEntry(name))
+			}
+		} else {
+			model.ClearCustomEmojis()
+			readCustomEmojis(customConfDir, "", &custom.Items)
+		}
 	}
-	custom.Items = items
 	conf = append([]*apicontract.SystemEmojiGroup{custom}, conf...)
 
 	ret = apicontract.Success(conf)
@@ -242,24 +263,22 @@ func readCustomEmojis(rootDir, relativeDir string, items *[]*apicontract.SystemE
 			readCustomEmojis(rootDir, relativePath, items)
 			continue
 		}
-		appendCustomEmoji(relativePath, items)
+		entry := customEmojiEntry(relativePath)
+		*items = append(*items, entry)
+		model.AddCustomEmoji(entry.Description, "/emojis/"+relativePath)
 	}
 }
 
-func appendCustomEmoji(name string, items *[]*apicontract.SystemEmoji) {
+func customEmojiEntry(name string) *apicontract.SystemEmoji {
 	ext := filepath.Ext(name)
 	nameWithoutExt := strings.TrimSuffix(name, ext)
-	emoji := &apicontract.SystemEmoji{
+	return &apicontract.SystemEmoji{
 		Unicode:         name,
 		Description:     nameWithoutExt,
 		DescriptionZhCN: nameWithoutExt,
 		DescriptionJaJP: nameWithoutExt,
 		Keywords:        nameWithoutExt,
 	}
-	*items = append(*items, emoji)
-
-	imgSrc := "/emojis/" + name
-	model.AddCustomEmoji(nameWithoutExt, imgSrc)
 }
 
 const maxCustomEmojiSize = 10 * 1024 * 1024
@@ -524,6 +543,7 @@ var exportConf = contractHandler(apicontract.SystemExportConf, func(c *gin.Conte
 	if nil != clonedConf.AI.Load() {
 		if clonedConf.AI.Load().Web != nil {
 			clonedConf.AI.Load().Web.APIKey = ""
+			clonedConf.AI.Load().Web.ExaAPIKey = ""
 		}
 		for _, provider := range clonedConf.AI.Load().Providers {
 			if nil != provider {
@@ -756,8 +776,13 @@ func preserveImportedAISecrets(imported, current *conf.AI) {
 	if imported == nil || current == nil {
 		return
 	}
-	if imported.Web != nil && current.Web != nil && imported.Web.APIKey == "" {
-		imported.Web.APIKey = current.Web.APIKey
+	if imported.Web != nil && current.Web != nil {
+		if imported.Web.APIKey == "" {
+			imported.Web.APIKey = current.Web.APIKey
+		}
+		if imported.Web.ExaAPIKey == "" {
+			imported.Web.ExaAPIKey = current.Web.ExaAPIKey
+		}
 	}
 
 	currentProviders := map[string]*conf.Provider{}
@@ -929,7 +954,7 @@ var setAccessAuthCode = contractHandler(apicontract.SystemSetAccessAuthCode, fun
 	model.Conf.AccessAuthCode = aac
 	model.Conf.Save()
 
-	workspaceSession.AccessAuthCode = aac
+	model.SetAccessCodeSession(workspaceSession, aac)
 	session.Save(c)
 	go func() {
 		time.Sleep(200 * time.Millisecond)
@@ -1364,6 +1389,11 @@ var setNetworkProxy = contractHandler(apicontract.SetNetworkProxy, func(c *gin.C
 })
 
 var addUIProcess = contractHandler(apicontract.SystemAddUIProcess, func(c *gin.Context, request apicontract.EmptyRequest) apicontract.Response[apicontract.Null] {
+	// 注册表用于桌面端存活判断，只接受管理员登记，避免读者占用注册槽位。
+	if !model.IsAdminRoleContext(c) {
+		return apicontract.EmptyHTTPResponse[apicontract.Null](http.StatusOK)
+	}
+
 	pidInt, err := strconv.Atoi(c.Query("pid"))
 	if err != nil || 0 >= pidInt {
 		return apicontract.EmptyHTTPResponse[apicontract.Null](http.StatusOK)
@@ -1406,6 +1436,7 @@ func exitSystem(c *gin.Context, request apicontract.SystemExitRequest) apicontra
 	case 1: // 同步执行失败
 		return apicontract.SystemExit.FailureWithData(1, model.Conf.Language(96)+"<div class=\"fn__space\"></div><button class=\"b3-button b3-button--white\">"+model.Conf.Language(97)+"</button>", data)
 	case 2: // 提示新安装包
+		data.ReleaseURL = model.GetInstallPackageReleaseURL(installPkgPath)
 		return apicontract.SystemExit.FailureWithData(2, model.Conf.Language(61), data)
 	case 3: // 仍有界面处理退出结果，宿主继续等待。
 		return apicontract.SystemExit.FailureWithData(3, "", data)

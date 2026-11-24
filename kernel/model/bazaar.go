@@ -144,6 +144,18 @@ func filterUpdatableBazaarPackages(packages []*UpdatedPackage) (updatable []*Upd
 	return
 }
 
+// excludeBazaarBatchPackages 仅影响批量更新，保留单项更新和更新提示。
+func excludeBazaarBatchPackages(packages []*UpdatedPackage, excluded map[string]bool) []*UpdatedPackage {
+	result := make([]*UpdatedPackage, 0, len(packages))
+	for _, pkg := range packages {
+		if pkg.Installed != nil && excluded[pkg.Installed.Name] {
+			continue
+		}
+		result = append(result, pkg)
+	}
+	return result
+}
+
 // BatchUpdatePackagesContext 取消时保留已提交的包，并停止当前下载和后续更新。
 func BatchUpdatePackagesContext(ctx context.Context, frontend string) error {
 	if err := ctx.Err(); err != nil {
@@ -153,6 +165,12 @@ func BatchUpdatePackagesContext(ctx context.Context, frontend string) error {
 	if err != nil {
 		return err
 	}
+	excluded := Conf.Bazaar.Load().BatchUpdateExcluded
+	plugins = excludeBazaarBatchPackages(plugins, excluded["plugins"])
+	themes = excludeBazaarBatchPackages(themes, excluded["themes"])
+	widgets = excludeBazaarBatchPackages(widgets, excluded["widgets"])
+	icons = excludeBazaarBatchPackages(icons, excluded["icons"])
+	templates = excludeBazaarBatchPackages(templates, excluded["templates"])
 	unmetRequirementCount := 0
 	var count int
 	plugins, count = filterUpdatableBazaarPackages(plugins)
@@ -253,22 +271,66 @@ func buildUpdatedPackages(installedPackages []*bazaar.Package, bazaarPackagesMap
 	return
 }
 
-// GetInstalledPackageInfos 获取本地集市包信息，并返回路径相关字段供调用方复用
+// installedPackageScan 保存一次本地集市包扫描的结果，供同一轮刷新的并发请求复用
+type installedPackageScan struct {
+	infos             []installedPackageInfo
+	basePath          string
+	baseURLPathPrefix string
+	err               error
+}
+
+var installedPackageInfosFlight singleflight.Group
+var installedPackageScanFunc = scanInstalledPackageInfos // 扫描入口，便于测试替换
+
+// GetInstalledPackageInfos 获取本地集市包信息，并返回路径相关字段供调用方复用。
+// 同一轮刷新里已下载、在线集市和更新检查会并发进入，这里合并为一次目录扫描与清单解析。
 func GetInstalledPackageInfos(pkgType string) (installedPackageInfos []installedPackageInfo, basePath, baseURLPathPrefix string, err error) {
+	v, _, _ := installedPackageInfosFlight.Do("installedPackageInfos:"+pkgType, func() (any, error) {
+		return installedPackageScanFunc(pkgType), nil
+	})
+	scan := v.(installedPackageScan)
+	return cloneInstalledPackageInfos(scan.infos), scan.basePath, scan.baseURLPathPrefix, scan.err
+}
+
+// cloneInstalledPackageInfos 为每个调用方复制包对象，避免并发请求就地写入展示字段时互相影响。
+func cloneInstalledPackageInfos(infos []installedPackageInfo) []installedPackageInfo {
+	if nil == infos {
+		return nil
+	}
+	ret := make([]installedPackageInfo, len(infos))
+	for i, info := range infos {
+		ret[i] = installedPackageInfo{Pkg: bazaar.ClonePackage(info.Pkg), DirName: info.DirName}
+	}
+	return ret
+}
+
+func installPathsOf(basePath string, entries []os.DirEntry) []string {
+	ret := make([]string, len(entries))
+	for i, entry := range entries {
+		ret[i] = filepath.Join(basePath, entry.Name())
+	}
+	return ret
+}
+
+// scanInstalledPackageInfos 执行一次目录扫描，清单未变化时复用上次解析结果
+func scanInstalledPackageInfos(pkgType string) (scan installedPackageScan) {
 	layout, ok := bazaar.GetPackageLayout(pkgType)
 	if !ok {
 		logging.LogErrorf("invalid package type: %s", pkgType)
-		err = errors.New("invalid package type")
+		scan.err = errors.New("invalid package type")
 		return
 	}
-	basePath, baseURLPathPrefix = layout.BasePath, layout.URLPath
+	scan.basePath, scan.baseURLPathPrefix = layout.BasePath, layout.URLPath
 	jsonFileName := layout.Manifest
 
-	dirs, err := bazaar.ReadInstalledPackageDirs(basePath)
+	dirs, err := bazaar.ReadInstalledPackageDirs(scan.basePath)
 	if err != nil {
 		logging.LogWarnf("read %s folder failed: %s", pkgType, err)
+		scan.err = err
 		return
 	}
+	// 目录列表是缓存的存活范围，卸载后对应清单不再驻留
+	bazaar.RetainInstalledPackageCaches(pkgType, installPathsOf(scan.basePath, dirs))
 	if len(dirs) == 0 {
 		return
 	}
@@ -297,11 +359,11 @@ func GetInstalledPackageInfos(pkgType string) (installedPackageInfos []installed
 
 	for _, dir := range dirs {
 		dirName := dir.Name()
-		installPath := filepath.Join(basePath, dirName)
+		installPath := filepath.Join(scan.basePath, dirName)
 		if strings.HasPrefix(dirName, ".siyuan-package-install-") {
 			continue
 		}
-		pkg, parseErr := bazaar.ParsePackageJSON(filepath.Join(installPath, jsonFileName))
+		pkg, parseErr := bazaar.LoadInstalledPackageManifest(pkgType, installPath, filepath.Join(installPath, jsonFileName))
 		if nil != parseErr || nil == pkg {
 			if pkgType == "templates" && errors.Is(parseErr, os.ErrNotExist) {
 				continue
@@ -314,7 +376,7 @@ func GetInstalledPackageInfos(pkgType string) (installedPackageInfos []installed
 				}
 				reason = bazaar.PackageInvalidReasonMissingManifest
 			}
-			installedPackageInfos = append(installedPackageInfos, installedPackageInfo{
+			scan.infos = append(scan.infos, installedPackageInfo{
 				Pkg:     &bazaar.Package{Name: dirName, InvalidReason: reason},
 				DirName: dirName,
 			})
@@ -327,7 +389,7 @@ func GetInstalledPackageInfos(pkgType string) (installedPackageInfos []installed
 			}
 			pkg = &bazaar.Package{Name: dirName, InvalidReason: reason}
 		}
-		installedPackageInfos = append(installedPackageInfos, installedPackageInfo{Pkg: pkg, DirName: dirName})
+		scan.infos = append(scan.infos, installedPackageInfo{Pkg: pkg, DirName: dirName})
 	}
 	return
 }
@@ -539,6 +601,11 @@ func installBazaarPackageContext(ctx context.Context, pkgType, repoURL, repoHash
 	installedPkg, parseErr := bazaar.ParsePackageJSON(filepath.Join(installPath, jsonFileName))
 	meta.update = parseErr == nil && installedPkg != nil && installedPkg.Name == packageName
 
+	if pkgType == "templates" {
+		if err = InvalidateTemplateHTTPFilePath(installPath); err != nil {
+			return
+		}
+	}
 	options := bazaar.PackageInstallOptions{Context: ctx}
 	_, err = bazaar.InstallPackageWithOptions(repoURL, repoHash, repoRef, installPath, Conf.System.Load().ID, pkgType, packageName, meta.update, options)
 	if err != nil {
@@ -725,6 +792,11 @@ func InstallLocalBazaarPackageWithOptions(archivePath, frontend string, overwrit
 	if result.Updated && !overwrite {
 		return result, ErrLocalBazaarPackageExists
 	}
+	if pkgType == "templates" {
+		if err = InvalidateTemplateHTTPFilePath(installPath); err != nil {
+			return result, err
+		}
+	}
 	installOptions := bazaar.PackageInstallOptions{ExpectedInstalledRevision: options.ExpectedInstalledRevision, Context: ctx, Recheck: check}
 	installed, err := bazaar.InstallLocalPackageWithOptions(sourcePath, installPath, pkgType, pkg.Name, result.Updated, installOptions)
 	if installed != nil {
@@ -801,6 +873,11 @@ func UninstallPackage(pkgType, packageName string) error {
 			IncSync()
 		}
 	}()
+	if pkgType == "templates" {
+		if err = InvalidateTemplateHTTPFilePath(installPath); err != nil {
+			return err
+		}
+	}
 	err = bazaar.UninstallPackage(installPath)
 	if err != nil {
 		return fmt.Errorf(Conf.Language(47), err.Error())
@@ -808,7 +885,7 @@ func UninstallPackage(pkgType, packageName string) error {
 
 	// 删除集市包的持久化信息
 	bazaar.RemovePackageInfo(pkgType, packageName)
-	bazaar.RemoveInstalledPackageSizeCache(pkgType, packageName)
+	bazaar.InvalidateInstalledPackageCaches(pkgType, packageName)
 
 	switch pkgType {
 	case "plugins":

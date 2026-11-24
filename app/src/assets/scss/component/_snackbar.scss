@@ -92,7 +92,7 @@ html[data-frontend="browser-desktop"] body:not(.body--toolbar-hide):not(.body--w
     display: inline-block;
 
     &--close {
-      padding-right: 50px;
+      padding-right: 34px;
     }
 
     a {
@@ -102,6 +102,11 @@ html[data-frontend="browser-desktop"] body:not(.body--toolbar-hide):not(.body--w
 
     ul {
       margin-left: 16px;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
   }
 
@@ -121,6 +126,36 @@ html[data-frontend="browser-desktop"] body:not(.body--toolbar-hide):not(.body--w
       opacity: 1;
     }
   }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__body {
+    flex: 0 0 100%;
+    min-width: 0;
+  }
+
+  &__action {
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+// 直接嵌入正文的按钮参与行内排版，防止后文绕排到按钮前面
+.b3-snackbar__content > button,
+#tempMessage > div > button {
+  float: none;
+}
+
+.b3-snackbar__content [hidden]:not([hidden="until-found" i]),
+#tempMessage [hidden]:not([hidden="until-found" i]) {
+  display: none;
 }
 
 @media screen and (max-width: 520px) {

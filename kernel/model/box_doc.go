@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/88250/gulu"
 	"github.com/88250/lute/ast"
@@ -25,9 +26,12 @@ import (
 )
 
 const (
-	boxDocMetaSpec = 1
-	boxDocMetaName = "boxDoc.json"
+	boxDocMetaSpec        = 1
+	boxDocMetaName        = "boxDoc.json"
+	boxDocTitleSourceAttr = "custom-sy-notebook-title-source"
 )
+
+var boxDocTitleNameLock sync.Mutex
 
 type boxDocMeta struct {
 	Spec     int    `json:"spec"`
@@ -196,7 +200,7 @@ func findBoxDoc(box *Box) (ret string, err error) {
 
 func createBoxDoc(box *Box, boxDocID string) error {
 	boxConf := box.GetConf()
-	title := normalizeDocTitle(boxConf.Name)
+	title := normalizeTitleText(boxConf.Name)
 	if "" == title {
 		title = Conf.Language(16)
 	}
@@ -228,14 +232,27 @@ func indexBoxDocIfNeeded(boxID, boxDocID string) {
 }
 
 func reconcileBoxDoc(box *Box, boxDocID string) error {
+	boxDocTitleNameLock.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			boxDocTitleNameLock.Unlock()
+		}
+	}()
 	tree, err := filesys.LoadTree(box.ID, boxDocPath(boxDocID), util.NewLute())
 	if err != nil {
 		return err
 	}
 	boxConf := box.GetConf()
-	title := normalizeDocTitle(boxConf.Name)
+	title := normalizeTitleText(boxConf.Name)
 	if "" == title {
 		title = Conf.Language(16)
+	}
+	if tree.Root.IALAttr(boxDocTitleSourceAttr) == "document" || tree.Root.DocumentTitle != nil {
+		if err = syncBoxDocTitleName0(tree); err != nil {
+			return err
+		}
+		title = treenode.ReadDocumentTitle(tree.Root).Text
 	}
 	titleChanged := treenode.ReadDocumentTitle(tree.Root).Text != title
 	changed := titleChanged || tree.HPath != "/"+title || tree.Root.IALAttr(DocHiddenAttr) != "true" ||
@@ -255,6 +272,8 @@ func reconcileBoxDoc(box *Box, boxDocID string) error {
 	if err = indexWriteTreeUpsertQueue(tree); err != nil {
 		return err
 	}
+	boxDocTitleNameLock.Unlock()
+	locked = false
 	if titleChanged {
 		updateRefTextRenameDoc(tree)
 	}
@@ -264,30 +283,46 @@ func reconcileBoxDoc(box *Box, boxDocID string) error {
 
 // BoxDocSubFileCount 返回笔记本顶层文档的可见下级文档数。
 func BoxDocSubFileCount(boxID string) int {
-	return boxDocSubFileCount(boxID, "/", nil)
+	return boxDocSubFileCount(boxID, "/", "owner", nil)
 }
 
 // BoxDocSubFileCountForPublish 返回发布访问控制下笔记本顶层文档的可见下级文档数。
 func BoxDocSubFileCountForPublish(boxID string, publishAccess PublishAccess) int {
-	return boxDocSubFileCount(boxID, "/", PublishVisibleDocPathFilter(boxID, publishAccess))
+	return boxDocSubFileCount(boxID, "/", DocTreePublishAccessRevision(publishAccess), PublishVisibleDocPathFilter(boxID, publishAccess))
 }
 
 // BoxDocSubFileCountForPublishAt 返回发布访问控制下指定文档的可见直接子文档数，docPath 为该文档的 .sy 路径。
 func BoxDocSubFileCountForPublishAt(boxID, docPath string, publishAccess PublishAccess) int {
-	return boxDocSubFileCount(boxID, strings.TrimSuffix(docPath, ".sy"), PublishVisibleDocPathFilter(boxID, publishAccess))
+	return boxDocSubFileCount(boxID, strings.TrimSuffix(docPath, ".sy"), DocTreePublishAccessRevision(publishAccess),
+		PublishVisibleDocPathFilter(boxID, publishAccess))
 }
 
-func boxDocSubFileCount(boxID, parentPath string, include func(docPath string) bool) int {
-	ret, _ := visibleDocCount(boxID, parentPath, func(p string) map[string]string {
-		ial, _ := filesys.DocIAL(filepath.Join(util.DataDir, boxID, p))
+func boxDocSubFileCount(boxID, parentPath, policy string, include func(docPath string) bool) int {
+	if IsEncryptedBox(boxID) && !isBoxUnlockedForAccess(boxID) {
+		return 0
+	}
+	key := "notebook-document-count\x00" + filepath.Clean(util.DataDir) + "\x00" + boxID + "\x00" + policy
+	version, stable := cache.DocTreeSourceVersion(boxID, true)
+	if count, ok := cache.GetDocTreeChildCount(key, boxID, parentPath); stable && ok {
+		return count
+	}
+	cacheable := stable
+	ret, err := visibleDocCount(boxID, parentPath, func(p string) map[string]string {
+		ial, readErr := filesys.DocIAL(filepath.Join(util.DataDir, boxID, p))
+		if readErr != nil {
+			cacheable = false
+		}
 		return ial
 	}, include)
+	// 读取失败或源版本变化时，不能将临时计数留给后续请求。
+	if err == nil && cacheable {
+		cache.PutDocTreeChildCount(key, boxID, parentPath, version, ret)
+	}
 	return ret
 }
 
 func IsBoxDoc(boxID, id string) bool {
-	box := Conf.Box(boxID)
-	return nil != box && box.ID == id
+	return boxID == id && Conf.Box(boxID) != nil
 }
 
 func IsBoxDocPath(boxID, p string) bool {
@@ -318,12 +353,43 @@ func normalizeBoxDocTarget(boxID, p string) string {
 	return normalizeBoxDocPath(boxID, p)
 }
 
-func renameBoxDoc(boxID, name string) error {
-	box := Conf.Box(boxID)
-	if nil == box || !box.Exist(boxDocPath(box.ID)) {
-		return nil
+// 笔记本文档保存完整标题，配置中的名称是可重新生成的纯文本投影。
+func syncBoxDocTitleName(tree *parse.Tree) error {
+	boxDocTitleNameLock.Lock()
+	defer boxDocTitleNameLock.Unlock()
+	return syncBoxDocTitleName0(tree)
+}
+
+// 调用方持有 boxDocTitleNameLock，避免旧的重开快照覆盖已提交的历史标题。
+func syncBoxDocTitleName0(tree *parse.Tree) error {
+	box := Conf.Box(tree.Box)
+	if box == nil || tree.ID != box.ID {
+		return ErrBoxNotFound
 	}
-	return renameDoc0(boxID, boxDocPath(box.ID), name)
+	boxConf, err := readRawBoxConf(box.ID)
+	if err != nil {
+		return err
+	}
+	if boxConf == nil {
+		return errors.New("notebook configuration is missing")
+	}
+	if boxConf.Encrypted {
+		if err = revealBoxMetadataIfUnlocked(box.ID, boxConf); err != nil {
+			return err
+		}
+	}
+	name := treenode.ReadDocumentTitle(tree.Root).Text
+	if name == "" {
+		name = Conf.Language(16)
+	}
+	if boxConf.Name != name {
+		boxConf.Name = name
+		if err = box.SaveConf(boxConf); err != nil {
+			return err
+		}
+	}
+	box.Name = name
+	return nil
 }
 
 func setBoxDocIcon(boxID, icon string) error {

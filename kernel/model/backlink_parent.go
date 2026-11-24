@@ -27,6 +27,10 @@ func buildBacklinkParentMappings(refBlocks []*Block, boxID string) (ret []*backl
 }
 
 func buildBacklinkParentMappingsWithDocumentGrouping(refBlocks []*Block, boxID string, groupDocuments bool) (ret []*backlinkParentMapping) {
+	return buildBacklinkParentMappingsWithAccess(refBlocks, boxID, groupDocuments, nil)
+}
+
+func buildBacklinkParentMappingsWithAccess(refBlocks []*Block, boxID string, groupDocuments bool, allowParent func(string) bool) []*backlinkParentMapping {
 	parentRefParagraphs := map[string][]*Block{}
 	var paragraphParentIDs []string
 	for _, refBlock := range refBlocks {
@@ -45,6 +49,9 @@ func buildBacklinkParentMappingsWithDocumentGrouping(refBlocks []*Block, boxID s
 	treeCache := map[string]*parse.Tree{}
 	return buildBacklinkParentMappingsForSources(refBlocks, parentRefParagraphs, paragraphParents, groupDocuments,
 		func(parent *Block, refs []*Block) *Block {
+			if allowParent != nil && !allowParent(parent.ID) {
+				return nil
+			}
 			return selectBacklinkParentRef(parent, refs, boxID, luteEngine, treeCache)
 		}, func(parent *Block) map[string]bool {
 			return backlinkHeadingCoveredIDs(parent, boxID, treeCache)
@@ -55,9 +62,19 @@ func buildBacklinkParentMappingsWithDocumentGrouping(refBlocks []*Block, boxID s
 func buildBacklinkParentMappingsForSources(refBlocks []*Block, parentRefParagraphs map[string][]*Block,
 	paragraphParents []*Block, groupDocuments bool, selectRef func(*Block, []*Block) *Block,
 	headingCoveredIDsFor func(*Block) map[string]bool) (ret []*backlinkParentMapping) {
+	titleRefIDs := map[string]bool{}
+	for _, refBlock := range refBlocks {
+		if refBlock != nil && refBlock.Type == "NodeDocument" {
+			titleRefIDs[refBlock.ID] = true
+		}
+	}
 	var mappings []*backlinkParentMapping
 	for _, parent := range paragraphParents {
 		if nil == parent || !groupDocuments && "NodeDocument" == parent.Type {
+			continue
+		}
+		// 标题引用使用文档根 ID，正文不能再合并到同一条目而覆盖其独立来源。
+		if parent.Type == "NodeDocument" && titleRefIDs[parent.ID] {
 			continue
 		}
 

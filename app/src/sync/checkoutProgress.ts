@@ -7,6 +7,8 @@ import {waitForSyncReloads} from "../util/reloadSync";
 import {flushPendingEditorSaves, getEditorSaveFailureVersion} from "../protyle/util/editorSave";
 import type {SyncCheckoutState} from "../types/api";
 import {getProgressContentHTML, updateProgressContent} from "../dialog/progress";
+import {isMobile} from "../util/functions";
+import {bindMobileSheetLayout} from "../mobile/util/mobileSheetLayout";
 
 type CheckoutState = SyncCheckoutState & {compact: boolean; expanded: boolean};
 let state: CheckoutState | undefined;
@@ -19,12 +21,19 @@ let refreshing: string;
 let refreshTail = Promise.resolve();
 let statePoll: number;
 let kernelID: string;
+let sheetLayout: ReturnType<typeof bindMobileSheetLayout> | undefined;
+
+const removeProgress = () => {
+    sheetLayout?.dispose();
+    sheetLayout = undefined;
+    document.getElementById("sync-checkout-progress")?.remove();
+};
 
 const blockEditing = (event: Event) => {
     const root = document.getElementById("sync-checkout-progress");
     if (!root || !state?.blocking) return;
     if (event.type === "keydown" && (event as KeyboardEvent).key === "Tab") {
-        const controls = Array.from(root.querySelectorAll<HTMLButtonElement>("button")).filter(button => !button.disabled);
+        const controls = Array.from(root.querySelectorAll<HTMLButtonElement>("button:not(:disabled):not(.fn__none)"));
         const index = controls.indexOf(document.activeElement as HTMLButtonElement);
         const backwards = (event as KeyboardEvent).shiftKey;
         const next = index < 0 ? (backwards ? controls.length - 1 : 0) :
@@ -51,7 +60,7 @@ const clear = () => {
     refreshing = undefined;
     window.clearInterval(statePoll);
     statePoll = undefined;
-    document.getElementById("sync-checkout-progress")?.remove();
+    removeProgress();
     setEditingGuard(false);
     if (previousFocus?.isConnected) previousFocus.focus();
     previousFocus = undefined;
@@ -60,10 +69,11 @@ const clear = () => {
 const render = () => {
     if (!state) return;
     if (!state.blocking && !state.expanded) {
-        document.getElementById("sync-checkout-progress")?.remove();
+        removeProgress();
         setEditingGuard(false);
         return;
     }
+    const noticeMessage = window.siyuan.languages._kernel[436];
     let root = document.getElementById("sync-checkout-progress");
     if (!root) {
         root = document.createElement("div");
@@ -74,12 +84,15 @@ const render = () => {
         root.innerHTML = `<div class="b3-dialog__scrim sync-checkout__scrim"></div>
 <div class="sync-checkout__panel b3-dialog__loading" role="dialog" aria-label="${escapeHtml(window.siyuan.languages.sync)}">
     <div class="sync-checkout__details">${getProgressContentHTML()}</div>
-    <div class="sync-checkout__notice ft__smaller">${escapeHtml(window.siyuan.languages._kernel[436])}</div>
+    <div class="sync-checkout__notice ft__smaller">${escapeHtml(noticeMessage)}</div>
     <div class="fn__flex sync-checkout__actions">
         <button class="b3-button b3-button--cancel b3-button--wrap" data-action="toggle"><span></span></button>
         <button class="b3-button b3-button--cancel b3-button--wrap" data-action="cancel">${escapeHtml(window.siyuan.languages.cancel)}</button>
     </div>
 </div>`;
+        if (isMobile()) {
+            sheetLayout = bindMobileSheetLayout(root, root.querySelector<HTMLElement>(".sync-checkout__panel"), {standalone: true});
+        }
         root.querySelector('[data-action="toggle"]').addEventListener("click", () => {
             if (!state.blocking) state.expanded = false;
             else state.compact = !state.compact;
@@ -111,18 +124,31 @@ const render = () => {
         statePoll = window.setInterval((): void => { void reconcileSyncCheckout(); }, 1500);
     }
     const panel = root.querySelector<HTMLElement>(".sync-checkout__panel");
+    const toggle = root.querySelector<HTMLButtonElement>('[data-action="toggle"]');
+    const cancel = root.querySelector<HTMLButtonElement>('[data-action="cancel"]');
+    const compact = state.blocking && state.compact;
+    const repeatsNotice = state.message === noticeMessage;
+    const showToggle = !compact || !repeatsNotice || state.total > 0;
+    const activeElement = document.activeElement as HTMLElement;
     panel.setAttribute("aria-modal", String(state.blocking));
     root.classList.toggle("sync-checkout--background", !state.blocking);
-    root.classList.toggle("sync-checkout--compact", state.compact || !state.blocking);
-    root.querySelector(".sync-checkout__details").classList.toggle("fn__none", state.compact);
-    root.querySelector(".sync-checkout__notice").classList.toggle("fn__none", !state.blocking);
-    updateProgressContent(root, state.message, state.current, state.total, "percent");
-    root.querySelector('[data-action="toggle"] span').textContent = state.compact ?
+    root.classList.toggle("sync-checkout--compact", compact || !state.blocking);
+    root.querySelector(".sync-checkout__notice").classList.toggle("fn__none", !state.blocking || compact || repeatsNotice);
+    updateProgressContent(root, compact && state.total > 0 ? window.siyuan.languages._kernel[81] : state.message,
+        state.current, state.total, "percent");
+    toggle.classList.toggle("fn__none", !showToggle);
+    toggle.firstElementChild.textContent = compact ?
         window.siyuan.languages.expand : window.siyuan.languages.collapseSyncDetails;
-    root.querySelector<HTMLButtonElement>('[data-action="cancel"]').disabled = state.canceling;
-    if (state.blocking && !root.contains(document.activeElement)) {
-        previousFocus ||= document.activeElement as HTMLElement;
-        root.querySelector<HTMLButtonElement>('[data-action="toggle"]').focus();
+    cancel.disabled = state.canceling;
+    const focusTarget = showToggle ? toggle : cancel.disabled ? panel : cancel;
+    if (focusTarget === panel) panel.tabIndex = -1;
+    else panel.removeAttribute("tabindex");
+    if (state.blocking) {
+        const focusOutside = !root.contains(activeElement);
+        if (focusOutside) previousFocus ||= activeElement;
+        if (focusOutside || activeElement === panel || activeElement.matches("button:disabled, button.fn__none")) {
+            focusTarget.focus();
+        }
     }
 };
 
@@ -137,8 +163,8 @@ const prepare = async (task: CheckoutState) => {
         unsavedPreparation = true;
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         await Promise.all(getAllEditor().filter(editor => editor?.protyle?.wysiwyg)
-            .map(editor => {
-                editor.protyle.title?.flushPendingInput();
+            .map(async editor => {
+                await editor.protyle.title?.flushPendingInput();
                 return editor.flushPendingTransactions();
             }));
         await flushPendingEditorSaves(failureVersion);
@@ -223,7 +249,8 @@ export const syncCheckoutProgress = (data: IWebSocketData) => {
     const next: CheckoutState = {...incoming, phase: incoming.phase || "applying", blocking: incoming.blocking !== false,
         message: incoming.message || data.msg || "", current: Number(incoming.current) || 0, total: Number(incoming.total) || 0,
         canceling: Boolean(incoming.canceling), upsertRootIDs: incoming.upsertRootIDs || [], removeRootIDs: incoming.removeRootIDs || [],
-        compact: same ? state.compact : false, expanded: same ? state.expanded : false};
+        compact: same && (state.blocking || state.expanded) ? state.compact : true,
+        expanded: same ? state.expanded : false};
     if (same && state.blocking && !next.blocking) {
         finish({...state, revision: nextRevision, upsertRootIDs: next.upsertRootIDs, removeRootIDs: next.removeRootIDs}, next);
         return;

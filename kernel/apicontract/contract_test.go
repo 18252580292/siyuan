@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -118,8 +119,8 @@ func TestResponseContracts(t *testing.T) {
 		{"/api/search/searchTag", `{"code":0,"msg":"","data":{"tagz":[],"k":""}}`, false},
 		{"/api/search/searchTag", `{"code":-1,"msg":"readonly","data":{"closeTimeout":5000},"cmd":"","reqId":0}`, true},
 		{"/api/notebook/lsNotebooks", `{"code":0,"msg":"","data":null}`, true},
-		{"/api/history/searchHistory", `{"code":0,"msg":"","data":{"histories":null,"pageCount":0,"totalCount":0}}`, true},
-		{"/api/history/searchHistory", `{"code":0,"msg":"","data":{"histories":[123],"pageCount":1,"totalCount":1}}`, false},
+		{"/api/history/searchHistory", `{"code":0,"msg":"","data":{"histories":null,"itemCounts":{},"pageCount":0,"totalCount":0}}`, true},
+		{"/api/history/searchHistory", `{"code":0,"msg":"","data":{"histories":[123],"itemCounts":{},"pageCount":1,"totalCount":1}}`, false},
 		{"/api/block/getBlockInfo", `{"code":3,"msg":"indexing","data":"indexing"}`, true},
 		{"/api/block/getBlockInfo", `{"code":0,"msg":"","data":{"rootID":"id","rootTitle":"","rootIcon":"","rootTitleEmpty":true,"publishAccessRequired":true}}`, true},
 		{"/api/block/getBlockInfo", `{"code":0,"msg":"","data":{"rootID":"id","rootTitle":"","rootIcon":"","rootTitleEmpty":true,"publishAccessRequired":false}}`, false},
@@ -215,6 +216,64 @@ func TestRouteCoverage(t *testing.T) {
 	bindings["getBlockAttrs"] = "setBlockAttrs"
 	if err := CheckRoutes(routes, bindings); err == nil {
 		t.Fatal("handler bound to the wrong contract was accepted")
+	}
+}
+
+func TestReadRoutesPreservesContractUnderResponseCache(t *testing.T) {
+	contracts, err := os.ReadFile("contracts.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	apiDir := filepath.Join(root, "api")
+	contractDir := filepath.Join(root, "apicontract")
+	for _, directory := range []string{apiDir, contractDir} {
+		if err = os.Mkdir(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = os.WriteFile(filepath.Join(contractDir, "contracts.go"), contracts, 0600); err != nil {
+		t.Fatal(err)
+	}
+	binding := "contractRouteHandlers(apicontract.GetBazaarTheme, getBazaarTheme)"
+	for _, tc := range []struct {
+		name     string
+		handlers string
+		valid    bool
+	}{
+		{"direct", binding + "...", true},
+		{"cached", "withGzipJSONCache(" + binding + ")...", true},
+		{"unknown", "unknownWrapper(" + binding + ")...", false},
+		{"nested", "withGzipJSONCache(withGzipJSONCache(" + binding + "))...", false},
+		{"extraArgument", "withGzipJSONCache(" + binding + ", extra)...", false},
+		{"notContract", "withGzipJSONCache(otherHandlers())...", false},
+		{"noSplat", "withGzipJSONCache(" + binding + ")", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := fmt.Sprintf(`package api
+func registerBazaarRoutes(ginServer *gin.Engine) {
+	ginServer.Handle("POST", "/api/bazaar/getBazaarTheme", %s)
+}
+`, tc.handlers)
+			if err := os.WriteFile(filepath.Join(apiDir, "router.go"), []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			routes, _, err := ReadRoutes(apiDir)
+			if !tc.valid {
+				if err == nil || !strings.Contains(err.Error(), "unsupported API route handler") {
+					t.Fatalf("unsupported route form was accepted: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := Route{Method: "POST", Path: "/api/bazaar/getBazaarTheme", Handler: "getBazaarTheme",
+				Contract: "getBazaarTheme", Middleware: (AuthenticatedAccess | AdminAccess).MiddlewareNames()}
+			if !reflect.DeepEqual(routes, []Route{want}) {
+				t.Fatalf("changed cached route contract or authorization: %#v", routes)
+			}
+		})
 	}
 }
 

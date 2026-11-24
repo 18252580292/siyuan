@@ -1,16 +1,72 @@
 import type {Dialog} from "../../dialog";
 import {bindBottomSheetDrag} from "./bindBottomSheetDrag";
 import {waitForSheetViewport} from "../../menus/sheetOpen";
+import {bindKeyboardSheetState} from "./keyboardSheetState";
 
-export const bindBottomSheetDialog = (dialog: Dialog, close: () => Promise<void>, afterResize?: () => void) => {
+export const bindBottomSheetDialog = (dialog: Dialog, close: () => Promise<void | boolean>, afterResize?: () => void,
+                                     afterOpen?: () => void,
+                                     layoutOptions?: {canStart?: () => boolean, initiallyExpanded?: boolean}) => {
     dialog.element.classList.add("mobile-bottom-sheet-dialog");
     const sheet = dialog.element.querySelector<HTMLElement>(".b3-dialog__container");
+    sheet.querySelector(".b3-dialog__close")?.remove();
     // 初始定位不参与过渡，等待视口恢复后再从底部展开。
     sheet.style.transition = "none";
     sheet.style.transform = "translateY(100%)";
     sheet.style.visibility = "hidden";
     sheet.classList.add("mobile-bottom-sheet");
-    // 底部面板只支持下拉关闭，不参与通用对话框的移动和缩放。
+    const normalizeActions = () => {
+        sheet.querySelectorAll(":scope > .b3-dialog__body .b3-dialog__action").forEach(footer => {
+            if (!footer.querySelector(".b3-button")) return;
+            footer.classList.add("mobile-sheet-action-bar");
+            footer.querySelectorAll(".b3-button")
+                .forEach(button => button.classList.add("b3-button--touch", "b3-button--wrap"));
+            const directButtons = Array.from(footer.querySelectorAll(":scope > .b3-button"));
+            if (directButtons.length) {
+                const buttons = Array.from(footer.querySelectorAll(":scope > .b3-button, :scope > .mobile-sheet-action-group > .b3-button"));
+                let group = footer.querySelector(":scope > .mobile-sheet-action-group");
+                if (!group) {
+                    group = document.createElement("div");
+                    group.className = "mobile-sheet-action-group";
+                    directButtons[0].before(group);
+                }
+                buttons.forEach(button => group.append(button));
+                footer.querySelectorAll(":scope > .fn__space, :scope > .fn__flex-1")
+                    .forEach(spacer => spacer.remove());
+            }
+            footer.querySelectorAll(".mobile-sheet-action-group").forEach(group => {
+                const buttons = Array.from(group.querySelectorAll(":scope > .b3-button"));
+                group.classList.toggle("mobile-sheet-action-group--stacked", buttons.length > 2);
+                buttons.forEach((button, index) => {
+                    button.classList.add("b3-button--touch", "b3-button--wrap");
+                    if (button.classList.contains("b3-button--cancel")) {
+                        button.classList.add("b3-button--secondary");
+                    } else if (index === buttons.length - 1 && button.classList.contains("b3-button--text")) {
+                        button.classList.add("b3-button--primary");
+                    }
+                });
+            });
+        });
+    };
+    normalizeActions();
+    const actionsObserver = new MutationObserver(normalizeActions);
+    actionsObserver.observe(sheet, {childList: true, subtree: true});
+    const disposeKeyboardState = bindKeyboardSheetState(sheet);
+    const dragState: {cancel?: () => void} = {};
+    let expansion: Animation;
+    const freeze = () => {
+        layout.freeze();
+        expansion?.cancel();
+    };
+    const layout = (require("./mobileSheetLayout") as typeof import("./mobileSheetLayout")).bindMobileSheetLayout(dialog.element.querySelector<HTMLElement>(".b3-dialog"),
+        sheet, {
+            initiallyExpanded: layoutOptions?.initiallyExpanded,
+            onResize: afterResize,
+            onGeometryChange: () => {
+                expansion?.cancel();
+                dragState.cancel?.();
+            },
+        });
+    // 底部抽屉通过抓手展开或收起，禁用通用对话框的移动和缩放。
     sheet.querySelector(".b3-dialog__header")?.classList.remove("resize__move");
     sheet.querySelectorAll(":scope > .resize__rd, :scope > .resize__ld, :scope > .resize__lt, :scope > .resize__rt, " +
         ":scope > .resize__r, :scope > .resize__d, :scope > .resize__t, :scope > .resize__l")
@@ -20,22 +76,18 @@ export const bindBottomSheetDialog = (dialog: Dialog, close: () => Promise<void>
     handle.className = "b3-menu__title b3-menu__title--root";
     handle.setAttribute("aria-hidden", "true");
     sheet.prepend(handle);
-    const resize = () => {
-        const viewport = window.visualViewport;
-        const container = dialog.element.querySelector<HTMLElement>(".b3-dialog");
-        if (viewport) {
-            container.style.top = `${viewport.offsetTop}px`;
-            container.style.height = `${viewport.height}px`;
-        }
-        afterResize?.();
-    };
-    window.visualViewport?.addEventListener("resize", resize);
-    window.visualViewport?.addEventListener("scroll", resize);
+    const resize = () => layout.resize();
     resize();
     let cancelOpen: () => void;
     let opening = false;
     const updateOpen = () => {
         if (!dialog.element.classList.contains("b3-dialog--open")) {
+            if (dialog.element.dataset.dialogClosing === "true") {
+                freeze();
+                // 退出样式接管拖动位移，保留从当前绘制位置向下滑出的过渡。
+                sheet.style.transition = "";
+                sheet.style.transform = "";
+            }
             cancelOpen?.();
             return;
         }
@@ -61,19 +113,48 @@ export const bindBottomSheetDialog = (dialog: Dialog, close: () => Promise<void>
                 sheet.style.transition = "";
                 void sheet.offsetHeight;
                 sheet.style.transform = "";
+                afterOpen?.();
             },
         });
     };
     const observer = new MutationObserver(updateOpen);
     observer.observe(dialog.element, {attributes: true, attributeFilter: ["class"]});
     updateOpen();
-    const disposeDrag = bindBottomSheetDrag(sheet, dialog.element.querySelector(".b3-dialog__scrim"), close);
-    return () => {
+    const disposeDrag = bindBottomSheetDrag(sheet, dialog.element.querySelector(".b3-dialog__scrim"), close, {
+        grip: handle,
+        expand: () => {
+            if (expansion?.playState === "running" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+                layout.setMode("expanded");
+                return;
+            }
+            const from = sheet.getBoundingClientRect().height;
+            layout.setMode("expanded");
+            const to = sheet.getBoundingClientRect().height;
+            if (from !== to) {
+                expansion = sheet.animate([{height: `${from}px`}, {height: `${to}px`}],
+                    {duration: 150, easing: "cubic-bezier(0, 0, .2, 1)"});
+            }
+        },
+        canStart: () => {
+            const body = sheet.querySelector<HTMLElement>(":scope > .b3-dialog__body");
+            return window.siyuan.dialogs?.[window.siyuan.dialogs.length - 1] === dialog &&
+                dialog.element.dataset.dialogClosing !== "true" &&
+                !dialog.element.closest('[inert], [aria-busy="true"]') &&
+                !body?.matches('[inert], [aria-busy="true"]') && layoutOptions?.canStart?.() !== false;
+        },
+        isClosing: () => dialog.element.dataset.dialogClosing === "true",
+    });
+    dragState.cancel = disposeDrag.cancel;
+    const dispose = () => {
+        expansion?.cancel();
+        actionsObserver.disconnect();
+        disposeKeyboardState();
         cancelOpen?.();
+        layout.dispose();
         observer.disconnect();
         disposeDrag();
         handle.remove();
-        window.visualViewport?.removeEventListener("resize", resize);
-        window.visualViewport?.removeEventListener("scroll", resize);
     };
+    dispose.freeze = freeze;
+    return dispose;
 };

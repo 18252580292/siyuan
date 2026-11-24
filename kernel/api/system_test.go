@@ -31,6 +31,7 @@ func TestContractSetAccessAuthCodeDesktopSession(t *testing.T) {
 	for _, mode := range []string{"new", "bound", "remembered", "expired"} {
 		t.Run(mode, func(t *testing.T) {
 			model.Conf = model.NewAppConf()
+			model.Conf.CookieKey = "desktop-setting-test-cookie-key"
 			model.Conf.AccessAuthCode = "old-password"
 			engine := gin.New()
 			engine.Use(ginSessions.Sessions("siyuan", cookie.NewStore([]byte("desktop-setting-test-key"))))
@@ -38,7 +39,7 @@ func TestContractSetAccessAuthCodeDesktopSession(t *testing.T) {
 				session := util.GetSession(c)
 				ws := util.GetWorkspaceSession(session)
 				if mode != "new" {
-					ws.AccessAuthCode = model.Conf.AccessAuthCode
+					model.SetAccessCodeSession(ws, model.Conf.AccessAuthCode)
 					model.BindDesktopSession(c, ws, mode == "remembered")
 					if mode == "expired" {
 						ws.DesktopSessionID = "previous-boot"
@@ -72,11 +73,15 @@ func TestContractSetAccessAuthCodeDesktopSession(t *testing.T) {
 				t.Fatalf("setting password failed: %s, %v", result.Body.String(), err)
 			}
 			var ws util.WorkspaceSession
-			if err := json.Unmarshal(call("GET", "/session", "", result.Result().Cookies()).Body.Bytes(), &ws); err != nil {
+			sessionBody := call("GET", "/session", "", result.Result().Cookies()).Body.Bytes()
+			if err := json.Unmarshal(sessionBody, &ws); err != nil {
 				t.Fatal(err)
 			}
 			if (ws.DesktopSessionID != "") != (mode != "remembered") || !model.IsAccessCodeSessionAuthenticated(&ws) {
 				t.Fatalf("password setting lost session policy: %+v", ws)
+			}
+			if strings.Contains(string(sessionBody), "new-password") {
+				t.Fatalf("session stores the access authorization code: %s", sessionBody)
 			}
 		})
 	}
@@ -338,10 +343,76 @@ func TestGetConfUILayoutByRole(t *testing.T) {
 	}
 }
 
+// TestGetConfOmitsWorkspaceStatForReader 校验非管理员拿不到包含未发布内容的全库统计，管理员保持原样。
+func TestGetConfOmitsWorkspaceStatForReader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	oldConf := model.Conf
+	model.Conf = model.NewAppConf()
+	model.Conf.Sync.Store(conf.NewSync())
+	model.Conf.Sync.Load().Enabled = true
+	model.Conf.Sync.Load().Provider = 1
+	model.Conf.System.Store(&conf.System{})
+	model.Conf.Stat.Store(&conf.Stat{TreeCount: 41, CTreeCount: 17, BlockCount: 401, CBlockCount: 171,
+		DataSize: 41001, CDataSize: 17001, AssetsSize: 41002, CAssetsSize: 17002})
+	t.Cleanup(func() {
+		model.Conf = oldConf
+	})
+
+	for _, test := range []struct {
+		name       string
+		role       model.Role
+		expectStat bool
+	}{
+		{name: "administrator", role: model.RoleAdministrator, expectStat: true},
+		{name: "reader", role: model.RoleReader},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			engine := gin.New()
+			engine.Use(func(c *gin.Context) {
+				c.Set(model.RoleContextKey, test.role)
+				c.Next()
+			})
+			engine.POST("/api/system/getConf", getConf)
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/system/getConf", nil)
+			engine.ServeHTTP(recorder, request)
+
+			response := &struct {
+				Code int `json:"code"`
+				Data struct {
+					Conf struct {
+						Stat *struct {
+							TreeCount  int `json:"treeCount"`
+							BlockCount int `json:"blockCount"`
+						} `json:"stat"`
+					} `json:"conf"`
+				} `json:"data"`
+			}{}
+			if err := json.Unmarshal(recorder.Body.Bytes(), response); err != nil {
+				t.Fatalf("unmarshal getConf response failed: %v", err)
+			}
+			if response.Code != 0 {
+				t.Fatalf("getConf failed: %s", recorder.Body.String())
+			}
+			if !test.expectStat {
+				if response.Data.Conf.Stat != nil {
+					t.Fatalf("reader received workspace statistics: %s", recorder.Body.String())
+				}
+				return
+			}
+			if response.Data.Conf.Stat == nil || response.Data.Conf.Stat.TreeCount != 41 || response.Data.Conf.Stat.BlockCount != 401 {
+				t.Fatalf("administrator workspace statistics missing: %s", recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestPreserveImportedAISecrets(t *testing.T) {
 	currentMCP := &conf.MCP{Servers: []conf.MCPServer{{ID: "server", Headers: map[string]string{"Authorization": "secret"}}}}
 	current := &conf.AI{
-		Web: &conf.AIWeb{APIKey: "web-key"},
+		Web: &conf.AIWeb{APIKey: "web-key", ExaAPIKey: "exa-key"},
 		Providers: []*conf.Provider{
 			{ID: "matching", APIKey: "local-key", BaseURL: "https://example.com", Protocol: "openai"},
 			{ID: "changed-endpoint", APIKey: "endpoint-key", BaseURL: "https://local.example.com"},
@@ -364,12 +435,12 @@ func TestPreserveImportedAISecrets(t *testing.T) {
 	}
 
 	preserveImportedAISecrets(imported, current)
-	if imported.Web.APIKey != "web-key" || imported.Web.FetchProvider != "deepseek" || imported.Web.SearchProvider != "exa" {
+	if imported.Web.ExaAPIKey != "exa-key" || imported.Web.APIKey != "web-key" || imported.Web.FetchProvider != "deepseek" || imported.Web.SearchProvider != "exa" {
 		t.Fatal("web credential or independent provider selection lost on import")
 	}
-	providedWeb := &conf.AI{Web: &conf.AIWeb{APIKey: "provided-web-key"}}
+	providedWeb := &conf.AI{Web: &conf.AIWeb{APIKey: "provided-web-key", ExaAPIKey: "provided-exa-key"}}
 	preserveImportedAISecrets(providedWeb, current)
-	if providedWeb.Web.APIKey != "provided-web-key" {
+	if providedWeb.Web.ExaAPIKey != "provided-exa-key" || providedWeb.Web.APIKey != "provided-web-key" {
 		t.Fatal("provided web credential was overwritten")
 	}
 

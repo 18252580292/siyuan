@@ -1,5 +1,6 @@
 import type {BlockQueryRequestInput} from "../../types/api";
 import {Constants} from "../../constants";
+import {syncRelatedAVEditor} from "../render/av/relatedView";
 import {hideElements} from "../ui/hideElements";
 import {fetchPost} from "../../util/fetch";
 import {migrateLegacyMindmapsBeforeRender} from "../render/listMindmap/migrate";
@@ -30,7 +31,12 @@ import {
     queueHeadingNumberRefresh,
     renderHeadingNumbers
 } from "./headingNumber";
-import {containsCurrentSelection, updateDocumentBottomEof} from "./documentRange";
+import {
+    containsCurrentSelection,
+    markDocumentBoundaryLoaded,
+    updateDocumentBottomEof,
+    updateDocumentTopEof,
+} from "./documentRange";
 import {disabledWYSIWYG} from "./disabledWYSIWYG";
 import {getEmbeddedDocInfoResponse} from "./docInfo";
 import {updateWidgetCacheVersion} from "./widgetCache";
@@ -41,12 +47,13 @@ import {isAndroid, isIPhone, isPhablet} from "./compatibility";
 import {forEachPluginSubscriber} from "../../plugin/EventBusCore";
 import {disposeCustomBlocksInElement, setCustomBlockRootReady} from "../../plugin/customBlockRender";
 import {invalidateTrackedRanges, invalidateTrackedRangesInElement} from "./trackedRange";
-import {areProtylePluginExtensionsEnabled} from "../runtimeCapabilities";
+import {areProtylePluginExtensionsEnabled, ignoresProtyleEditLock} from "../runtimeCapabilities";
 import {updateBackgroundActions} from "../header/backgroundActions";
 import {recordRestoredSpellcheckFocus} from "./spellcheckFocus";
 import {applyPublishFoldStates} from "./viewFold";
 import {getInsertedRenderRoots, renderContent} from "./renderContent";
 import {beginPerformance} from "./performance";
+import {deferDocumentTitleNavigation} from "../header/documentTitleNavigation";
 /// #if MOBILE
 import {updateMobileTitleReadonly} from "./setEditMode";
 import {pauseMobileBarsScroll} from "../../mobile/util/mobileBars";
@@ -68,9 +75,15 @@ export const onGet = (options: {
     isValid?: () => boolean,
     focusAfterZoom?: boolean,
     suppressFocus?: boolean,
-}) => {
+}, sourceTitleFlushed?: IProtyle["title"]) => {
     if (options.isValid && !options.isValid()) {
         options.onAVRenderError?.();
+        return;
+    }
+    if (options.data.code === 0 && options.protyle.title?.prepareForDocumentSwitch &&
+        !options.action?.includes(Constants.CB_GET_APPEND) && !options.action?.includes(Constants.CB_GET_BEFORE) &&
+        sourceTitleFlushed !== options.protyle.title && deferDocumentTitleNavigation(options.protyle,
+            options.data.data.rootID, title => onGet(options, title), options.onAVRenderError)) {
         return;
     }
     if (!options.action) {
@@ -107,7 +120,7 @@ export const onGet = (options: {
 
     if (options.data.data.eof && !options.scrollAttr) {
         if (options.action.includes(Constants.CB_GET_BEFORE)) {
-            options.protyle.wysiwyg.element.firstElementChild.setAttribute("data-eof", "1");
+            markDocumentBoundaryLoaded(options.protyle.wysiwyg.element, "before");
         } else {
             options.protyle.wysiwyg.element.lastElementChild.setAttribute("data-eof", "2");
         }
@@ -324,6 +337,7 @@ const setHTML = (options: {
                     removeElement = removeElement.nextElementSibling as HTMLElement;
                 }
                 if (removeElements.length > 0) {
+                    updateDocumentTopEof(protyle.wysiwyg.element, false);
                     const lastRemoveTop = removeElement.getBoundingClientRect().top;
                     removeElements.forEach(item => {
                         invalidateTrackedRangesInElement(protyle, item);
@@ -372,6 +386,7 @@ const setHTML = (options: {
             invalidateTrackedRanges(protyle);
             disposeCustomBlocksInElement(protyle.wysiwyg.element);
             protyle.wysiwyg.element.innerHTML = options.content;
+            updateDocumentTopEof(protyle.wysiwyg.element);
             // 设置 innerHTML 会导致浏览器将 scrollTop 重置为 0，此处立即恢复以避免页面跳转到开头
             // https://github.com/siyuan-note/siyuan/issues/17886
             if (options.scrollAttr && typeof options.scrollAttr.scrollTop === "number") {
@@ -382,9 +397,11 @@ const setHTML = (options: {
 
         void applyPublishFoldStates(protyle);
         if (options.eof) {
-            const eofElement = options.action.includes(Constants.CB_GET_BEFORE) ?
-                protyle.wysiwyg.element.firstElementChild : protyle.wysiwyg.element.lastElementChild;
-            eofElement?.setAttribute("data-eof", options.action.includes(Constants.CB_GET_BEFORE) ? "1" : "2");
+            if (options.action.includes(Constants.CB_GET_BEFORE)) {
+                markDocumentBoundaryLoaded(protyle.wysiwyg.element, "before");
+            } else {
+                protyle.wysiwyg.element.lastElementChild?.setAttribute("data-eof", "2");
+            }
         }
         updateDocumentBottomEof(protyle.wysiwyg.element);
 
@@ -450,7 +467,7 @@ const setHTML = (options: {
                 protyle.breadcrumb.element.nextElementSibling.textContent = "";
             }
             if (protyle.element.hasAttribute("disabled-forever")) {
-                if (protyle.wysiwyg.element.getAttribute(Constants.CUSTOM_SY_READONLY) !== "true") {
+                if (ignoresProtyleEditLock(protyle) || protyle.wysiwyg.element.getAttribute(Constants.CUSTOM_SY_READONLY) !== "true") {
                     protyle.disabled = false;
                 }
                 protyle.element.removeAttribute("disabled-forever");
@@ -560,6 +577,7 @@ export const disabledForeverProtyle = (protyle: IProtyle) => {
 
 /** 禁用编辑器 */
 export const disabledProtyle = (protyle: IProtyle) => {
+    const hadFocus = protyle.element.contains(document.activeElement);
     const wasDisabled = protyle.disabled;
     /// #if MOBILE
     if (!wasDisabled && window.siyuan.mobile.editor?.protyle === protyle) {
@@ -574,10 +592,8 @@ export const disabledProtyle = (protyle: IProtyle) => {
         protyle.wysiwyg.element.querySelectorAll(".table__select").forEach(item => item.removeAttribute("style"));
     }
     protyle.databaseAttributePanel?.updateReadonly();
-    if (protyle.title && protyle.title.editElement) {
-        protyle.title.editElement.setAttribute("contenteditable", "false");
-        protyle.title.editElement.style.userSelect = "text";
-    }
+    syncRelatedAVEditor(protyle.id);
+    protyle.title?.setReadonly?.(true);
     /// #if MOBILE
     updateMobileTitleReadonly(protyle);
     /// #endif
@@ -585,6 +601,13 @@ export const disabledProtyle = (protyle: IProtyle) => {
         protyle.background.element.classList.remove("protyle-background--enable");
     }
     disabledWYSIWYG(protyle.wysiwyg.element);
+    // 点击只读正文时让滚动容器获得焦点，以便使用浏览器的键盘滚动。
+    protyle.contentElement.tabIndex = -1;
+    // 搜索预览的只读正文无法持有焦点，交由可聚焦容器维持快捷键上下文。
+    if (hadFocus && protyle.element.hasAttribute("tabindex") &&
+        !protyle.element.contains(document.activeElement)) {
+        protyle.element.focus({preventScroll: true});
+    }
     if (!wasDisabled) {
         refreshCalendarReadonly(protyle);
     }
@@ -600,7 +623,7 @@ export const disabledProtyle = (protyle: IProtyle) => {
             protyle.breadcrumb.element.parentElement.querySelector('[data-type="indent"]')?.classList.add("fn__none");
             protyle.breadcrumb.element.parentElement.querySelector('[data-type="outdent"]')?.classList.add("fn__none");
         }
-        protyle.breadcrumb.refreshHistory?.(protyle.block.rootID);
+        protyle.breadcrumb.refreshHistory?.();
     }
     hideTooltip();
 };
@@ -617,11 +640,14 @@ export const enableProtyle = (protyle: IProtyle) => {
     }
     /// #endif
     protyle.disabled = false;
+    protyle.contentElement.removeAttribute("tabindex");
     if (wasDisabled) {
         protyle.wysiwyg.tableControl?.clear();
         protyle.wysiwyg.element.querySelectorAll(".table__select").forEach(item => item.removeAttribute("style"));
     }
     protyle.databaseAttributePanel?.updateReadonly();
+    syncRelatedAVEditor(protyle.id);
+    protyle.title?.setReadonly?.(false);
     if (isMobile()) {
         /// #if MOBILE
         updateMobileTitleReadonly(protyle);
@@ -632,10 +658,6 @@ export const enableProtyle = (protyle: IProtyle) => {
     protyle.wysiwyg.element.style.userSelect = "";
     // 用于区分移动端样式
     protyle.wysiwyg.element.setAttribute("data-readonly", "false");
-    if (protyle.title && protyle.title.editElement) {
-        protyle.title.editElement.setAttribute("contenteditable", "true");
-        protyle.title.editElement.style.userSelect = "";
-    }
     if (protyle.background) {
         protyle.background.element.classList.add("protyle-background--enable");
     }
@@ -647,7 +669,9 @@ export const enableProtyle = (protyle: IProtyle) => {
         }
     });
     protyle.wysiwyg.element.querySelectorAll('[contenteditable="false"][spellcheck]').forEach(item => {
-        item.setAttribute("contenteditable", "true");
+        if (!item.closest('[data-document-title="true"]')) {
+            item.setAttribute("contenteditable", "true");
+        }
     });
     protyle.wysiwyg.element.querySelectorAll('.protyle-action[draggable="false"]').forEach(item => {
         item.setAttribute("draggable", "true");
@@ -675,7 +699,7 @@ export const enableProtyle = (protyle: IProtyle) => {
             protyle.breadcrumb.element.parentElement.querySelector('[data-type="indent"]')?.classList.remove("fn__none");
             protyle.breadcrumb.element.parentElement.querySelector('[data-type="outdent"]')?.classList.remove("fn__none");
         }
-        protyle.breadcrumb.refreshHistory?.(protyle.block.rootID);
+        protyle.breadcrumb.refreshHistory?.();
     }
     hideElements(["gutter"], protyle);
     hideTooltip();
@@ -855,16 +879,14 @@ const focusElementById = (protyle: IProtyle, action: string[], scrollAttr?: IScr
 };
 
 export const setReadonlyByConfig = (protyle: IProtyle, updateReadonly: boolean) => {
-    let readOnly = window.siyuan.config.readonly ? "true" : "false";
-    if (!updateReadonly) {
-        readOnly = protyle.disabled ? "true" : "false";
-    } else if (readOnly === "false") {
-        readOnly = window.siyuan.config.editor.readOnly ? "true" : "false";
-        if (readOnly === "false") {
-            readOnly = protyle.wysiwyg.element.getAttribute(Constants.CUSTOM_SY_READONLY);
-        }
+    const config = window.siyuan.config;
+    let readOnly = updateReadonly ? config.readonly : protyle.disabled;
+    if (ignoresProtyleEditLock(protyle)) {
+        readOnly ||= config.readonly;
+    } else if (updateReadonly) {
+        readOnly ||= config.editor.readOnly || protyle.wysiwyg.element.getAttribute(Constants.CUSTOM_SY_READONLY) === "true";
     }
-    if (readOnly === "true") {
+    if (readOnly) {
         disabledProtyle(protyle);
     } else {
         enableProtyle(protyle);

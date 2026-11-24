@@ -17,10 +17,10 @@ type attributeViewRefSource struct {
 	boxID string
 }
 
-func refreshAttributeViewDynamicRefTexts(updatedDefNodes map[string]*ast.Node, refs []*sql.Ref) {
+func refreshAttributeViewDynamicRefTexts(updatedDefNodes map[string]*ast.Node, refs []*sql.Ref, resolved ...*dynamicRefAnchorResolver) {
 	for _, source := range attributeViewRefSources(refs) {
 		attrView, err := av.ParseAttributeViewInBox(source.avID, source.boxID)
-		if nil != err || nil == attrView || !updateAttributeViewDynamicRefTexts(attrView, updatedDefNodes) {
+		if nil != err || nil == attrView || !updateAttributeViewDynamicRefTexts(attrView, updatedDefNodes, resolved...) {
 			continue
 		}
 		if err = av.SaveAttributeView(attrView); nil != err {
@@ -60,32 +60,31 @@ func attributeViewRefSources(refs []*sql.Ref) (ret []attributeViewRefSource) {
 	return
 }
 
-func updateAttributeViewDynamicRefTexts(attrView *av.AttributeView, updatedDefNodes map[string]*ast.Node) (changed bool) {
+func updateAttributeViewDynamicRefTexts(attrView *av.AttributeView, updatedDefNodes map[string]*ast.Node, resolved ...*dynamicRefAnchorResolver) (changed bool) {
 	if nil == attrView || 0 == len(updatedDefNodes) {
 		return
 	}
 	for _, keyValues := range attrView.KeyValues {
-		if nil == keyValues || nil == keyValues.Key || av.KeyTypeText != keyValues.Key.Type {
+		if nil == keyValues || nil == keyValues.Key || (av.KeyTypeText != keyValues.Key.Type && av.KeyTypeBlock != keyValues.Key.Type) {
 			continue
 		}
 		for _, value := range keyValues.Values {
-			if nil == value || nil == value.Text || !value.Text.IsRich() {
+			if nil == value {
 				continue
 			}
-			fragmentTree, err := av.ParseValueTextRich(value.Text.Rich)
+			fragmentTree, err := av.RichValueTree(value)
 			if nil != err || nil == fragmentTree {
 				continue
 			}
-			valueChanged, _ := updateRefText(fragmentTree.Root, updatedDefNodes)
+			valueChanged, _ := updateRefText(fragmentTree.Root, updatedDefNodes, resolved...)
 			if !valueChanged {
 				continue
 			}
-			richContent, renderErr := av.RenderValueTextRich(fragmentTree)
+			renderErr := av.SetRichValueTree(value, fragmentTree)
 			if nil != renderErr {
 				logging.LogWarnf("render attribute view [%s] dynamic reference text failed: %s", attrView.ID, renderErr)
 				continue
 			}
-			value.Text.Rich.Content = richContent
 			changed = true
 		}
 	}

@@ -9,7 +9,7 @@ import {fetchSyncPost} from "../../util/fetch";
 import {getEditorRange, getUndoFocusContext, restoreFocusContext} from "../util/selection";
 import {pathPosix} from "../../util/pathName";
 import {genAssetHTML} from "../../asset/renderAssets";
-import {hasClosestBlock} from "../util/hasClosest";
+import {hasClosestBlock, hasClosestByClassName} from "../util/hasClosest";
 import {getContenteditableElement} from "../wysiwyg/getBlock";
 import {scrollCenter} from "../../util/highlightById";
 import {confirmDialog} from "../../dialog/confirmDialog";
@@ -172,7 +172,7 @@ const genUploadedLabel = async (responseText: string, protyle: IProtyle, options
     // https://github.com/siyuan-note/siyuan/issues/7624
     const nodeElement = hasClosestBlock(range.startContainer);
     if (nodeElement) {
-        if (nodeElement.classList.contains("table")) {
+        if (nodeElement.classList.contains("table") || hasClosestByClassName(range.startContainer, "callout-title")) {
             insertBlock = false;
         } else {
             const editableElement = getContenteditableElement(nodeElement);
@@ -350,7 +350,7 @@ const uploadPreparedLocalFiles = (input: Extract<IAssetUploadInput, { kind: "loc
         assetPaths.push(item.path);
     });
 
-    confirmDialog(msg ? window.siyuan.languages.upload : "", msg, () => {
+    const upload = () => {
         void (async () => {
             let msgId: string | undefined;
             try {
@@ -407,8 +407,19 @@ const uploadPreparedLocalFiles = (input: Extract<IAssetUploadInput, { kind: "loc
                 }
             }
         })();
-    }, () => {
-        finishUpload(task, callbacks, {status: "canceled"});
+    };
+    // 没有超限提示时不必打断用户，直接开始上传
+    if (!msg) {
+        upload();
+        return;
+    }
+    confirmDialog({
+        title: window.siyuan.languages.upload,
+        text: msg,
+        confirm: upload,
+        cancel: () => {
+            finishUpload(task, callbacks, {status: "canceled"});
+        },
     });
 };
 
@@ -489,7 +500,7 @@ const uploadPreparedFiles = (input: Extract<IAssetUploadInput, { kind: "files" }
     } else {
         formData.append("id", options.document.rootID);
     }
-    confirmDialog(msg ? window.siyuan.languages.upload : "", msg, () => {
+    const upload = () => {
         try {
             if (!callbacks.isTargetAvailable()) {
                 hideMessage(validateResult.msgId);
@@ -579,14 +590,25 @@ const uploadPreparedFiles = (input: Extract<IAssetUploadInput, { kind: "files" }
                 console.error(messageError);
             }
         }
-    }, () => {
-        try {
-            hideMessage(validateResult.msgId);
-        } catch (error) {
-            console.error(error);
-        } finally {
-            finishUpload(task, callbacks, {status: "canceled"});
-        }
+    };
+    // 没有超限提示时不必打断用户，直接开始上传
+    if (!msg) {
+        upload();
+        return;
+    }
+    confirmDialog({
+        title: window.siyuan.languages.upload,
+        text: msg,
+        confirm: upload,
+        cancel: () => {
+            try {
+                hideMessage(validateResult.msgId);
+            } catch (error) {
+                console.error(error);
+            } finally {
+                finishUpload(task, callbacks, {status: "canceled"});
+            }
+        },
     });
 };
 

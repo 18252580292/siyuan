@@ -6,8 +6,10 @@ package bazaar
 
 import (
 	"html"
+	"maps"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"unicode"
@@ -91,26 +93,28 @@ type Package struct {
 	PreviewURL string `json:"previewURL"`
 	IconURL    string `json:"iconURL"`
 
-	Installed               bool   `json:"installed"`
-	HasStorageData          bool   `json:"hasStorageData,omitempty"`
-	Outdated                bool   `json:"outdated"`
-	Current                 bool   `json:"current"`
-	Updated                 string `json:"updated"`
-	Stars                   int    `json:"stars"`
-	OpenIssues              int    `json:"openIssues"`
-	Size                    int64  `json:"size"`
-	HSize                   string `json:"hSize"`
-	InstallSize             int64  `json:"installSize"`
-	HInstallSize            string `json:"hInstallSize"`
-	InstallTime             int64  `json:"installTime"`
-	UpdateTime              int64  `json:"updateTime"`
-	HInstallDate            string `json:"hInstallDate"`
-	HUpdated                string `json:"hUpdated"`
-	Downloads               int    `json:"downloads"`
-	DisallowInstall         bool   `json:"disallowInstall"`
-	DisallowUpdate          bool   `json:"disallowUpdate"`
-	UpdateRequiredMinAppVer string `json:"updateRequiredMinAppVer,omitempty"` // 升级目标要求的最小应用版本
-	InvalidReason           string `json:"invalidReason,omitempty"`           // 本地安装包异常原因
+	Installed                bool   `json:"installed"`
+	HasStorageData           bool   `json:"hasStorageData,omitempty"`
+	Outdated                 bool   `json:"outdated"`
+	Current                  bool   `json:"current"`
+	Created                  string `json:"created,omitempty"` // 首次上架时间，来自在线集市索引；缺失时未知
+	Updated                  string `json:"updated"`
+	Stars                    int    `json:"stars"`
+	OpenIssues               int    `json:"openIssues"`
+	Size                     int64  `json:"size"`
+	HSize                    string `json:"hSize"`
+	InstallSize              int64  `json:"installSize"`
+	HInstallSize             string `json:"hInstallSize"`
+	InstallTime              int64  `json:"installTime"`
+	UpdateTime               int64  `json:"updateTime"`
+	HInstallDate             string `json:"hInstallDate"`
+	HUpdated                 string `json:"hUpdated"`
+	Downloads                int    `json:"downloads"`
+	DisallowInstall          bool   `json:"disallowInstall"`
+	DisallowUpdate           bool   `json:"disallowUpdate"`
+	BazaarVersionUnsupported bool   `json:"bazaarVersionUnsupported,omitempty"` // 在线版本要求的最低应用版本高于当前版本
+	UpdateRequiredMinAppVer  string `json:"updateRequiredMinAppVer,omitempty"`  // 升级目标要求的最小应用版本
+	InvalidReason            string `json:"invalidReason,omitempty"`            // 本地安装包异常原因
 
 	RatingAvailable bool           `json:"ratingAvailable"`  // 在线集市公开评分是否可用
 	Rating          *PackageRating `json:"rating,omitempty"` // 在线集市公开评分
@@ -121,6 +125,58 @@ type Package struct {
 	Enabled               *bool     `json:"enabled,omitempty"`               // Plugin：是否启用
 	UserDisabledInPublish *bool     `json:"userDisabledInPublish,omitempty"` // Plugin：是否由用户在发布服务中禁用
 	Modes                 *[]string `json:"modes,omitempty"`                 // Theme：支持的模式列表
+}
+
+// ClonePackage 复制集市包及其引用字段，用于把缓存中的原型交给调用方就地写入展示字段。
+// 调用方会覆盖 Preferred*、Installed、IconURL 等字段，因此 Package 新增切片、映射或指针字段时
+// 必须同步加入这里的克隆，否则缓存原型会被并发请求改写。
+func ClonePackage(pkg *Package) *Package {
+	if nil == pkg {
+		return nil
+	}
+	ret := *pkg
+	ret.DisplayName = maps.Clone(pkg.DisplayName)
+	ret.Description = maps.Clone(pkg.Description)
+	ret.Readme = maps.Clone(pkg.Readme)
+	ret.DeprecatedReason = maps.Clone(pkg.DeprecatedReason)
+	ret.Kernels = slices.Clone(pkg.Kernels)
+	ret.Backends = slices.Clone(pkg.Backends)
+	ret.Frontends = slices.Clone(pkg.Frontends)
+	ret.BootAppearances = slices.Clone(pkg.BootAppearances)
+	ret.Keywords = slices.Clone(pkg.Keywords)
+	ret.Choices = slices.Clone(pkg.Choices)
+	ret.Icon = clonePointer(pkg.Icon)
+	ret.Preview = clonePointer(pkg.Preview)
+	ret.Funding = cloneFunding(pkg.Funding)
+	ret.Rating = clonePointer(pkg.Rating)
+	ret.Modes = cloneSlicePointer(pkg.Modes)
+	return &ret
+}
+
+func clonePointer[T any](source *T) *T {
+	if nil == source {
+		return nil
+	}
+	value := *source
+	return &value
+}
+
+func cloneSlicePointer[T any](source *[]T) *[]T {
+	if nil == source {
+		return nil
+	}
+	cloned := slices.Clone(*source)
+	return &cloned
+}
+
+func cloneFunding(source *Funding) *Funding {
+	if nil == source {
+		return nil
+	}
+	ret := *source
+	ret.Custom = slices.Clone(source.Custom)
+	ret.Links = slices.Clone(source.Links)
+	return &ret
 }
 
 const (
@@ -160,6 +216,7 @@ func IsValidInstalledPackage(pkg *Package, dirName string) bool {
 type StageRepo struct {
 	URL         string `json:"url"` // owner/repo@hash 形式
 	RepoRef     string `json:"repoRef,omitempty"`
+	Created     string `json:"created,omitempty"`
 	Updated     string `json:"updated"`
 	Stars       int    `json:"stars"`
 	OpenIssues  int    `json:"openIssues"`
@@ -188,12 +245,20 @@ func ParsePackageJSON(filePath string) (ret *Package, err error) {
 		logging.LogErrorf("read [%s] failed: %s", filePath, err)
 		return
 	}
+	return parsePackageJSONData(filePath, data)
+}
+
+// parsePackageJSONData 解析清单内容，并清除只能由在线集市索引提供的字段。
+func parsePackageJSONData(filePath string, data []byte) (ret *Package, err error) {
 	if err = gulu.JSON.UnmarshalJSON(data, &ret); err != nil {
 		logging.LogErrorf("parse [%s] failed: %s", filePath, err)
 		return
 	}
 
 	ret.URL = strings.TrimSuffix(ret.URL, "/")
+	// 首次上架时间和在线版本兼容性只能由集市索引提供，不能由本地清单声明。
+	ret.Created = ""
+	ret.BazaarVersionUnsupported = false
 	clearPackageDeprecationMetadata(ret)
 	return
 }

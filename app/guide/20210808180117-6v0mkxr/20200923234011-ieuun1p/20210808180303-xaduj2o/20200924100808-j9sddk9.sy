@@ -6,7 +6,7 @@
 		"id": "20200924100808-j9sddk9",
 		"title": "Import and Export",
 		"type": "doc",
-		"updated": "20261024164212"
+		"updated": "20261104002100"
 	},
 	"Children": [
 		{
@@ -744,6 +744,34 @@
 									"Data": "Markdown"
 								}
 							]
+						},
+						{
+							"ID": "20261108001000-45919c5",
+							"Type": "NodeParagraph",
+							"Properties": {
+								"id": "20261108001000-45919c5",
+								"updated": "20261108001000"
+							},
+							"Children": [
+								{
+									"Type": "NodeTextMark",
+									"TextMarkType": "kbd",
+									"TextMarkTextContent": "Settings"
+								},
+								{
+									"Type": "NodeText",
+									"Data": " - "
+								},
+								{
+									"Type": "NodeTextMark",
+									"TextMarkType": "kbd",
+									"TextMarkTextContent": "Export"
+								},
+								{
+									"Type": "NodeText",
+									"Data": " controls whether Markdown copies and exports include automatic heading numbers. “Include automatic heading numbers in Markdown exports” is disabled by default, omitting numbers from Markdown output without changing the document or editor settings. Turn it on to preserve numbering when the document has heading numbering enabled. Copying uses this saved preference directly without a numbering prompt. Other export formats are unaffected."
+								}
+							]
 						}
 					]
 				},
@@ -927,6 +955,75 @@
 				{
 					"Type": "NodeText",
 					"Data": "PDF export also has an independent Export title image switch. It is enabled by default and remembers your choice separately from image exports, without affecting the document title or body images. Set it in the PDF preview window on desktop or in the print settings dialog on mobile. Desktop saves the choice when exporting; mobile saves it when confirming the print settings."
+				}
+			]
+		},
+		{
+			"ID": "20261118183342-p6h9v2m",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261118183342-p6h9v2m",
+				"updated": "20261118183342"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "In the desktop PDF export preview, enable "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "Paged"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " and select levels under "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "Start headings on a new page"
+				},
+				{
+					"Type": "NodeText",
+					"Data": ". When "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "Merge subdocuments"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " is enabled, a subdocument starts on a new page if its title matches a selected level, even when the previous document ends with a heading. Consecutive headings in the same document stay together if there is no body content between them."
+				}
+			]
+		},
+		{
+			"ID": "20261111230000-n53cyhw",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261111230000-n53cyhw",
+				"updated": "20261111230000"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "For each PDF export, you can choose how block references and block hyperlinks are exported in the desktop preview window or mobile print settings. The initial selection follows the global export settings. Choosing Just anchor text keeps reference labels without including the referenced content. Changes apply only to this export and do not change the global settings; the desktop preview refreshes when you change the selection."
+				}
+			]
+		},
+		{
+			"ID": "20261104002100-drlmzre",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261104002100-drlmzre",
+				"updated": "20261104002100"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "When exporting PDF on desktop, the save dialog uses the document title as the default filename and PDF as the file type. You can change the filename and save location. If you select an existing PDF with the same name, the system asks you to confirm overwriting it."
 				}
 			]
 		},

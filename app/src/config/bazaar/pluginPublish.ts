@@ -13,15 +13,18 @@ export const openPluginPublishData = async (packageName: string) => {
         showMessage(window.siyuan.languages.pluginPublishDataUnavailable);
         return;
     }
-    confirmDialog(window.siyuan.languages.pluginPublishData,
-        `<div>${escapeHtml(packageName)}</div>` +
+    confirmDialog({
+        title: window.siyuan.languages.pluginPublishData,
+        text: `<div>${escapeHtml(packageName)}</div>` +
         escapeHtml(granted ? window.siyuan.languages.pluginPublishDataRevokeTip :
             window.siyuan.languages.pluginPublishDataGrantTip) +
-        `<ul>${fields.map(field => `<li>${escapeHtml(field)}</li>`).join("")}</ul>`, () => {
+        `<ul>${fields.map(field => `<li>${escapeHtml(field)}</li>`).join("")}</ul>`,
+        confirm: () => {
             void fetchSyncPost("/api/petal/setPluginPublishDataGrant", {
                 packageName,
                 fields,
                 enabled: !granted,
             });
-        });
+        },
+    });
 };

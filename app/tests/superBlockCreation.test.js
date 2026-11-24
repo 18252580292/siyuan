@@ -26,6 +26,7 @@ const sources = () => {
             (extract("protyle/util/selectionOffsets.ts", ["focusByRange"]) +
         extract("protyle/util/selection.ts", ["focusByWbr"])),
             extract("protyle/wysiwyg/getBlock.ts", ["getContenteditableElement", "getParentBlock"]),
+            extract("protyle/hint/titleSlash.ts", ["isTitleSlashContext"]),
             extract("mobile/util/keyboardToolbar.ts", ["getSlashItem", "renderSlashMenu"]),
         ].join("\n"),
         hint: compile(readFileSync(path.join(__dirname, "../src/protyle/hint/index.ts"), "utf8")),
@@ -56,6 +57,7 @@ const cases = async source => {
     let submitted = [];
     let keyboardRequests = 0;
     let mobile = false;
+    const fadedBlocks = new Set();
     const transaction = (_protyle, forward, backward) => submitted.push({forward, backward});
     const getEditorRange = () => protyle.toolbar.range;
     const deps = {
@@ -74,6 +76,7 @@ const cases = async source => {
         getEditorRange,
         getUndoFocusContext: () => ({undoFocusId: "original"}),
         hideElements: () => root.querySelectorAll(".protyle-wysiwyg--select").forEach(node => node.classList.remove("protyle-wysiwyg--select")),
+        bgFade: element => fadedBlocks.add(element),
         scrollCenter: () => {},
         isMobile: () => mobile,
         restoreEditorFocusRange: (_element, range) => {
@@ -198,6 +201,7 @@ const cases = async source => {
         root.innerHTML = lute.Md2BlockDOM(markdown);
         submitted = [];
         headingGroups.clear();
+        fadedBlocks.clear();
         select(root.firstElementChild);
     };
     const capture = () => {
@@ -330,6 +334,8 @@ const cases = async source => {
                         child.textContent.replace(/\u200b/g, "") === ""));
                 check.ok(created, `two empty paragraphs: ${layout}, ${text}, ${container}: ${root.innerHTML}`);
                 check.equal(created.dataset.sbLayout, layout);
+                check.equal(children(created).filter(child => fadedBlocks.has(child)).length, 2,
+                    `inserted super block highlights its children: ${layout}, ${text}, ${container}`);
                 if (text === "/") {
                     check.equal(created.getAttribute("custom-test"), "preserved");
                     check.equal(created.style.color, "red");
@@ -360,6 +366,8 @@ const cases = async source => {
         hint.fill(decodeURIComponent(button.dataset.value), protyle, false);
         check.equal(root.firstElementChild.dataset.sbLayout, layout);
         check.equal(children(root.firstElementChild).length, 2);
+        check.equal(children(root.firstElementChild).filter(child => fadedBlocks.has(child)).length, 2,
+            `mobile slash insertion highlights super block children: ${layout}`);
         check.ok(children(root.firstElementChild)[0].contains(getSelection().focusNode));
         verifyReplay(before);
     }

@@ -10,7 +10,7 @@ import {getRecentDocs} from "../../../mobile/menu/getRecentDocs";
 import {openNewWindow} from "../../../window/openNewWindow";
 import {openBacklink, openGraph, openOutline, selectOpenTab, toggleDockBar} from "../../../layout/dock/util";
 import {openGlobalSearch} from "../../../search/util";
-import {workspaceMenu} from "../../../menus/workspace";
+import {mainMenu} from "../../../menus/mainMenu";
 import {isWindow} from "../../../util/functions";
 import {openRecentDocs} from "../../../business/openRecentDocs";
 import {openSearch} from "../../../search/spread";
@@ -161,8 +161,8 @@ export const globalCommand = (command: string, app: App, range?: Range, openOnly
             return true;
         case "mainMenu":
             if (!isWindow()) {
-                const target = document.querySelector("#barWorkspace");
-                workspaceMenu(app, target.getBoundingClientRect(), openOnly, target);
+                const target = document.getElementById(Constants.MENU_BAR_MAIN_MENU);
+                mainMenu(app, target.getBoundingClientRect(), openOnly, target);
             }
             return true;
         case "recentDocs":
@@ -200,26 +200,15 @@ export const globalCommand = (command: string, app: App, range?: Range, openOnly
                     return true;
                 }
                 if (childData.instance === "Custom") {
-                    let exit = childData.customModelType === "siyuan-card";
-                    if (!exit) {
-                        app.plugins.find(p => {
-                            if (p.models[childData.customModelType]) {
-                                exit = true;
-                                return true;
-                            }
-                        });
-                    }
-                    if (exit) {
-                        openFile({
-                            app,
-                            custom: {
-                                icon: closeData.icon,
-                                title: closeData.title,
-                                data: childData.customModelData,
-                                id: childData.customModelType
-                            },
-                        });
-                    }
+                    openFile({
+                        app,
+                        custom: {
+                            icon: closeData.icon,
+                            title: closeData.title,
+                            data: childData.customModelData,
+                            id: childData.customModelType
+                        },
+                    });
                     return true;
                 }
                 fetchPost("/api/block/getBlockInfo", {id: childData.rootId || childData.blockId}, (infoResponse) => {

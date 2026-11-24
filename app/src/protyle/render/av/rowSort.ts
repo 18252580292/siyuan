@@ -53,7 +53,7 @@ export const sortAVRows = async (protyle: IProtyle, blockElement: HTMLElement, s
             transaction(protyle, preview.doOperations, preview.undoOperations);
         };
         if (preview.conflict) {
-            confirmDialog(window.siyuan.languages.removeSorts, window.siyuan.languages.avDragRemoveSorts, apply);
+            confirmDialog({title: window.siyuan.languages.removeSorts, text: window.siyuan.languages.avDragRemoveSorts, confirm: apply});
         } else {
             apply();
         }

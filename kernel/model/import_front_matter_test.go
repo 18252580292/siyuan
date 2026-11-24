@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	"github.com/88250/lute/ast"
+	"github.com/88250/lute/render"
+	"github.com/siyuan-note/siyuan/kernel/treenode"
+	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
 func TestParseStdMdInvalidFrontMatterPreservesMarkdown(t *testing.T) {
@@ -60,6 +63,26 @@ func TestParseStdMdValidFrontMatterCompatibility(t *testing.T) {
 	}
 }
 
+func TestImportedFrontMatterExportsAsFencedCode(t *testing.T) {
+	const source = "---\ntitle: Home\ntags: [index, personal]\n---\n\n# Home\n\nSome text.\n"
+	engine := util.NewLute()
+	tree, _, _, _ := parseStdMd([]byte(source), false)
+	stored := render.NewJSONRenderer(tree, engine.RenderOptions, engine.ParseOptions).Render()
+	tree, err := treenode.ParseJSONWithoutFix(stored, engine.ParseOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	markdown := string(render.NewProtyleExportMdRenderer(tree, engine.RenderOptions, engine.ParseOptions).Render())
+	if strings.Count(markdown, "```") != 2 || !strings.Contains(markdown, "```yaml\n---\ntitle: Home\ntags: [index, personal]\n---\n```") ||
+		!strings.Contains(markdown, "# Home\n") || !strings.Contains(markdown, "Some text.") {
+		t.Fatalf("front matter or body lost during Markdown export: %q", markdown)
+	}
+	preview := string(render.NewProtyleExportRenderer(tree, engine.RenderOptions, engine.ParseOptions).Render())
+	if !strings.Contains(preview, "title: Home") || !strings.Contains(preview, "tags: [index, personal]") {
+		t.Fatalf("front matter lost during HTML export: %s", preview)
+	}
+}
+
 func TestParseStdMdTagsTypes(t *testing.T) {
 	for _, tc := range []struct {
 		name, yaml, tags string
@@ -85,5 +108,40 @@ func TestParseStdMdTagsTypes(t *testing.T) {
 				t.Fatalf("body was not preserved: %v", body)
 			}
 		})
+	}
+}
+
+func TestParseStdMdEmptyFrontMatter(t *testing.T) {
+	for _, header := range []string{"", "\n", " \n\t\n", "# comment\n# another comment\n"} {
+		for _, newline := range []string{"\n", "\r\n"} {
+			source := strings.ReplaceAll("---\n"+header+"---\n\nBody\n", "\n", newline)
+			tree, id, title, updated := parseStdMd([]byte(source), false)
+			if id != "" || title != "" || updated != "" {
+				t.Fatalf("unexpected attributes: %q %q %q", id, title, updated)
+			}
+			bodies := 0
+			ast.Walk(tree.Root, func(n *ast.Node, entering bool) ast.WalkStatus {
+				if !entering {
+					return ast.WalkContinue
+				}
+				if n.Type == ast.NodeThematicBreak {
+					t.Fatalf("empty front matter became separator: %q", source)
+				}
+				if n.Type == ast.NodeParagraph && n.Text() == "Body" {
+					bodies++
+				}
+				return ast.WalkContinue
+			})
+			if bodies != 1 {
+				t.Fatalf("body count = %d", bodies)
+			}
+		}
+	}
+}
+
+func TestParseStdMdNegativeZero(t *testing.T) {
+	tree, _, title, _ := parseStdMd([]byte("---\ntitle: -0\nnumber: -0\n---\nBody\n"), false)
+	if title != "-0" || tree.Root.IALAttr("custom-number") != "-0" {
+		t.Fatalf("negative zero lost its sign: %q %v", title, tree.Root.KramdownIAL)
 	}
 }

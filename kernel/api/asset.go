@@ -179,15 +179,19 @@ var getDocAssets = contractHandler(apicontract.GetDocAssets, func(c *gin.Context
 		retainQueryStr = *request.RetainQueryStr
 	}
 
-	assets, err := model.DocAssets(id, retainQueryStr)
-	if err != nil {
-		return apicontract.Failure[[]string](-1, err.Error())
-	}
+	var assets []string
+	var err error
 	if model.IsReadOnlyRoleContext(c) {
 		publishAccess := model.GetPublishAccess()
 		if !model.CheckBlockIdAccessableByPublishAccess(c, publishAccess, id) {
 			return apicontract.Failure[[]string](-1, fmt.Sprintf(model.Conf.Language(15), id))
 		}
+		assets, err = model.DocAssetsForPublishAccess(c, publishAccess, id, retainQueryStr)
+	} else {
+		assets, err = model.DocAssets(id, retainQueryStr)
+	}
+	if err != nil {
+		return apicontract.Failure[[]string](-1, err.Error())
 	}
 	return apicontract.Success(assets)
 })
@@ -520,7 +524,17 @@ var insertCover = contractHandler(apicontract.InsertCover, func(c *gin.Context, 
 })
 
 var uploadAsset = contractHandler(apicontract.UploadAsset, func(c *gin.Context, request apicontract.UploadAssetRequest) apicontract.Response[apicontract.AssetUploadData] {
-	result, message, err := model.UploadAssets(model.AssetUploadRequest{ID: request.ID, AssetsDirPath: request.AssetsDirPath, Files: request.Files})
+	excludeFromCleanup := false
+	if request.ExcludeFromCleanup != nil {
+		switch *request.ExcludeFromCleanup {
+		case "true":
+			excludeFromCleanup = true
+		case "false":
+		default:
+			return apicontract.Failure[apicontract.AssetUploadData](-1, "excludeFromCleanup must be true or false")
+		}
+	}
+	result, message, err := model.UploadAssets(model.AssetUploadRequest{ID: request.ID, AssetsDirPath: request.AssetsDirPath, Files: request.Files, ExcludeFromCleanup: excludeFromCleanup})
 	if err != nil {
 		return apicontract.Failure[apicontract.AssetUploadData](-1, err.Error())
 	}

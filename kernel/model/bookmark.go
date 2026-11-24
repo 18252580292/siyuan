@@ -72,7 +72,7 @@ func removeBookmark(bookmark string, beforeCommit func()) (err error) {
 			if beforeCommit != nil {
 				beforeCommit()
 			}
-			if err = writeReplacementTree(tree, original, "", false); err != nil {
+			if err = writeReplacementTree(tree, original, "", false, nil); err != nil {
 				util.ClearPushProgress(100)
 				return
 			}
@@ -154,7 +154,7 @@ func renameBookmark(oldBookmark, newBookmark string, beforeCommit func()) (err e
 			if beforeCommit != nil {
 				beforeCommit()
 			}
-			if err = writeReplacementTree(tree, original, "", false); err != nil {
+			if err = writeReplacementTree(tree, original, "", false, nil); err != nil {
 				util.ClearPushProgress(100)
 				return
 			}
@@ -224,7 +224,8 @@ func filterBookmarkLabelsByPublishAccess(c *gin.Context, publishAccess PublishAc
 	return
 }
 
-func BuildBookmark() (ret *Bookmarks) {
+// BuildBookmark 构造书签面板数据；forReader 为 true 时不输出编辑器私有的行级备注。
+func BuildBookmark(forReader bool) (ret *Bookmarks) {
 	FlushTxQueue()
 	sql.FlushQueue()
 
@@ -249,9 +250,17 @@ func BuildBookmark() (ret *Bookmarks) {
 			tree, err := LoadTreeByBlockID(block.ID)
 			if err != nil {
 				logging.LogErrorf("parse block [%s] failed: %s", block.ID, err)
+				if forReader {
+					// 索引内容可能包含行级备注，读者侧不返回未经过滤的内容
+					block.Content = ""
+				}
 			} else {
 				n := treenode.GetNodeInTree(tree, block.ID)
-				block.Content = renderOutline(n, luteEngine)
+				if forReader {
+					block.Content = renderOutlineForReader(n, luteEngine)
+				} else {
+					block.Content = renderOutline(n, luteEngine)
+				}
 			}
 		}
 

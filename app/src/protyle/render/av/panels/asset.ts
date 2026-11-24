@@ -1,10 +1,9 @@
-import { getAssetHTML, bindAssetEvent, addAssetLink, updateAssetCell, editAssetItem } from "../asset";
-import { setPosition } from "../../../../util/setPosition";
+import { getAssetHTML, bindAssetEvent, addAssetLink, updateAssetCell, editAssetItem, previewAVAssetImages } from "../asset";
+import { setAVCellPanelPosition } from "../cellPanelPosition";
 import { Constants } from "../../../../constants";
 import { assetMenu } from "../../../../menus/protyle";
 import { getAssetExtension } from "../../../../util/pathName";
 import { isBrowserRenderableImagePath } from "../../../../util/imageURL";
-import { previewAttrViewImages } from "../../../preview/image";
 import { openLink } from "../../../../editor/openLink";
 import type { IAVPanelDescriptor } from "./types";
 export const assetPanel: IAVPanelDescriptor = {
@@ -19,9 +18,12 @@ export const assetPanel: IAVPanelDescriptor = {
             cellElements: context.options.cellElements,
             blockElement: context.options.blockElement
         });
+        setAVCellPanelPosition(context.menuElement, context.cellRect);
         setTimeout(() => {
-            setPosition(context.menuElement, context.cellRect.left, context.cellRect.bottom, context.cellRect.height, 0, true);
-        }, Constants.TIMEOUT_LOAD); // 等待加载
+            if (context.menuElement.isConnected) {
+                setAVCellPanelPosition(context.menuElement, context.cellRect);
+            }
+        }, Constants.TIMEOUT_LOAD); // 等待图片加载
     },
     actions: {
         "addAssetLink": (context, action) => {
@@ -72,11 +74,7 @@ export const assetPanel: IAVPanelDescriptor = {
             const assetLink = action.target.parentElement.dataset.content;
             if (action.target.parentElement.dataset.type === "image" &&
                 isBrowserRenderableImagePath(assetLink)) {
-                previewAttrViewImages(assetLink, context.avID,
-                    context.options.blockElement.getAttribute("data-node-id"),
-                    context.options.blockElement.getAttribute(Constants.CUSTOM_SY_AV_VIEW),
-                    context.options.blockElement.querySelector('[data-type="av-search"]')?.textContent.trim() || "",
-                    context.options.cellElements[0]?.closest<HTMLElement>(".av__body")?.dataset.groupId);
+                previewAVAssetImages(assetLink, context.options.blockElement, context.options.cellElements[0]);
             }
             else {
                 openLink(context.options.protyle.app, assetLink, action.event, action.event.ctrlKey || action.event.metaKey);

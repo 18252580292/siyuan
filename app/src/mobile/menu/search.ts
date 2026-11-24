@@ -2,6 +2,7 @@ import {removeSearchCriterion} from "../../config/util/resourceConfig";
 import {toggleMenu} from "../../menus/menuToggle";
 import {closePanel} from "../util/closePanel";
 import {updateSearchMethodControls} from "../../search/methodCapabilities";
+import {bindSearchInput} from "../../search/input";
 import {buildSearchRequest, refreshSearchConfigHPath} from "../../search/config";
 import {resolveCurrentSearchHPath} from "../../search/path";
 import {focusSearchInput} from "../../search/focus";
@@ -47,6 +48,7 @@ import {
     toggleSearchHistory
 } from "../../search/toggleHistory";
 import {cancelSearchRequest, scheduleSearchRequest} from "../../search/request";
+import {observeSearchResultSnippets} from "../../search/resultSnippet";
 import {highlightMobileSearchResult} from "./searchHighlight";
 
 let searchOpenVersion = 0;
@@ -213,6 +215,7 @@ const onRecentBlocks = (data: IBlock[], config: Config.IUILayoutTabSearchConfig,
         newId?: string
     }) => {
     const listElement = document.querySelector("#searchList");
+    const groupFolded = config.group === 1 && Boolean(window.siyuan.config.search?.groupFolded);
     let resultHTML = "";
     let currentData;
     let newData;
@@ -221,11 +224,11 @@ const onRecentBlocks = (data: IBlock[], config: Config.IUILayoutTabSearchConfig,
         if (item.children) {
             resultHTML += `<div class="b3-list-item">
 <span class="b3-list-item__toggle b3-list-item__toggle--hl">
-    <svg class="b3-list-item__arrow b3-list-item__arrow--open"><use xlink:href="#iconRight"></use></svg>
+    <svg class="b3-list-item__arrow${groupFolded ? "" : " b3-list-item__arrow--open"}"><use xlink:href="#iconRight"></use></svg>
 </span>
 ${getFileTreeIconHTML(getNotebookIcon(item.box), "notebook", "b3-list-item__graphic", true)}
 <span class="b3-list-item__text" style="color: var(--b3-theme-on-surface)">${escapeHtml(title)}</span>
-</div><div>`;
+</div><div${groupFolded ? ' class="fn__none"' : ""}>`;
             item.children.forEach((childItem) => {
                 if (focusId) {
                     if (childItem.id === focusId.currentId) {
@@ -274,6 +277,7 @@ ${childItem.tag ? `<span class="b3-list-item__meta b3-list-item__meta--ellipsis"
         ${window.siyuan.languages.newFile} <mark>${(document.querySelector("#toolbarSearch") as HTMLTextAreaElement).value}</mark>
     </span>
 </div>`;
+    observeSearchResultSnippets(listElement);
     listElement.scrollTop = 0;
     let countHTML = "";
     if (response && response.data.matchedBlockCount > 0) {
@@ -300,7 +304,8 @@ ${childItem.tag ? `<span class="b3-list-item__meta b3-list-item__meta--ellipsis"
         const currentList = listElement.querySelector(`[data-node-id="${currentData.id}"]`) as HTMLElement;
         if (currentList) {
             currentList.classList.add("b3-list-item--focus");
-            currentList.scrollIntoView();
+            (currentList.parentElement.classList.contains("fn__none") ?
+                currentList.parentElement.previousElementSibling : currentList).scrollIntoView();
         }
     }
 };
@@ -394,11 +399,7 @@ const initSearchEvent = (app: App, element: Element, config: Config.IUILayoutTab
     let focusTimeout = 0;
     const searchInputElement = document.getElementById("toolbarSearch") as HTMLTextAreaElement;
     searchInputElement.value = config.k || "";
-    searchInputElement.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" && config.method !== 2) {
-            event.preventDefault();
-        }
-    });
+    bindSearchInput(searchInputElement, () => config.method);
     searchInputElement.addEventListener("compositionend", (event: InputEvent) => {
         if (event && event.isComposing) {
             return;
@@ -889,7 +890,7 @@ export const popSearch = (app: App, searchConfig?: Config.IUILayoutTabSearchConf
             <svg data-type="remove-path" class="b3-chip__close"><use xlink:href="#iconClose"></use></svg>
         </div>
     </div>
-    <div class="toolbar">
+    <div class="toolbar toolbar--bottom">
         <span class="fn__flex-1"></span>
         <svg data-type="toggle-replace" class="toolbar__icon${window.siyuan.isPublish ? " fn__none" : ""}${config.hasReplace ? " toolbar__icon--active" : ""}"><use xlink:href="#iconReplace"></use></svg>
         <svg ${enableIncludeChild ? "" : "disabled"} data-type="include" class="toolbar__icon${includeChild ? " toolbar__icon--active" : ""}"><use xlink:href="#iconInclude"></use></svg>
@@ -918,7 +919,7 @@ export const popSearch = (app: App, searchConfig?: Config.IUILayoutTabSearchConf
         </div>
         <div id="searchAssetList" style="overflow:auto;" class="fn__flex-1 b3-list b3-list--background"></div>
         <div id="searchAssetPreview" class="fn__flex-1 search__preview b3-typography" style="padding: 8px;border-bottom: 1px solid var(--b3-border-color);"></div>
-        <div class="toolbar">
+        <div class="toolbar toolbar--bottom">
             <span class="fn__flex-1"></span>
             <svg data-type="queryAsset" class="toolbar__icon"><use xlink:href="#iconRegex"></use></svg>
             <svg data-type="filterAsset" class="toolbar__icon"><use xlink:href="#iconFilter"></use></svg>
@@ -936,7 +937,7 @@ export const popSearch = (app: App, searchConfig?: Config.IUILayoutTabSearchConf
             <svg data-type="unRefNext" disabled="disabled" class="toolbar__icon"><use xlink:href="#iconRight"></use></svg>
         </div>
         <div id="searchUnRefList" style="overflow:auto;" class="fn__flex-1 b3-list b3-list--background"></div>
-        <div class="toolbar">
+        <div class="toolbar toolbar--bottom">
             <span class="fn__flex-1"></span>
             <svg data-type="refreshUnRef" class="toolbar__icon"><use xlink:href="#iconRefresh"></use></svg>
             <svg data-type="goSearch" class="toolbar__icon"><use xlink:href="#iconBack"></use></svg>
@@ -1059,7 +1060,7 @@ const getUnRefListMobile = (element: Element, page = 1) => {
 <span class="b3-list-item__text b3-list-item__meta">${title}</span>
 </div>`;
         });
-        element.querySelector("#searchUnRefResult").innerHTML = `<span class="fn__flex-center">${window.siyuan.languages.findInDoc.replace("${x}", response.data.matchedRootCount).replace("${y}", response.data.matchedBlockCount)}</span>
+        element.querySelector("#searchUnRefResult").innerHTML = `<span class="fn__flex-center">${window.siyuan.languages.findInDoc.replace("${x}", String(response.data.matchedRootCount)).replace("${y}", String(response.data.matchedBlockCount))}</span>
 <span class="fn__flex-1"></span>
 <span class="fn__flex-center">${page}/${response.data.pageCount || 1}</span>`;
         element.querySelector("#searchUnRefList").innerHTML = resultHTML || `<div class="search__empty">

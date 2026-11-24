@@ -1,10 +1,15 @@
-import {isInMobileApp} from "../../protyle/util/compatibility";
+import {isInMobileApp, isIOSDevice} from "../../protyle/util/compatibility";
+
+// iOS WebView 可以通过可见视口反映键盘遮挡，布局视口仍保持原高度。
+export const getMobileVisualViewport = () => !isInMobileApp() || isIOSDevice() ? window.visualViewport : undefined;
 
 export const getVisibleViewportBounds = () => {
-    if (!isInMobileApp() && window.visualViewport) {
+    const viewport = getMobileVisualViewport();
+    if (viewport) {
+        const top = Math.max(0, Math.min(window.innerHeight, viewport.offsetTop));
         return {
-            top: window.visualViewport.offsetTop,
-            bottom: window.visualViewport.offsetTop + window.visualViewport.height,
+            top,
+            bottom: Math.max(top, Math.min(window.innerHeight, viewport.offsetTop + viewport.height)),
         };
     }
     return {

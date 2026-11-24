@@ -220,7 +220,7 @@ export class Inbox extends Model {
     <span data-type="back" class="toolbar__text fn__flex-1">${data.shorthandTitle}</span>
     ${linkHTML}
 </div>
-<div class="b3-typography b3-typography--default" style="padding: 0 8px 8px">
+<div class="b3-typography b3-typography--default" style="padding: 0 8px calc(8px + var(--android-navigation-bar-height, 0px))">
 ${data.shorthandContent}
 </div>`);
         /// #else
@@ -310,15 +310,20 @@ ${data.shorthandContent}
                             ids.forEach((id, index) => {
                                 removeTitle += '<code class="fn__code">' + escapeHtml(this.data[id].shorthandTitle) + "</code>" + (index === ids.length - 1 ? "" : ", ");
                             });
-                            confirmDialog(window.siyuan.languages.deleteOpConfirm, `${window.siyuan.languages.confirmDelete} ${removeTitle}?`, () => {
-                                if (itemElement) {
-                                    this.remove([itemElement.dataset.id]);
-                                } else if (detailsElement.classList.contains("fn__none")) {
-                                    this.remove();
-                                } else {
-                                    this.remove([detailsElement.getAttribute("data-id")]);
-                                }
-                            }, undefined, true);
+                            confirmDialog({
+                                title: window.siyuan.languages.deleteOpConfirm,
+                                text: `${window.siyuan.languages.confirmDelete} ${removeTitle}?`,
+                                confirm: () => {
+                                    if (itemElement) {
+                                        this.remove([itemElement.dataset.id]);
+                                    } else if (detailsElement.classList.contains("fn__none")) {
+                                        this.remove();
+                                    } else {
+                                        this.remove([detailsElement.getAttribute("data-id")]);
+                                    }
+                                },
+                                isDelete: true,
+                            });
                         }
                     }).element);
                 }

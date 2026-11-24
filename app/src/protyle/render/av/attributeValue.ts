@@ -14,6 +14,7 @@ import {getAVColorStyle} from "./color";
 import {getHostCapabilities} from "../../../util/hostCapabilities";
 import {getAVRichTextPreviewHTML, getAVTextSource} from "./richText";
 import {getAVLocationDisplayText} from "./locationValue";
+import {getAVPrimaryPreviewHTML} from "./primaryRich";
 
 export {createEmptyAVValue} from "./cellValue";
 
@@ -31,14 +32,15 @@ export const genAVRelationHTML = (item: IAVCellValue, rowID: string, showIcon = 
     }
     const useTemplate = hasAVRenderTemplateResult(item);
     const content = useTemplate ? getAVTemplateHTML(item.renderedContent || "") :
-        escapeHtmlTextAndAttr(item.block.content || window.siyuan.languages.untitled);
-    const templateClass = useTemplate ? " av__celltext--template" : "";
+        item.block.richBlockDOM ? getAVPrimaryPreviewHTML(item) : escapeHtmlTextAndAttr(item.block.content || window.siyuan.languages.untitled);
+    const templateClass = useTemplate ? " av__celltext--template" : item.block.richBlockDOM ? " av__celltext--rich b3-typography document-title-preview" : "";
     const storedValue = escapeAttr(encodeURIComponent(JSON.stringify(cloneAVCellValueSnapshot(item))));
     const attributes = `data-row-id="${escapeAttr(rowID)}" data-relation-value="${storedValue}" class="av__cell--relation"`;
     if (item.isDetached) {
-        return `<span ${attributes}>${renderAVBlockIcon(item, showIcon)}<span class="av__celltext${templateClass}">${content}</span></span>`;
+        return `<div ${attributes}>${renderAVBlockIcon(item, showIcon)}<div class="av__celltext${templateClass}">${content}</div></div>`;
     }
-    return `<span ${attributes} data-block-id="${item.block.id}">${renderAVBlockIcon(item, showIcon)}<span data-type="block-ref" data-id="${item.block.id}" data-subtype="${getAVBlockRefSubtype(item)}" class="av__celltext av__celltext--ref${templateClass}">${content}</span></span>`;
+    const tag = useTemplate || item.block.richBlockDOM ? "div" : "span";
+    return `<div ${attributes} data-block-id="${item.block.id}">${renderAVBlockIcon(item, showIcon)}<${tag} data-type="block-ref" data-id="${item.block.id}" data-subtype="${getAVBlockRefSubtype(item)}" class="av__celltext av__celltext--ref${templateClass}">${content}</${tag}></div>`;
 };
 
 const AV_TEMPLATE_INTERACTIVE_SELECTOR = [
@@ -84,6 +86,7 @@ const genAVRollupHTML = (value: IAVCellValue) => {
     const dataValue: IAVCellDateValue = value[value.type as "date"];
     switch (value.type) {
         case "block":
+            if (value.block?.richBlockDOM) { return genAVRelationHTML(value, value.blockID, false); }
             if (value?.isDetached) {
                 html = `<span>${escapeHtml(value.block?.content || window.siyuan.languages.untitled)}</span>`;
             } else {
@@ -129,7 +132,7 @@ const genAVRollupHTML = (value: IAVCellValue) => {
     return html;
 };
 
-export const genAVValueHTML = (value: IAVCellValue, dateFormat: TAVDateFormat = "", renderTemplate?: string) => {
+export const genAVValueHTML = (value: IAVCellValue, dateFormat: TAVDateFormat = "", renderTemplate?: string, relationLimit = Infinity) => {
     if (hasAVRenderTemplateResult(value, renderTemplate)) {
         const storedValue = cloneAVCellValueSnapshot(value);
         return `${value.type === "block" ? renderAVBlockIcon(value) : ""}<div class="fn__flex-1 av__celltext--template" data-cell-value="${escapeAttr(encodeURIComponent(JSON.stringify(storedValue)))}" placeholder="${window.siyuan.languages.empty}">${getAVTemplateHTML(value.renderedContent || "")}</div>`;
@@ -137,8 +140,8 @@ export const genAVValueHTML = (value: IAVCellValue, dateFormat: TAVDateFormat = 
     let html = "";
     switch (value.type) {
         case "block":
-            html = `${renderAVBlockIcon(value)}<input data-id="${value.block.id || ""}" value="${escapeAttr(value.block.content)}" type="text" class="b3-text-field b3-text-field--text fn__flex-1" placeholder="${window.siyuan.languages.empty}">
-<button type="button" data-type="av-bind-document" class="block__icon block__icon--show fn__flex-center ariaLabel" aria-label="${value.isDetached || !value.block.id ? window.siyuan.languages.bind : window.siyuan.languages.rebind}"><svg><use xlink:href="#iconLink"></use></svg></button>`;
+            html = `${renderAVBlockIcon(value)}<div class="av__celltext fn__flex-1${value.block.richBlockDOM ? " av__celltext--rich b3-typography document-title-preview" : ""}" data-protyle-lite-render="safe" placeholder="${window.siyuan.languages.empty}">${value.block.richBlockDOM ? getAVPrimaryPreviewHTML(value) : escapeHtml(value.block.content || "")}</div>
+${value.isDetached || !value.block.id ? `<button type="button" data-type="av-bind-document" class="block__icon block__icon--show fn__flex-center ariaLabel" aria-label="${window.siyuan.languages.bind}"><svg><use xlink:href="#iconRef"></use></svg></button>` : ""}`;
             break;
         case "text": {
             const source = getAVTextSource(value);
@@ -167,7 +170,7 @@ export const genAVValueHTML = (value: IAVCellValue, dateFormat: TAVDateFormat = 
         case "mAsset":
             value.mAsset?.forEach(item => {
                 if (item.type === "image" && isBrowserRenderableImagePath(item.content)) {
-                    html += `<img loading="lazy" class="av__cellassetimg ariaLabel" aria-label="${escapeAriaLabel(item.content)}" src="${getCompressURL(item.content)}">`;
+                    html += `<img loading="lazy" class="av__cellassetimg ariaLabel" aria-label="${escapeAriaLabel(item.content)}" src="${escapeAttr(getCompressURL(item.content))}">`;
                 } else {
                     html += `<span class="b3-chip b3-chip--middle av__celltext--url ariaLabel" aria-label="${escapeAriaLabel(item.content)}" data-name="${escapeAttr(item.name)}" data-url="${escapeAttr(item.content)}">${escapeHtml(item.name || item.content)}</span>`;
                 }
@@ -211,14 +214,22 @@ export const genAVValueHTML = (value: IAVCellValue, dateFormat: TAVDateFormat = 
 <span class="fn__space"></span>
 <a ${value.email.content ? `href="mailto:${escapeAttr(value.email.content)}"` : ""} target="_blank" aria-label="${window.siyuan.languages.openBy}" class="block__icon block__icon--show fn__flex-center b3-tooltips__w b3-tooltips"><svg><use xlink:href="#iconEmail"></use></svg></a>`;
             break;
-        case "relation":
+        case "relation": {
+            let count = 0;
             value?.relation?.contents?.forEach((item, index) => {
-                html += genAVRelationHTML(item, value.relation.blockIDs[index]);
+                if (!item?.block) {
+                    return;
+                }
+                if (count < relationLimit) {
+                    html += genAVRelationHTML(item, value.relation.blockIDs[index]);
+                }
+                count++;
             });
-            if (html && html.endsWith(", ")) {
-                html = html.substring(0, html.length - 2);
+            if (count > relationLimit) {
+                html += `<button type="button" class="b3-button av__button" data-type="av-relation-show-all">${window.siyuan.languages.showAll}</button>`;
             }
             break;
+        }
         case "rollup":
             value?.rollup?.contents?.forEach((item) => {
                 const rollupText = (usesAVRollupCellRenderer(item.type) || item.type === "checkbox") ?
@@ -256,20 +267,20 @@ export const genAVAttributeRowHTML = (options: {
 }) => {
     const value = options.value;
     const storedValue = cloneAVCellValueSnapshot(value);
-    const textInputType = isAVLinkType(value.type);
+    const textInputType = isAVLinkType(value.type) && value.type !== "block";
     const hasOwnPlaceholder = hasAVAttributePlaceholder(value.type);
     const checkClass = value.type === "checkbox" ? (value.checkbox.checked ? " av__cell-check" : " av__cell-uncheck") : "";
-    return `<div class="block__icons av__row" data-id="${options.nodeID}" data-col-id="${options.keyID}" data-empty="${options.empty}" data-panel-visibility="${escapeAttr(options.attributePanelVisibility || "")}"${options.type === "block" ? ' data-primary="true"' : ""}>
+    return `<div class="block__icons av__row" data-id="${escapeAttr(options.nodeID)}" data-col-id="${escapeAttr(options.keyID)}" data-empty="${options.empty}" data-panel-visibility="${escapeAttr(options.attributePanelVisibility || "")}"${options.type === "block" ? ' data-primary="true"' : ""}>
     <div class="block__icon" draggable="true"><svg><use xlink:href="#iconDrag"></use></svg></div>
     <div class="block__logo block__logo--icon ariaLabel fn__pointer" data-type="editCol" data-position="parentW" aria-label="${escapeAriaLabel(options.name)}<div class='ft__on-surface'>${escapeAriaLabel(options.desc || "")}</div>">
         ${options.icon ? unicode2Emoji(options.icon, "block__logoicon", true) : `<svg class="block__logoicon"><use xlink:href="#${options.typeIcon}"></use></svg>`}
         <span>${escapeHtml(options.name)}</span>
     </div>
-    <div data-av-id="${options.avID}" data-col-id="${value.keyID}" data-row-id="${value.blockID}"${value.id ? ` data-id="${value.id}"` : ""} data-cell-value="${encodeURIComponent(JSON.stringify(storedValue))}" data-type="${value.type}"${value.isDetached ? ' data-detached="true"' : ""}
+    <div data-av-id="${escapeAttr(options.avID)}" data-col-id="${escapeAttr(value.keyID)}" data-row-id="${escapeAttr(value.blockID)}"${value.id ? ` data-id="${escapeAttr(value.id)}"` : ""} data-cell-value="${encodeURIComponent(JSON.stringify(storedValue))}" data-type="${escapeAttr(value.type)}"${value.isDetached ? ' data-detached="true"' : ""}
 data-options="${options.selectOptions ? escapeAttr(JSON.stringify(options.selectOptions)) : "[]"}"
-data-date-format="${options.dateFormat || ""}"
+data-date-format="${escapeAttr(options.dateFormat || "")}"
 ${options.renderTemplate?.trim() ? 'data-render-template="true"' : ""}
 ${hasOwnPlaceholder ? "" : `placeholder="${window.siyuan.languages.empty}"`}
-class="fn__flex-1 fn__flex${textInputType ? "" : " custom-attr__avvalue"}${isAVTimestampType(value.type) ? " custom-attr__avvalue--readonly" : ""}${checkClass}">${genAVValueHTML(value, options.dateFormat, options.renderTemplate)}</div>
+class="fn__flex-1 fn__flex${textInputType ? "" : " custom-attr__avvalue"}${isAVTimestampType(value.type) ? " custom-attr__avvalue--readonly" : ""}${checkClass}">${genAVValueHTML(value, options.dateFormat, options.renderTemplate, 5)}</div>
 </div>`;
 };

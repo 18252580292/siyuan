@@ -5,17 +5,21 @@ import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 import {ModuleKind, ScriptTarget, transpileModule} from "typescript";
 import {AgentSessionRuns} from "./AgentSessionRuns";
+import {AgentMessageQueue} from "./AgentMessageQueue";
 import type {AgentSession} from "./SessionStore";
 
 const compiled = transpileModule(readFileSync("src/layout/dock/agent/AgentChat.ts", "utf8"), {
     compilerOptions: {module: ModuleKind.CommonJS, target: ScriptTarget.ES2021},
 }).outputText;
 
+class SessionRevisionConflict extends Error {}
+
 const createChat = (load: (id: string) => Promise<AgentSession>) => {
     const exports = {} as {AgentChat: {prototype: object}};
     runInNewContext(compiled, {
         exports,
-        require: () => ({AgentRunController, Model: class {}, SessionStore: {load}}),
+        require: () => ({AgentRunController, Model: class {}, SessionStore: {load}, SessionRevisionConflict,
+            clearAgentInteractionNotifications: () => {}}),
         window: {
             siyuan: {languages: {}},
             setTimeout: (callback: () => void) => { queueMicrotask(callback); return 1; },
@@ -30,6 +34,8 @@ const createChat = (load: (id: string) => Promise<AgentSession>) => {
     Object.assign(chat, {
         sessionId: "second",
         sessionRuns: new AgentSessionRuns(),
+        queuedMessages: new AgentMessageQueue(),
+        notifiedSessions: new Set(),
         isStreaming: true,
         mirrorLocked: false,
         pendingRecoverySessionIDs: new Set(),
@@ -70,6 +76,14 @@ const createChat = (load: (id: string) => Promise<AgentSession>) => {
     return {chat, attributes};
 };
 
+test("navigation can leave a conflicted session while other save failures still block it", async () => {
+    const {chat} = createChat(async () => null);
+    chat.saveSession = async () => { throw new SessionRevisionConflict("revision changed"); };
+    await chat.saveSessionBeforeNavigation();
+    chat.saveSession = async () => { throw new Error("network unavailable"); };
+    await assert.rejects(chat.saveSessionBeforeNavigation(), /network unavailable/);
+});
+
 const session = (overrides: Partial<AgentSession> = {}): AgentSession => ({
     id: "first",
     title: "First",
@@ -77,6 +91,72 @@ const session = (overrides: Partial<AgentSession> = {}): AgentSession => ({
     createdAt: 1,
     updatedAt: 2,
     ...overrides,
+});
+
+test("a completed local run restores regenerate controls after the final stream event", async () => {
+    const {chat} = createChat(async () => session());
+    chat.sessionId = "first";
+    let hidden = false;
+    const button = {classList: {toggle: (name: string, value: boolean) => {
+        assert.equal(name, "fn__none");
+        hidden = value;
+    }}};
+    chat.messagesContainer.querySelectorAll = (selector: string) => selector === ".agent-chat__regenerate" ? [button] : [];
+    const run = chat.sessionRuns.begin("first");
+    chat.abortController = run.controller;
+    chat.setStreaming(true);
+    assert.equal(hidden, true);
+
+    chat.setStreaming(false);
+    assert.equal(hidden, true);
+    await chat.runController.finish(run);
+
+    assert.equal(chat.isCurrentSessionRunning(), false);
+    assert.equal(hidden, false);
+});
+
+test("only normal foreground completion attempts to continue its message queue", async () => {
+    for (const normal of [false, true]) {
+        const {chat} = createChat(async () => session());
+        let sends = 0;
+        chat.sendQueuedMessage = async () => { sends++; };
+        const run = chat.sessionRuns.begin("second");
+        run.finishedNormally = normal;
+        await chat.runController.finish(run);
+        assert.equal(sends, normal ? 1 : 0);
+    }
+    const {chat} = createChat(async () => session());
+    let sends = 0;
+    chat.sendQueuedMessage = async () => { sends++; };
+    const run = chat.sessionRuns.begin("first");
+    run.finishedNormally = true;
+    await chat.runController.finish(run);
+    assert.equal(sends, 0);
+});
+
+test("notification navigation preserves rich drafts and unfinished user-message edits per session", async () => {
+    const {chat} = createChat(async id => session({id}));
+    const original = {text: "First draft", blockHTML: "<p>First draft</p>", references: [{id: "block", title: "Block"}]};
+    const edit = {text: "Edited message", blockHTML: "<p>Edited</p>", references: [] as {id: string; title: string}[]};
+    let data = original;
+    Object.assign(chat, {
+        sessionId: "first", isStreaming: false, currentTurnID: "", preserveNotificationDrafts: true,
+        notificationDrafts: new Map(), editingUserEntryID: "user", editingComposer: {getSendData: () => edit},
+        composer: {getSendData: () => data, setData: (value: typeof original) => { data = value; },
+            clearHistory: () => {}, restoreHistory: () => {}, isUploading: () => false},
+        saveSession: async () => {},
+        destroyEditingComposer: () => { chat.editingComposer = null; chat.editingUserEntryID = ""; },
+        restorePendingEditDraft: () => {},
+    });
+    await chat.performSwitchSession("second");
+    assert.equal(data.text, "");
+    data = {text: "Second draft", blockHTML: "<p>Second</p>", references: []};
+    await chat.performSwitchSession("first");
+    assert.equal(data, original);
+    assert.equal(chat.pendingEditDraft.entryID, "user");
+    assert.equal(chat.pendingEditDraft.data, edit);
+    await chat.performSwitchSession("second");
+    assert.equal(data.text, "Second draft");
 });
 
 test("session pin notifications refresh the list without disturbing conversations or drafts", () => {
@@ -207,4 +287,46 @@ test("a late recovery read cannot unlock or commit a different foreground sessio
 
     assert.equal(chat.mirrorLocked, true);
     assert.equal(chat.pendingRecoverySessionIDs.has("first"), true);
+});
+
+test("stop preserves the visible partial reply until the backend completes recovery", async () => {
+    let loads = 0;
+    const {chat} = createChat(async () => { loads++; return session({agentRunning: true}); });
+    Object.assign(chat, {
+        sessionId: "first", currentContent: "Visible partial", fullContent: "Visible partial",
+        currentAIElement: {}, currentAssistantEntryId: "partial", currentRoundID: "round",
+        currentToolCalls: [], currentTurnID: "turn",
+        recoverInterruptedTurn: async () => {},
+    });
+    await chat.stopGeneration();
+    assert.equal(loads, 0);
+    assert.equal(chat.entries[0].content, "Visible partial");
+    assert.equal(chat.pendingRecoverySessionIDs.has("first"), true);
+    chat.renderLoadedSession = () => assert.fail("running checkpoint must not replace the visible partial reply");
+    await chat.reloadFromDisk(true);
+    assert.equal(loads, 1);
+    assert.equal(chat.entries[0].content, "Visible partial");
+});
+
+test("recovery waits for finalization before reloading or committing", async () => {
+    let loads = 0;
+    const {chat} = createChat(async () => {
+        loads++;
+        return session({agentRunning: loads < 3, recoveryTurnID: "turn", recoveryState: "interrupted"});
+    });
+    chat.sessionId = "first";
+    chat.currentTurnID = "turn";
+    chat.isStreaming = false;
+    let reloads = 0;
+    let commits = 0;
+    chat.reloadFromDisk = async () => {
+        assert.equal(loads, 3);
+        reloads++;
+        chat.recoveryCommitTurnIDs.set("first", "turn");
+    };
+    chat.saveSession = async () => { commits++; };
+    await chat.recoverInterruptedTurn("first", "turn");
+    assert.equal(reloads, 1);
+    assert.equal(commits, 1);
+    assert.equal(chat.pendingRecoverySessionIDs.has("first"), false);
 });

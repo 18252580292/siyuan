@@ -1,5 +1,5 @@
-import type {AVAutomationBlockSourceInput} from "../../../types/api";
 import {openInputDialog} from "../../../dialog/inputDialog";
+import type {AVAutomationBlockSourceInput} from "../../../types/api";
 import {fetchSyncPost} from "../../../util/fetch";
 import {escapeAttr, escapeHtml} from "../../../util/escape";
 import {BlockPanel} from "../../../block/Panel";

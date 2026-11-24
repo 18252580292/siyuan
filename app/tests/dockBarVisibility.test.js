@@ -5,8 +5,9 @@ const os = require("node:os");
 const {test} = require("node:test");
 const {ModuleKind, ScriptTarget, transpileModule} = require("typescript");
 const sass = require("sass");
+const settleDockAnimations = require("./helpers/settleDockAnimations");
 
-const browserCases = async (sources, css, template, animationOnly = false) => {
+const browserCases = async (sources, css, template, animationOnly, settle) => {
     const check = require("node:assert/strict");
     const load = (name, dependencies = {}) => {
         const exports = {};
@@ -54,7 +55,7 @@ const browserCases = async (sources, css, template, animationOnly = false) => {
         layout: {layout: {children: [outer, bottom]}, centerLayout: center}};
     const bar = load("barVisibility");
     const dependencies = {
-        ...bar, ...load("panelVisibility"),
+        ...bar, ...load("panelVisibility"), ...load("statusHover"),
         Constants: {TIMEOUT_DOCK_TOGGLE: 20, TIMEOUT_TRANSITION: 20, ATTRIBUTE_DOCK_WIDTH: "data-width"},
         bindPanelTransitionGuard() {}, isTouchHoverInput: () => false,
         isWindow: () => false, isAbove: (a, b) => Number(a.style.zIndex) > Number(b.style.zIndex),
@@ -68,7 +69,6 @@ const browserCases = async (sources, css, template, animationOnly = false) => {
         docks[position] = window.siyuan.layout[position.toLowerCase() + "Dock"] =
             new Dock({app: {plugins: []}, data: {pin: false, data: []}, position});
     }
-    const settle = () => new Promise(resolve => setTimeout(resolve, 350));
     await settle();
     for (const position of ["Left", "Right", "Bottom"]) {
         const dock = docks[position];
@@ -119,15 +119,31 @@ const browserCases = async (sources, css, template, animationOnly = false) => {
             dock.hideDock();
             await settle();
             const checkAttached = (message, checkOpacity = true) => {
-                const panelRect = panel.getBoundingClientRect();
-                const barRect = element.getBoundingClientRect();
-                const gap = position === "Left" ? panelRect.left - barRect.right : barRect.left - panelRect.right;
-                check.ok(Math.abs(gap) < 2, `${position} ${message}: gap=${gap}`);
-                if (checkOpacity) {
-                    check.ok(Math.abs(Number(getComputedStyle(panel).opacity) - Number(getComputedStyle(element).opacity)) < .02,
-                        `${position} ${message}: opacity follows the panel`);
+                const sampleTime = document.timeline.currentTime;
+                const animations = [...panel.getAnimations(), ...element.getAnimations()]
+                    .filter(animation => animation.playState === "running" && typeof animation.startTime === "number")
+                    .map(animation => ({animation, startTime: animation.startTime}));
+                try {
+                    // 合成器可在两次几何读取之间推进动画，按同一时间点采样并保留各自的起始时间差。
+                    animations.forEach(({animation, startTime}) => {
+                        animation.pause();
+                        animation.currentTime = (sampleTime - startTime) * animation.playbackRate;
+                    });
+                    const panelRect = panel.getBoundingClientRect();
+                    const barRect = element.getBoundingClientRect();
+                    const gap = position === "Left" ? panelRect.left - barRect.right : barRect.left - panelRect.right;
+                    check.ok(Math.abs(gap) < 2, `${position} ${message}: gap=${gap}`);
+                    if (checkOpacity) {
+                        check.ok(Math.abs(Number(getComputedStyle(panel).opacity) - Number(getComputedStyle(element).opacity)) < .02,
+                            `${position} ${message}: opacity follows the panel`);
+                    }
+                    check.deepEqual(rect(center.element), initialEditor, "custom animations do not resize the editor");
+                } finally {
+                    animations.forEach(({animation, startTime}) => {
+                        animation.play();
+                        animation.startTime = startTime;
+                    });
                 }
-                check.deepEqual(rect(center.element), initialEditor, "custom animations do not resize the editor");
             };
             const finish = async () => {
                 await Promise.all([...panel.getAnimations(), ...element.getAnimations()].map(animation => animation.finished));
@@ -216,6 +232,15 @@ const browserCases = async (sources, css, template, animationOnly = false) => {
         const entries = Array.from(element.querySelectorAll(".dock__item"));
         const order = entries.map(item => item.dataset.entryId);
         check.equal(dock.layout.element.clientWidth, 0);
+        window.siyuan.config.appearance.showFloatingDockBar = false;
+        bar.syncFloatingDockBarPreference();
+        center.element.dispatchEvent(new MouseEvent("mousemove", {bubbles: true,
+            clientX: position === "Left" ? 1 : window.innerWidth - 1, clientY: 200}));
+        await settle();
+        check.ok(hidden(element), "disabled preference prevents bar-only edge reveal");
+        check.equal(dock.hasActive(), false);
+        window.siyuan.config.appearance.showFloatingDockBar = true;
+        bar.syncFloatingDockBarPreference();
         center.element.dispatchEvent(new MouseEvent("mousemove", {bubbles: true,
             clientX: position === "Left" ? 1 : window.innerWidth - 1, clientY: 200}));
         await settle();
@@ -252,6 +277,26 @@ const browserCases = async (sources, css, template, animationOnly = false) => {
             position === "Left" ? barRect.right : barRect.left, "panel stays beside the bar");
         check.equal(getComputedStyle(element).transform, "none",
             "the settled bar keeps no residual translation, so no gap opens at the window edge");
+        window.siyuan.config.appearance.showFloatingDockBar = false;
+        bar.syncFloatingDockBarPreference();
+        await settle();
+        check.ok(hidden(element), "disabling hides the bar beside an open panel");
+        check.equal(document.querySelectorAll(".dock__backdrop").length, 0, "disabling removes floating backgrounds");
+        check.equal(position === "Left" ? rect(dock.layout.element).x :
+            rect(dock.layout.element).x + rect(dock.layout.element).width,
+        position === "Left" ? 0 : innerWidth, "panel returns to the window edge");
+        check.deepEqual(rect(center.element), initialEditor);
+        dock.hideDock();
+        await settle();
+        center.element.dispatchEvent(new MouseEvent("mousemove", {bubbles: true,
+            clientX: position === "Left" ? 1 : innerWidth - 1, clientY: 200}));
+        await settle();
+        check.equal(dock.layout.element.style.opacity, "1", "existing panel still opens on edge hover");
+        check.ok(hidden(element), "panel hover does not bypass the disabled preference");
+        window.siyuan.config.appearance.showFloatingDockBar = true;
+        bar.syncFloatingDockBarPreference();
+        await settle();
+        check.ok(!hidden(element), "reenabling restores the bar beside the open panel");
         const temporary = {bar: rect(element), panel: rect(dock.layout.element),
             barStyle: appearance(element), panelStyle: appearance(dock.layout.element)};
         const backdrop = element.previousElementSibling;
@@ -443,8 +488,21 @@ const browserCases = async (sources, css, template, animationOnly = false) => {
     check.equal(bottom.element.style.right, "0px", "closing the side bar restores bottom panel width");
     docks.Bottom.hideDock();
 
+    window.siyuan.config.appearance.showFloatingDockBar = false;
+    bar.syncFloatingDockBarPreference();
     docks.Right.togglePin();
     docks.Right.setResponsiveFloating(true, 240);
+    docks.Right.showDock();
+    await settle();
+    check.ok(hidden(rightBar), "responsive floating also respects the disabled preference");
+    window.siyuan.config.appearance.showFloatingDockBar = true;
+    bar.syncFloatingDockBarPreference();
+    window.siyuan.config.appearance.showFloatingDockBar = false;
+    bar.syncFloatingDockBarPreference();
+    check.ok(hidden(rightBar), "disabling during opening cancels the floating bar immediately");
+    check.equal(document.querySelectorAll(".dock__backdrop").length, 0);
+    window.siyuan.config.appearance.showFloatingDockBar = true;
+    bar.syncFloatingDockBarPreference();
     docks.Right.showDock();
     await settle();
     check.ok(!hidden(rightBar), "responsive floating uses the same temporary bar");
@@ -478,6 +536,7 @@ const browserCases = async (sources, css, template, animationOnly = false) => {
     fullscreen.classList.remove("fullscreen");
     docks.Right.showDock(true);
 
+    window.siyuan.config.appearance.showFloatingDockBar = false;
     window.siyuan.config.uiLayout.hideDock = false;
     bar.syncDockBarVisibility();
     docks.Right.showDock(true);
@@ -527,6 +586,7 @@ if (process.versions.electron && process.type === "browser") {
             const sources = Object.fromEntries([
                 ["barVisibility", "layout/dock/barVisibility"], ["panelVisibility", "layout/dock/panelVisibility"],
                 ["index", "layout/dock/index"], ["mousemove", "boot/globalEvent/mousemove"],
+                ["statusHover", "layout/statusHover"],
             ].map(([name, file]) => [name, transpileModule(readFileSync(path.join(__dirname, `../src/${file}.ts`), "utf8"), {
                 compilerOptions: {module: ModuleKind.CommonJS, target: ScriptTarget.ES2021},
             }).outputText]));
@@ -544,7 +604,7 @@ if (process.versions.electron && process.type === "browser") {
                         await win.loadURL(`data:text/html,<html><body class='fn__flex-column${hideToolbar ? " body--toolbar-hide" : ""}'></body></html>`);
                         const result = await win.webContents.executeJavaScript(`(${browserCases.toString()})(${[
                             sources, css, html, animationOnly,
-                        ].map(value => JSON.stringify(value)).join(",")})`);
+                        ].map(value => JSON.stringify(value)).join(",")}, ${settleDockAnimations.toString()})`);
                         assert.equal(result, "Floating dock bar cases passed", captureName);
                     }
                 }
@@ -565,7 +625,7 @@ if (process.versions.electron && process.type === "browser") {
         const profile = mkdtempSync(path.join(os.tmpdir(), "siyuan-dock-bar-"));
         try {
             const {stdout} = await require("node:util").promisify(require("node:child_process").execFile)(
-                require("electron"), [__filename, profile], {env, windowsHide: true, timeout: 175000});
+                require("electron"), [__filename, profile], {env, windowsHide: true, timeout: 240000});
             assert.match(stdout, /Floating dock bar cases passed/);
         } finally {
             assert.equal(path.dirname(path.resolve(profile)), path.resolve(os.tmpdir()));
@@ -575,7 +635,7 @@ if (process.versions.electron && process.type === "browser") {
     };
     const options = {
         skip: process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY,
-        timeout: 180000,
+        timeout: 245000,
     };
     test("floating dock bars follow disabled, partial, delayed and interrupted panel transitions", options, () => runCases(true));
     test("floating dock bars preserve editor width and remain accessible when every panel is closed", options, () => runCases(false));

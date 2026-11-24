@@ -77,7 +77,7 @@ const fixture = (remote = false, initialProfiles = [account()], accountID = "") 
             if (name.endsWith("editor/openLink")) { return {openByMobile: () => {}}; }
             if (name.endsWith("dialog/message")) { return {showMessage: (message: string) => messages.push(message)}; }
             if (name.endsWith("dialog/confirmDialog")) {
-                return {confirmDialog: (_title: string, text: string, confirm: () => void, cancel: () => void) => confirmations.push({text, confirm, cancel})};
+                return {confirmDialog: ({text, confirm, cancel}: {text: string, confirm: () => void, cancel: () => void}) => confirmations.push({text, confirm, cancel})};
             }
             if (name.endsWith("render/fragments")) { return {genConfigItemMainHtml: () => ""}; }
             if (name === "electron") { return {shell: {openExternal: async () => {}}}; }

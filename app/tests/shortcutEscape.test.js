@@ -29,13 +29,13 @@ const sources = () => {
     const compile = text => ts.transpileModule(text, {compilerOptions: {
         module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
     }}).outputText;
-    const workspace = sourceFile("menus/workspace.ts");
-    const workspaceMenu = find(workspace, node => ts.isVariableDeclaration(node) &&
-        node.name.getText(workspace) === "workspaceMenu").initializer;
-    const renderMenu = find(workspace, node => ts.isVariableDeclaration(node) &&
-        node.name.getText(workspace) === "renderMenu").initializer;
+    const menuSource = sourceFile("menus/mainMenu.ts");
+    const mainMenu = find(menuSource, node => ts.isVariableDeclaration(node) &&
+        node.name.getText(menuSource) === "mainMenu").initializer;
+    const renderMenu = find(menuSource, node => ts.isVariableDeclaration(node) &&
+        node.name.getText(menuSource) === "renderMenu").initializer;
     const popupIndex = renderMenu.body.statements.findIndex(node =>
-        node.getText(workspace).startsWith("session.show(() => window.siyuan.menus.menu.popup("));
+        node.getText(menuSource).startsWith("session.show(() => window.siyuan.menus.menu.popup("));
     assert.ok(popupIndex >= 0);
     const menu = sourceFile("menus/Menu.ts");
     const declaration = name => find(menu, node => ts.isVariableDeclaration(node) &&
@@ -47,17 +47,20 @@ const sources = () => {
         globalKeyboard: compile(parse(sourceFile("boot/globalEvent/keydown.ts").text,
             {MOBILE: false, BROWSER: true}, false, true)),
         keymap: compile(sourceFile("util/keymapBindings.ts").text),
+        shortcut: compile(sourceFile("util/shortcut.ts").text),
         hotkey: compile(sourceFile("protyle/util/hotKey.ts").text),
         escape: compile(`function editorEscape(protyle, event, range, isCrossBlock, nodeElement) {
             const blockSelectionModeElement = undefined;
             ${escape.getText(keyboard)}
         }` + sourceFile("protyle/toolbar/subElementLifecycle.ts").text.replaceAll("export ", "")),
         card: compile(`const openCardByData = ${openCard.getText(card)};`),
+        secondaryEditors: compile(sourceFile("mobile/util/secondaryEditors.ts").text),
+        editorSave: compile(sourceFile("protyle/util/editorSave.ts").text),
         menuToggle: compile(sourceFile("menus/menuToggle.ts").text),
-        menu: compile(`async function workspaceMenu(app, rect, openOnly = false, target) {
-            ${workspaceMenu.body.statements[0].getText(workspace)}
+        menu: compile(`async function mainMenu(app, rect, openOnly = false, target) {
+            ${mainMenu.body.statements[0].getText(menuSource)}
             await toggleMenu({target, toggle: !openOnly && Boolean(target), build: (_menu, session) => {
-            ${renderMenu.body.statements.slice(popupIndex).map(node => node.getText(workspace)).join("\n")}
+            ${renderMenu.body.statements.slice(popupIndex).map(node => node.getText(menuSource)).join("\n")}
             }});
         }
         const ${declaration("getActionMenu")};
@@ -97,6 +100,7 @@ const cases = async compiled => {
         return exports;
     };
     const lifecycle = load(compiled.lifecycle, {});
+    const secondaryEditors = load(compiled.secondaryEditors, {"../../protyle/util/editorSave": load(compiled.editorSave, {})});
     const selectionMode = {clearBlockSelectionMode: root => {
         root.querySelectorAll(".selected-block").forEach(item => item.classList.remove("selected-block"));
     }};
@@ -164,7 +168,7 @@ const cases = async compiled => {
         }
         const root = protyle.wysiwyg.element;
         const first = root.firstElementChild;
-        const editor = {protyle, resize() {}, destroy() {}};
+        const editor = {protyle, resize() {}, destroy() {}, isUploading: () => false, async flushPendingTransactions() {}};
         class Dialog {
             constructor() {
                 this.element = document.createElement("div");
@@ -176,11 +180,14 @@ const cases = async compiled => {
                 this.destroyed = false;
             }
             destroy() {this.destroyed = true;}
+            focusWhenReady(target) {target()?.focus();}
         }
         const focusByRange = range => {getSelection().removeAllRanges(); getSelection().addRange(range);};
-        const openCard = new Function("window", "Dialog", "Constants", "genCardHTML", "isMobile", "bindCardEvent",
-            "focusByRange", "updateCardHV", compiled.card + "\nreturn openCardByData;")(
-            window, Dialog, Constants, () => "", () => mobile, async () => editor, focusByRange, () => {});
+        const openCard = new Function("window", "AdaptiveDialog", "Constants", "genCardHTML", "isMobile", "bindCardEvent",
+            "focusByRange", "updateCardHV", "createMobileSecondaryEditorCloseGuard", "registerMobileSecondaryEditor",
+            compiled.card + "\nreturn openCardByData;")(
+            window, Dialog, Constants, () => "", () => mobile, async () => editor, focusByRange, () => {},
+            secondaryEditors.createMobileSecondaryEditorCloseGuard, secondaryEditors.registerMobileSecondaryEditor);
         window.siyuan.dialogs = [];
         await openCard({plugins: []}, {}, "all");
         const dialog = window.siyuan.dialogs[0];
@@ -199,17 +206,20 @@ const cases = async compiled => {
         check.equal(dialog.destroyed, false);
         check.equal(document.activeElement, dialog.element.querySelector(".card__action button"));
         check.equal(first.classList.contains("selected-block"), false);
+        secondaryEditors.unregisterMobileSecondaryEditor(editor);
     }
     // 快捷键将焦点移到可操作菜单项，方向键不再被编辑器截获。
-    const menuConstants = {MENU_BAR_WORKSPACE: "workspace", KEYCODELIST: {38: "↑", 40: "↓", 220: "\\"}};
+    const menuConstants = {MENU_BAR_MAIN_MENU: "barMainMenu", KEYCODELIST: {38: "↑", 40: "↓", 220: "\\"}};
     const menuBindings = new Function("window", "Constants", "toggleMenu", compiled.menu +
-        "\nreturn {workspaceMenu, bindMenuKeydown};")(window, menuConstants, load(compiled.menuToggle, {}).toggleMenu);
+        "\nreturn {mainMenu, bindMenuKeydown};")(window, menuConstants, load(compiled.menuToggle, {}).toggleMenu);
     const keymap = load(compiled.keymap, {});
+    const shortcut = load(compiled.shortcut, {"./keymapBindings": keymap});
     const hotkey = load(compiled.hotkey, {"../../util/keymapBindings": keymap, "../../constants": {Constants: menuConstants},
-        "./compatibility": {isNotCtrl: event => !event.ctrlKey && !event.metaKey, isMac: () => false,
+        "../../util/shortcut": shortcut,
+        "./compatibility": {isNotCtrl: event => !event.ctrlKey && !event.metaKey, isMac: () => false, isInIOS: () => false,
             isOnlyMeta: event => event.ctrlKey && !event.metaKey}});
     const globalKeyboard = load(compiled.globalKeyboard, {"../../menus/Menu": menuBindings,
-        "../../menus/workspace": menuBindings, "../../protyle/util/hotKey": hotkey,
+        "../../menus/mainMenu": menuBindings, "../../protyle/util/hotKey": hotkey,
         "../../constants": {Constants: menuConstants},
         "../../util/keymapBindings": {getKeymapBindings: () => []},
         "../../layout/getAll": {getAllEditor: () => [], getAllDocks: () => []},
@@ -220,7 +230,7 @@ const cases = async compiled => {
         editor.focus();
         const menuElement = document.createElement("div");
         const bar = document.createElement("button");
-        bar.id = "barWorkspace";
+        bar.id = "barMainMenu";
         document.body.append(bar);
         menuElement.className = "b3-menu fn__none";
         menuElement.innerHTML = '<div></div><div class="b3-menu__items"><button class="b3-menu__item" style="display: none">Hidden</button><button class="b3-menu__item b3-menu__item--readonly">Readonly</button><button class="b3-menu__item" disabled>Disabled</button><button class="b3-menu__item" id="firstAction">First</button><button class="b3-menu__item" id="nextAction">Next</button></div>';
@@ -228,7 +238,7 @@ const cases = async compiled => {
         let opens = 0;
         const menu = {element: menuElement, popup: () => {
             opens++;
-            menuElement.setAttribute("data-name", "workspace");
+            menuElement.setAttribute("data-name", menuConstants.MENU_BAR_MAIN_MENU);
             menuElement.classList.remove("fn__none");
         },
             remove() {this.removeCB?.(); this.removeCB = undefined; menuElement.classList.add("fn__none");}};
@@ -259,7 +269,7 @@ const cases = async compiled => {
                 editor.dispatchEvent(event);
                 check.equal(event.defaultPrevented, true);
             } else {
-                await menuBindings.workspaceMenu({}, {}, false, bar);
+                await menuBindings.mainMenu({}, {}, false, bar);
             }
             check.equal(document.activeElement, openOnly ? menuElement.querySelector("#firstAction") : editor);
             document.activeElement.dispatchEvent(new KeyboardEvent("keydown", {
@@ -277,7 +287,7 @@ const cases = async compiled => {
                 }));
                 check.equal(menuElement.classList.contains("fn__none"), true);
                 check.equal(document.activeElement, editor);
-                await menuBindings.workspaceMenu({}, {}, true, bar);
+                await menuBindings.mainMenu({}, {}, true, bar);
                 const newFocus = document.createElement("button");
                 document.body.append(newFocus);
                 newFocus.focus();

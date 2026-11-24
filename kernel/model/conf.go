@@ -302,6 +302,8 @@ func InitConf() {
 	if err := cleanupRetiredDocumentAddressing(); err != nil {
 		logging.LogWarnf("clean up retired document addressing records failed: %s", err)
 	}
+	// 读取前先收紧凭据文件权限，避免其他本机账号在启动期间读取
+	util.RestrictConfFilePermissions()
 	confPath := filepath.Join(util.ConfDir, "conf.json")
 	confFileExists := gulu.File.IsExist(confPath)
 	var confData []byte
@@ -428,6 +430,7 @@ func InitConf() {
 	}
 
 	flashcardWarning := normalizeAppConf(Conf)
+	enrollLegacySyncAssociation(Conf)
 	if err := LoadChatGPTAccountBindings(Conf.AI.Load()); err != nil {
 		logging.LogErrorf("load local ChatGPT account bindings failed: %s", err)
 	}
@@ -536,14 +539,7 @@ func InitConf() {
 
 	Conf.DataIndexState = 0
 
-	if cookieKey := readCookieKey(); "" != cookieKey {
-		Conf.CookieKey = cookieKey
-	} else {
-		if "" == Conf.CookieKey {
-			Conf.CookieKey = gulu.Rand.String(16)
-		}
-		writeCookieKey(Conf.CookieKey)
-	}
+	Conf.CookieKey = loadCookieKey(Conf.CookieKey)
 	initSharedInstallPackages()
 
 	if util.ContainerDocker == util.Container && Conf.AccessAuthCode == "" && !util.SiYuanAccessAuthCodeBypass {
@@ -595,33 +591,6 @@ func normalizeFileTreeDefaultIcon(fileTree *conf.FileTree, confFileExists bool) 
 		}
 	}
 	return fileTree
-}
-
-func readCookieKey() (cookieKey string) {
-	cookieKeyPath := filepath.Join(util.HomeDir, ".config", "siyuan", "cookie.key")
-	if !gulu.File.IsExist(cookieKeyPath) {
-		return
-	}
-
-	data, err := os.ReadFile(cookieKeyPath)
-	if err != nil {
-		logging.LogErrorf("read cookie key file [%s] failed: %s", cookieKeyPath, err)
-		return
-	}
-
-	cookieKey = string(bytes.TrimSpace(data))
-	return
-}
-
-func writeCookieKey(cookieKey string) {
-	cookieKeyPath := filepath.Join(util.HomeDir, ".config", "siyuan", "cookie.key")
-	if gulu.File.IsExist(cookieKeyPath) {
-		return
-	}
-
-	if err := os.WriteFile(cookieKeyPath, []byte(cookieKey), 0644); err != nil {
-		logging.LogErrorf("save cookie key file [%s] failed: %s", cookieKeyPath, err)
-	}
 }
 
 func initLang() {
@@ -1071,6 +1040,7 @@ func (conf *AppConf) save0(data []byte) {
 		util.ReportFileSysFatalError(err)
 		return
 	}
+	util.RestrictConfFilePermissions()
 	recordPersistedConf(data)
 }
 
@@ -1268,6 +1238,8 @@ func HideConfSecret(c *AppConf) {
 	}
 	c.Flashcard.Store(&conf.Flashcard{})
 	c.ServerAddrs = []string{}
+	// 全库统计包含未发布内容，非管理员不返回
+	c.Stat.Store(nil)
 	c.Publish.Store(&conf.Publish{})
 	c.Repo.Store(&conf.Repo{})
 	c.Sync.Store(&conf.Sync{})
@@ -1289,12 +1261,17 @@ func HideConfSecret(c *AppConf) {
 	c.System.Load().NetworkProxy = &conf.NetworkProxy{}
 }
 
-// HideBoxConfSecret 隐藏笔记本配置中的密钥材料。
+// HideBoxConfSecret 隐藏非管理员不应读取的笔记本配置：密钥材料以及新建文档、块引和日记的目标与路径。
 func HideBoxConfSecret(c *conf.BoxConf) {
-	if nil != c {
-		c.BoxCrypt = nil
-		c.DocCreateTarget, c.RefCreateTarget, c.DailyNoteTarget = nil, nil, nil
+	if nil == c {
+		return
 	}
+
+	c.BoxCrypt = nil
+	c.DocCreateTarget, c.RefCreateTarget, c.DailyNoteTarget = nil, nil, nil
+	c.DocCreateSaveBox, c.DocCreateSavePath, c.DocCreateTemplatePath = "", "", ""
+	c.RefCreateSaveBox, c.RefCreateSavePath = "", ""
+	c.DailyNoteSavePath, c.DailyNoteTemplatePath = "", ""
 }
 
 func clearPortJSON() {

@@ -18,8 +18,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/88250/lute/parse"
+	"github.com/siyuan-note/dejavu"
+	"github.com/siyuan-note/dejavu/entity"
 	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/cache"
 	"github.com/siyuan-note/siyuan/kernel/conf"
@@ -65,6 +68,7 @@ func TestOCRResultReindexesWithoutTesseract(t *testing.T) {
 		Conf.Editor.Store(confSectionValue1)
 		Conf.Export.Store(confSectionValue2)
 	}
+	Conf.System.Store(conf.NewSystem())
 	Conf.OCR.Store(&conf.OCR{Provider: "paddleocr", Model: "tiny", Auto: true})
 	util.WorkspaceDir = filepath.Dir(util.DataDir)
 	util.TempDir, util.HistoryDir = t.TempDir(), t.TempDir()
@@ -98,6 +102,9 @@ func TestOCRResultReindexesWithoutTesseract(t *testing.T) {
 	treenode.UpsertBlockTree(tree)
 	sql.IndexTreeQueue(tree)
 	sql.FlushQueue()
+	t.Run("sync OCR cache without changing documents", func(t *testing.T) {
+		testSyncedOCRAssetIndex(t, path, paragraph.ID)
+	})
 	provider := &ocrFixtureProvider{rows: []map[string]string{{"text": "nativeocrkeyword", "conf": "99"}}}
 	ocrRegistry = ocr.NewRegistry()
 	if err := ocrRegistry.Register(ocr.PaddleOCR, provider); err != nil {
@@ -172,6 +179,7 @@ func TestOCRResultReindexesWithoutTesseract(t *testing.T) {
 	}
 	Conf.OCR.Load().Auto = true
 	testAutomaticOCRUnsupportedLogging(t, path, provider)
+	testAutomaticOCRPermanentFailure(t, path, provider)
 	autoOCRAssets()
 	if !provider.called || !strings.Contains(util.GetAssetText(path), "nativeocrkeyword") {
 		t.Fatalf("headless automatic OCR did not save text: called=%v text=%q", provider.called, util.GetAssetText(path))
@@ -197,6 +205,40 @@ func TestOCRResultReindexesWithoutTesseract(t *testing.T) {
 	if err := ocrRegistry.Register(ocr.Tesseract, provider); err != nil {
 		t.Fatal(err)
 	}
+	Conf.OCR.Load().Provider = "paddleocr"
+	t.Run("discover images added after startup", func(t *testing.T) {
+		oldContainer := util.Container
+		t.Cleanup(func() { util.Container = oldContainer })
+		util.Container = util.ContainerAndroid
+		cache.LoadAssets()
+		for _, test := range []struct{ container, dir, path string }{
+			{util.ContainerAndroid, fixture.box.ID, "assets/late-notebook.png"},
+			{util.ContainerAndroid, "", "assets/late-global.png"},
+			{util.ContainerStd, fixture.box.ID, "assets/late-desktop-notebook.png"},
+		} {
+			util.Container = test.container
+			filename := filepath.Join(util.DataDir, test.dir, filepath.FromSlash(test.path))
+			if err := os.WriteFile(filename, []byte("new image"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if cache.ExistAsset(test.path) {
+				t.Fatal("image was added to the startup cache")
+			}
+			provider.called = false
+			autoOCRAssets()
+			if !provider.called || provider.path != filename || !strings.Contains(util.GetAssetText(test.path), "nativeocrkeyword") {
+				t.Fatalf("automatic OCR missed %s: called=%v path=%q text=%q", test.path, provider.called, provider.path, util.GetAssetText(test.path))
+			}
+		}
+		for _, container := range []string{util.ContainerAndroid, util.ContainerStd} {
+			util.Container = container
+			provider.called = false
+			autoOCRAssets()
+			if provider.called || util.ExistsAssetText("assets/encrypted.png") {
+				t.Fatal("automatic OCR reached an already processed or encrypted image")
+			}
+		}
+	})
 	for _, unlocked := range []bool{false, true} {
 		if unlocked {
 			setDEKForTest(encryptedBox, key)
@@ -227,6 +269,54 @@ func TestOCRResultReindexesWithoutTesseract(t *testing.T) {
 		t.Fatal("encrypted OCR changed source ciphertext")
 	}
 	testOCRNotebookIsolation(t, provider, fixture.box.ID)
+}
+
+func testSyncedOCRAssetIndex(t *testing.T, assetPath, blockID string) {
+	t.Helper()
+	const repoPath = "/assets/ocr-texts.json"
+	filename := filepath.Join(util.DataDir, repoPath)
+	file := &entity.File{Path: repoPath}
+	syncAndCheck := func(changes *dejavu.MergeResult, present, absent string, immediateIndex bool) {
+		t.Helper()
+		processSyncMergeResult(false, true, changes, &dejavu.TrafficStat{}, "c", 0, immediateIndex, nil)
+		sql.FlushQueue()
+		for _, query := range []string{
+			"SELECT id FROM blocks WHERE id = ? AND content LIKE '%' || ? || '%'",
+			"SELECT id FROM blocks_fts WHERE id = ? AND blocks_fts MATCH ?",
+		} {
+			if present != "" {
+				rows, err := sql.QueryNoLimitArgs(query, blockID, present)
+				if err != nil || len(rows) != 1 {
+					t.Fatalf("synced OCR text %q is missing: %v, %v", present, rows, err)
+				}
+			}
+			if absent != "" {
+				rows, err := sql.QueryNoLimitArgs(query, blockID, absent)
+				if err != nil || len(rows) != 0 {
+					t.Fatalf("obsolete OCR text %q remains: %v, %v", absent, rows, err)
+				}
+			}
+		}
+	}
+	writeText := func(value string) {
+		t.Helper()
+		data, err := json.Marshal(map[string]string{assetPath: value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filename, data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upserts := &dejavu.MergeResult{Upserts: []*entity.File{file}}
+	writeText("initialsyncocr")
+	syncAndCheck(upserts, "initialsyncocr", "", true)
+	writeText("updatedsyncocr")
+	syncAndCheck(upserts, "updatedsyncocr", "initialsyncocr", false)
+	if err := os.Remove(filename); err != nil {
+		t.Fatal(err)
+	}
+	syncAndCheck(&dejavu.MergeResult{Removes: []*entity.File{file}}, "", "updatedsyncocr", false)
 }
 
 func testOCRClearResults(t *testing.T, path string, provider *ocrFixtureProvider) {
@@ -344,11 +434,9 @@ func testAutomaticOCRUnsupportedLogging(t *testing.T, path string, provider *ocr
 	previousLogPath := logging.LogPath
 	logging.SetLogPath(logPath)
 	defer logging.SetLogPath(previousLogPath)
-	value := Conf.GetOCR()
-	key := fmt.Sprintf("%s:%s:%s:%s:%s", value.Provider, value.Model, value.AIModelID, value.ReasoningEffort, path)
-	defer ocrRetry.Delete(key)
+	defer ocrRetry.reset()
 	for _, unsupported := range []bool{true, false} {
-		ocrRetry.Delete(key)
+		ocrRetry.reset()
 		provider.called = false
 		provider.err = errors.New("webp: invalid format")
 		if unsupported {
@@ -365,6 +453,67 @@ func testAutomaticOCRUnsupportedLogging(t *testing.T, path string, provider *ocr
 		if warned := strings.Contains(string(data), "automatic OCR [provider="); warned == unsupported {
 			t.Fatalf("unsupported=%v, unexpected automatic OCR warning: %s", unsupported, data)
 		}
+	}
+	provider.err = nil
+}
+
+func testAutomaticOCRPermanentFailure(t *testing.T, path string, provider *ocrFixtureProvider) {
+	t.Helper()
+	defer ocrRetry.reset()
+	absPath := filepath.Join(util.DataDir, path)
+	updated := time.Now().Truncate(time.Second).Add(100 * time.Millisecond)
+	if err := os.Chtimes(absPath, updated, updated); err != nil {
+		t.Fatal(err)
+	}
+	cache.LoadAssets()
+	logPath := filepath.Join(t.TempDir(), "ocr.log")
+	previousLogPath := logging.LogPath
+	logging.SetLogPath(logPath)
+	defer logging.SetLogPath(previousLogPath)
+	provider.err = fmt.Errorf("%w: OCR image exceeds 24 million pixels", ocr.ErrPermanent)
+	provider.called = false
+	autoOCRAssets()
+	if !provider.called || util.ExistsAssetText(path) || !HasOCRFailure(path) {
+		t.Fatal("permanent failure did not retain an editable failure without OCR text")
+	}
+	provider.called = false
+	autoOCRAssets()
+	if provider.called {
+		t.Fatal("automatic OCR retried a permanent failure")
+	}
+	ocrRetry = automaticOCRRetryCache{}
+	autoOCRAssets()
+	if provider.called {
+		t.Fatal("automatic OCR retried a permanent failure after cache reload")
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil || strings.Count(string(data), "automatic OCR [provider=") != 1 {
+		t.Fatalf("permanent failure warning was not logged once: %s, %v", data, err)
+	}
+	if _, _, err = OCRAsset(context.Background(), path); !provider.called || !errors.Is(err, ocr.ErrPermanent) {
+		t.Fatal("manual OCR could not retry a permanent failure")
+	}
+	provider.called = false
+	updated = updated.Add(time.Millisecond)
+	if err = os.Chtimes(absPath, updated, updated); err != nil {
+		t.Fatal(err)
+	}
+	cache.LoadAssets()
+	autoOCRAssets()
+	if !provider.called {
+		t.Fatal("image replaced within the same second retained its previous permanent failure")
+	}
+	provider.called = false
+	if err = os.WriteFile(absPath, []byte("replacement with a different size"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Chtimes(absPath, updated, updated); err != nil {
+		t.Fatal(err)
+	}
+	cache.LoadAssets()
+	autoOCRAssets()
+	if !provider.called {
+		t.Fatal("image replaced while preserving its timestamp retained its previous permanent failure")
 	}
 	provider.err = nil
 }

@@ -38,6 +38,10 @@ class TestElement {
         return this.classes.includes(selector.slice(1)) ? this : this.parentElement?.closest(selector) || null;
     }
 
+    contains(target: TestElement): boolean {
+        return target === this || !!target.parentElement && this.contains(target.parentElement);
+    }
+
     getAttribute(name: string) {
         return name === "draggable" ? this.draggable : null;
     }
@@ -88,7 +92,7 @@ const createBridge = (rowClass = "b3-menu__item", panelClass = "av__panel", mobi
     const handleIcon = new TestElement([], handle);
     const runtime = {touchDragActive: false, touchDragGhost: null as HTMLElement | null};
     const selection = {rangeCount: 1, removeAllRanges() { this.rangeCount = 0; }};
-    const exports: {initTouchDragBridge?: () => void} = {};
+    const exports: {initTouchDragBridge?: () => void; cancelTouchDragCandidate?: (target: TestElement) => (() => void) | false} = {};
     runInNewContext(compiled(!!options.browser, mobile), {
         exports,
         require: (id: string) => id === "../protyle/ui/gutterVisibility" ? gutterVisibility :
@@ -192,6 +196,7 @@ const createBridge = (rowClass = "b3-menu__item", panelClass = "av__panel", mobi
         callbacks.forEach(callback => callback(now));
     };
     return {row, label, handleIcon, runtime, selection, dispatch, advance, flushFrames, gutter: panel,
+        cancelCandidate: (target: TestElement) => exports.cancelTouchDragCandidate!(target),
         setDropTarget: (target: TestElement | null) => dropTarget = target};
 };
 
@@ -219,6 +224,30 @@ test("long pressing database menu content still allows sorting", () => {
     assert.equal(bridge.row.events[bridge.row.events.length - 1], "dragend");
     assert.equal(bridge.row.draggable, "true");
     assert.equal(bridge.runtime.touchDragActive, false);
+});
+
+test("a synthesized long-press menu releases the file candidate before menu scrolling", () => {
+    const bridge = createBridge("b3-list-item", "sy__file", false, {browser: true, container: "android"});
+    bridge.row.dataset.type = "navigation-file";
+    bridge.dispatch("touchstart", bridge.label);
+    assert.equal(bridge.row.draggable, "false");
+    assert.equal(bridge.dispatch("contextmenu", bridge.label, 100, 0, false, 1, {isTrusted: true}), true);
+    assert.equal(bridge.row.draggable, "false");
+    // 全局 touchend 合成长按菜单后会阻断后续监听器，桥接器不能依赖自己的 touchend 清理。
+    assert.equal(bridge.dispatch("contextmenu", bridge.label, 100, 500, false, 1, {isTrusted: false}), false);
+    assert.equal(bridge.row.draggable, "true");
+    const menu = new TestHTMLElement(["b3-menu"]);
+    bridge.dispatch("touchstart", menu);
+    assert.equal(bridge.dispatch("touchmove", menu, 170, 500), false);
+    bridge.dispatch("touchend", menu, 170);
+    assert.deepEqual(bridge.row.events, []);
+    assert.equal(bridge.runtime.touchDragActive, false);
+    bridge.dispatch("touchstart", bridge.label);
+    assert.equal(bridge.dispatch("touchmove", bridge.label, 140, 500), true);
+    assert.equal(bridge.runtime.touchDragActive, true);
+    bridge.dispatch("contextmenu", bridge.label, 140, 0, false, 1, {isTrusted: false});
+    assert.equal(bridge.runtime.touchDragActive, true);
+    bridge.dispatch("touchcancel", bridge.label);
 });
 
 test("dragging the database menu handle starts sorting without a long press", () => {
@@ -603,4 +632,53 @@ test("Harmony finger scrolling in the file tree preserves its long-press behavio
     assert.equal(bridge.runtime.touchDragActive, true);
     bridge.dispatch("touchcancel", bridge.label);
     assert.equal(bridge.row.draggable, "true");
+});
+
+
+test("gutter selection takeover protects its receiver until local selection releases it", () => {
+    const bridge = createBridge("protyle-gutters__icon", "protyle-gutters", true);
+    bridge.dispatch("touchstart", bridge.label);
+    assert.equal(bridge.row.draggable, "false");
+    assert.equal(bridge.cancelCandidate(new TestHTMLElement()), false);
+    assert.equal(bridge.row.draggable, "false");
+    const release = bridge.cancelCandidate(bridge.label);
+    assert.equal(typeof release, "function");
+    const gutter = Object.assign(bridge.row.closest(".protyle-gutters")!, {innerHTML: "touch receiver"});
+    gutterVisibility.hideGutterElements([gutter as unknown as HTMLElement], false);
+    assert.equal(gutter.innerHTML, "touch receiver");
+    assert.equal(bridge.row.draggable, "false");
+    assert.equal(gutterVisibility.isGutterTouchDragging(bridge.row.closest(".protyle-gutters") as unknown as HTMLElement), true);
+    if (release) { release(); release(); }
+    gutterVisibility.hideGutterElements([gutter as unknown as HTMLElement], false);
+    assert.equal(gutter.innerHTML, "");
+    assert.equal(bridge.row.draggable, "true");
+    assert.equal(gutterVisibility.isGutterTouchDragging(bridge.row.closest(".protyle-gutters") as unknown as HTMLElement), false);
+    bridge.advance(1000);
+    assert.equal(bridge.runtime.touchDragActive, false);
+    assert.deepEqual(bridge.row.events, []);
+    bridge.dispatch("touchstart", bridge.label);
+    bridge.advance(500);
+    assert.equal(bridge.runtime.touchDragActive, true);
+    assert.equal(bridge.cancelCandidate(bridge.label), false);
+    bridge.dispatch("touchcancel", bridge.label);
+});
+
+test("gutter selection takeover cannot cancel non-gutter candidates", () => {
+    const bridge = createBridge();
+    bridge.dispatch("touchstart", bridge.label);
+    assert.equal(bridge.cancelCandidate(bridge.label), false);
+    bridge.dispatch("touchcancel", bridge.label);
+});
+
+
+test("gutter takeover without a bridge candidate preserves native draggable attributes", () => {
+    for (const original of ["true", "false"]) {
+        const bridge = createBridge("protyle-gutters__icon", "protyle-gutters");
+        bridge.row.draggable = original;
+        const release = bridge.cancelCandidate(bridge.label);
+        assert.equal(typeof release, "function");
+        assert.equal(bridge.row.draggable, "false");
+        if (release) release();
+        assert.equal(bridge.row.draggable, original);
+    }
 });

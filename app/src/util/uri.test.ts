@@ -4,6 +4,8 @@ import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 import {ModuleKind, ScriptTarget, transpileModule} from "typescript";
 import {normalizeSiYuanUri} from "./normalizeSiYuanUri";
+import {resolveCustomModelFactory} from "../plugin/customTabOwner";
+import {isNodeID} from "./nodeID";
 
 const preprocess: (source: string, options: {MOBILE: boolean, BROWSER: boolean}) => string =
     require("ifdef-loader/preprocessor").parse;
@@ -33,7 +35,7 @@ const createParser = (URLClass: typeof URL) => {
     runInNewContext(pathNameSource, {
         exports,
         URL: URLClass,
-        require: () => ({normalizeSiYuanUri}),
+        require: () => ({normalizeSiYuanUri, isNodeID}),
     });
     return exports;
 };
@@ -79,6 +81,10 @@ test("block URI parsing continues to reject unrelated protocols, invalid IDs and
         for (const uri of [null, undefined, "invalid", `https://blocks/${blockID}`, `siyuan://other/${blockID}`,
             "siyuan://blocks/invalid", `siyuan://blocks/${blockID}?avItemID=invalid`,
             `siyuan://blocks/${blockID}?avViewID=invalid`, `siyuan://blocks/${blockID}?avGroupID=invalid`,
+            "siyuan://blocks/20261118000000-Abcdefg", "siyuan://blocks/20261118000000-abc_def",
+            `siyuan://blocks/${blockID}?avItemID=20261118000000-Abcdefg`,
+            `siyuan://blocks/${blockID}?avViewID=20261118000000-abc_def`,
+            `siyuan://blocks/${blockID}?avGroupID=20261118000000-abc_def`,
             `siyuan:////blocks/${blockID}`, `siyuan://blocks:65536/${blockID}`]) {
             assert.equal(parser.parseSiYuanUriInfo(uri), null, String(uri));
         }
@@ -91,19 +97,24 @@ const constants = {CB_GET_FOCUS: "focus", CB_GET_HL: "highlight", CB_GET_ALL: "a
 const createDispatcher = (URLClass: typeof URL, mobile: boolean, exists = true) => {
     const parser = createParser(URLClass);
     const requests: {url: string, id: string}[] = [];
-    const opens: {id: string, action: string[]}[] = [];
+    const opens: {id: string, action: string[], position?: string, keepCursor?: boolean, zoomIn?: boolean}[] = [];
     const events: {type: string, url: string}[] = [];
     const bazaar: {type: string, name: string, from: string}[] = [];
+    const messages: string[] = [];
+    const customOpens: Array<{custom: {id: string}}> = [];
     const exports = {} as typeof import("./uri");
     const dependencies = {
         ...parser,
         normalizeSiYuanUri,
+        resolveCustomModelFactory,
+        openFile: (options: {custom: {id: string}}) => customOpens.push(options),
+        showMessage: (message: string) => messages.push(message),
         Constants: constants,
         fetchPost: (url: string, data: {id: string}, callback: (response: {data: boolean}) => void) => {
             requests.push({url, id: data.id});
             callback({data: exists});
         },
-        checkFold: (_id: string, callback: (zoomIn: boolean) => void) => callback(false),
+        checkReferenceFold: (_id: string, callback: (zoomIn: boolean) => void) => callback(false),
         openStandaloneDatabaseItemByURI: () => false,
         openFileById: (options: {id: string, action: string[]}) => opens.push(options),
         openMobileFileById: (_app: unknown, id: string, action: string[]) => opens.push({id, action}),
@@ -116,14 +127,33 @@ const createDispatcher = (URLClass: typeof URL, mobile: boolean, exists = true) 
     runInNewContext(compile("src/util/uri.ts", mobile), {
         exports,
         URL: URLClass,
-        window: {siyuan: {}},
+        window: {siyuan: {languages: {pluginTabUnavailable: "Plugin unavailable", _kernel: {15: "Content block with id [%s] not found"}}}},
         require: () => dependencies,
     });
-    const app = {plugins: [{name: "plugin-sample", eventBus: {
+    const app = {plugins: [{name: "plugin-sample", models: {}, eventBus: {
         emit: (type: string, detail: {url: string}) => events.push({type, url: detail.url}),
     }}]} as unknown as Parameters<typeof exports.processSiYuanUri>[0];
-    return {exports, app, requests, opens, events, bazaar};
+    return {exports, app, requests, opens, events, bazaar, messages, customOpens};
 };
+
+test("custom tab URIs use the shared factory resolution and report unavailable or ambiguous owners", () => {
+    for (const mobile of [false, true]) {
+        const context = createDispatcher(URL, mobile);
+        const uri = "siyuan://plugins/plugin-sampleview?title=Saved";
+        assert.equal(context.exports.processSiYuanUri(context.app, uri), true);
+        assert.deepEqual(context.messages, ["Plugin unavailable"]);
+        context.messages.length = 0;
+        const factory = (): never => { throw new Error("URI dispatch must use openFile"); };
+        context.app.plugins[0].models["plugin-sampleview"] = factory;
+        assert.equal(context.exports.processSiYuanUri(context.app, uri), true);
+        assert.equal(context.customOpens.length, mobile ? 0 : 1);
+        assert.deepEqual(context.messages, []);
+        context.app.plugins.push({name: "plugin-samplev", models: {"plugin-sampleview": factory}} as unknown as import("../plugin").Plugin);
+        assert.equal(context.exports.processSiYuanUri(context.app, uri), true);
+        assert.deepEqual(context.messages, ["Plugin unavailable"]);
+        assert.equal(context.customOpens.length, mobile ? 0 : 1);
+    }
+});
 
 test("reported agent block links reach document navigation in both desktop and mobile builds", () => {
     for (const URLClass of [URL, LegacyURL]) {
@@ -136,21 +166,73 @@ test("reported agent block links reach document navigation in both desktop and m
                 assert.equal(context.opens[0].id, blockID);
                 assert.deepEqual(Array.from(context.opens[0].action), ["highlight", "context", "rootScroll"]);
                 assert.deepEqual(context.events, [{type: "open-siyuan-url-block", url: uri}]);
+                assert.deepEqual(context.messages, []);
             }
         }
     }
 });
 
-test("missing blocks retain the existence guard and invalid schemes make no requests", () => {
-    for (const URLClass of [URL, LegacyURL]) {
-        const context = createDispatcher(URLClass, true, false);
-        assert.equal(context.exports.processSiYuanUri(context.app, `siyuan://blocks/${blockID}`), true);
-        assert.equal(context.requests.length, 1);
-        assert.equal(context.opens.length, 0);
-        for (const uri of ["invalid", `https://blocks/${blockID}`, `siyuan://other/${blockID}`]) {
-            assert.equal(context.exports.processSiYuanUri(context.app, uri), false);
+test("mind map block links carry split and background modifiers through the shared link opener", () => {
+    const cases = [
+        {shiftKey: false, altKey: false, ctrl: false, position: undefined, keepCursor: false},
+        {shiftKey: false, altKey: true, ctrl: false, position: "right", keepCursor: false},
+        {shiftKey: true, altKey: false, ctrl: false, position: "bottom", keepCursor: false},
+        {shiftKey: true, altKey: true, ctrl: true, position: "bottom", keepCursor: false},
+        {shiftKey: false, altKey: true, ctrl: true, position: "right", keepCursor: false},
+        {shiftKey: false, altKey: false, ctrl: true, position: undefined, keepCursor: true},
+    ];
+    for (const mobile of [false, true]) {
+        for (const item of cases) {
+            const context = createDispatcher(URL, mobile);
+            const exports = {} as typeof import("../editor/openLink");
+            runInNewContext(compile("src/editor/openLink.ts", mobile), {
+                exports,
+                Lute: {UnEscapeHTMLStr: (value: string) => value},
+                window: {siyuan: {config: {fileTree: {}, editor: {}}}},
+                require: () => ({
+                    processSiYuanUri: context.exports.processSiYuanUri,
+                    isLocalPath: () => false,
+                    getAssetExtension: () => "",
+                    Constants: {SIYUAN_ASSETS_EXTS: [] as string[]},
+                    resolveAssetOpenAction: () => "app",
+                    resolveExecutableAssetOpenAction: () => "app",
+                    resolveAvailableAssetOpenAction: () => "app",
+                    getHostCapabilities: () => ({localFileSystem: false}),
+                    resolveOpenLinkEvent: (): undefined => undefined,
+                }),
+            });
+            const event = {shiftKey: item.shiftKey, altKey: item.altKey} as MouseEvent;
+            exports.openLink(context.app, `siyuan://blocks/${blockID}?focus=1&fullscreen=1`, event, item.ctrl);
+            assert.equal(context.opens.length, 1);
+            assert.equal(context.opens[0].position, mobile ? undefined : item.position);
+            assert.equal(context.opens[0].keepCursor, mobile ? undefined : item.keepCursor);
+            assert.deepEqual(Array.from(context.opens[0].action), ["focus", "highlight", "all"]);
+            if (!mobile) {
+                assert.equal(context.opens[0].zoomIn, true);
+            }
+            assert.equal(context.events[0].type, "open-siyuan-url-block");
         }
-        assert.equal(context.requests.length, 1);
+    }
+});
+
+test("missing blocks show feedback on desktop and mobile while preserving plugin events", () => {
+    for (const URLClass of [URL, LegacyURL]) {
+        for (const mobile of [false, true]) {
+            for (const protocol of ["siyuan", "web+siyuan"]) {
+                const context = createDispatcher(URLClass, mobile, false);
+                const uri = `${protocol}://blocks/${blockID}`;
+                assert.equal(context.exports.processSiYuanUri(context.app, uri), true);
+                assert.equal(context.requests.length, 1);
+                assert.equal(context.opens.length, 0);
+                assert.deepEqual(context.messages, [`Content block with id [${blockID}] not found`]);
+                assert.deepEqual(context.events, [{type: "open-siyuan-url-block", url: uri}]);
+                for (const invalid of ["invalid", `https://blocks/${blockID}`, `siyuan://other/${blockID}`]) {
+                    assert.equal(context.exports.processSiYuanUri(context.app, invalid), false);
+                }
+                assert.equal(context.requests.length, 1);
+                assert.equal(context.messages.length, 1);
+            }
+        }
     }
 });
 

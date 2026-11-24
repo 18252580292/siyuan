@@ -3,16 +3,53 @@ const {readFileSync, mkdtempSync, rmSync} = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-const runCases = async (sources) => {
+const runCases = async (sources, appDirectory) => {
     const assert = require("node:assert/strict");
-    const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+    const settle = () => new Promise(resolve => setTimeout(resolve, 180));
     const dataByElement = new WeakMap();
     let mobile = false;
     let fragment;
     let request;
     let candidates;
-    window.siyuan = {zIndex: 0, languages: {empty: "Empty", confirm: "Confirm",
+    let openRangeCell;
+    window.siyuan = {dialogs: [], storage: {}, config: {readonly: false}, menus: {menu: {element: document.createElement("div"), remove() {}}},
+        mobile: {size: {portrait: {height1: innerHeight}, landscape: {height1: innerHeight}}},
+        zIndex: 0, languages: {empty: "Empty", confirm: "Confirm", key: "Key", text: "Text",
+        _attrView: {key: "Primary key"},
         newFile: "New document", newSubDoc: "New subdocument", newFileAtPath: "Choose location"}};
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const ts = require(path.join(appDirectory, "node_modules/typescript"));
+    const dialogOverrides = {
+        "util/functions": {isMobile: () => mobile},
+        "util/genID": {genUUID: () => String(Math.random())},
+        "util/zIndex": {isAbove: () => false},
+        "dialog/moveResize": {moveResize() {}},
+        "dialog/message": {showMessage() {}},
+        "protyle": {},
+        "protyle/util/compatibility": {isNotCtrl: () => true, isInMobileApp: () => false},
+        "mobile/util/mobileAppUtil": {callMobileAppShowKeyboard() {}},
+        "constants": {Constants: {TIMEOUT_OPENDIALOG: 0, TIMEOUT_DBLCLICK: 0}},
+    };
+    const dialogCache = new Map();
+    const loadDialogModule = (name, parent = "") => {
+        const key = path.posix.normalize(path.posix.join(parent, name));
+        if (dialogOverrides[key]) return dialogOverrides[key];
+        if (dialogCache.has(key)) return dialogCache.get(key);
+        let file = path.join(appDirectory, "src", key + ".ts");
+        let moduleKey = key;
+        if (!fs.existsSync(file)) { file = path.join(appDirectory, "src", key, "index.ts"); moduleKey += "/index"; }
+        const exports = {};
+        dialogCache.set(key, exports);
+        const code = ts.transpileModule(fs.readFileSync(file, "utf8"), {
+            compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022},
+        }).outputText;
+        new Function("require", "exports", code)(name => loadDialogModule(name, path.posix.dirname(moduleKey)), exports);
+        return exports;
+    };
+    const {AdaptiveDialog} = loadDialogModule("dialog/adaptiveDialog");
+    window.qaAVAdaptiveDialog = options => { mobile = true; return new AdaptiveDialog(options); };
+    const mask = () => document.querySelector(".av__richtext-mask, .mobile-bottom-sheet-dialog");
     const hiddenElement = () => {
         const element = document.createElement("div");
         element.className = "fn__none";
@@ -29,11 +66,23 @@ const runCases = async (sources) => {
         },
         Lute: {UnEscapeHTMLStr: value => value, Caret: "caret"},
         getDailyNoteHints: async () => [],
+        getConfiguredEntryVisibility: () => true,
         Constants: {ZWSP: "\u200b"},
     };
     const hintRef = new Function(...Object.keys(hintDependencies), "exports", sources.hintRef + "\nreturn exports.hintRef;")(
         ...Object.values(hintDependencies), {});
     const dependencies = {
+        "../../util/hotKey": {matchHotKey: () => false},
+        "./row": {updateAVSelectionStatus() {}}, "./action": {}, "../../util/clear": {},
+        "../../../util/upDownHint": {}, "./newItemTemplate": {}, "./verticalNavigation": {},
+        "../../util/hasClosest": {hasClosestByClassName: (element, className) => element.closest("." + className)},
+        "../../../constants": {Constants: {}},
+        "./cell": {popTextCell: (_protyle, cells) => openRangeCell(cells[0])},
+        "./host": {getAVHostIdentity: element => element.dataset.avHost || element.dataset.nodeId || "",
+            getAVHostBlockID: element => element.dataset.nodeId || ""},
+        "./cellEditor": {AV_CELL_EDITOR_CLOSE_EVENT: "siyuan-av-cell-editor-close"},
+        "../../../dialog/adaptiveDialog": {AdaptiveDialog},
+        "../../../dialog/message": {showMessage() {}},
         "../../../util/escape": {escapeHtml: value => value},
         "../../../util/functions": {isMobile: () => mobile},
         "../../../mobile/util/mobileAppUtil": {callMobileAppShowKeyboard: () => {}},
@@ -43,12 +92,20 @@ const runCases = async (sources) => {
         "../../toolbar/defaults": {getDefaultToolbar: () => []},
         "../highlightRender": {highlightRender: () => {}},
         "../mathRender": {mathRender: () => {}},
+        "../imageDisplay": {renderImageDisplay() {}},
+        "../../header/documentTitleDOM": {getDocumentTitleLute: lute => lute,
+            getDocumentTitleDOMFingerprint: content => content},
+        "./primaryRich": {getAVPrimaryInitialDOM: value => value.block.content,
+            createAVPrimaryEditValue: (content, value) => ({...value, block: {...value.block, content}})},
         "./richTextEditorPosition": {positionAVRichTextEditor: () => {}},
-        "./virtualScroll": {getAVData: element => dataByElement.get(element)},
+        "./richTextEditorLute": {createAVRichTextEditorLute: () => ({}), configureAVRichTextEditorLute() {}},
+        "./virtualScroll": {getAVData: element => dataByElement.get(element),
+            ensureAVTableAdjacentRow: row => row.nextElementSibling, ensureAVTableRow() {}, resetAVRowSelect() {}},
+        "./columnWindow": {ensureAVColumnWindow() {}, prepareAVColumnWindow() {}},
+        "./rangeSelect": {setAVCellAnchor: () => true},
         "../../util/outlineBlock": {updateOutlineCurrentBlock: () => {}},
         "./richText": {
-            getAVTextSource: value => ({kind: "plain", content: value.text.content}),
-            getAVRichTextLute: () => ({}),
+            getAVTextSource: value => ({kind: "plain", content: value.text?.content || ""}),
             serializeAVRichTextBlockDOM: content => ({markdown: content, plainText: content}),
             createAVRichTextValue: (content, _plainText, value) => ({...value, text: {...value.text, content}}),
         },
@@ -57,10 +114,11 @@ const runCases = async (sources) => {
             mountProtyleLiteFragment: (host, options) => {
                 const input = document.createElement("div");
                 input.contentEditable = "true";
-                input.textContent = options.initialPlainText;
+                input.textContent = options.initialPlainText ?? options.initialBlockHTML;
                 host.append(input);
                 fragment = {
                     input,
+                    wysiwyg: input,
                     destroyed: false,
                     flushed: false,
                     pendingInput: "",
@@ -76,7 +134,7 @@ const runCases = async (sources) => {
                             genLoading() {},
                             genHTML: items => { candidates = items; },
                         },
-                        wysiwyg: {flushPendingInput: async () => {
+                        wysiwyg: {element: input, flushPendingInput: async () => {
                             fragment.flushed = true;
                             if (fragment.pendingInput) {
                                 input.append(document.createTextNode(fragment.pendingInput));
@@ -106,34 +164,62 @@ const runCases = async (sources) => {
     };
     const editor = load("./richTextEditor");
     const {hasAVEditorSession} = load("./editorSession");
-    const createOwner = (standalone, notebookId = "box") => {
+    const createOwner = (standalone, notebookId = "box", prepareNextInput, primary = false) => {
         const owner = document.createElement("div");
         owner.className = standalone ? `protyle-db-row${mobile ? " protyle-db-row--mobile" : ""}` : "protyle";
-        owner.innerHTML = '<div data-type="NodeAttributeView"><div class="av__row" data-id="row"><div data-col-id="text"></div></div></div>';
+        owner.innerHTML = '<div class="av" data-type="NodeAttributeView" data-av-type="table" data-av-id="database"><div class="av__body"><div class="av__row" data-id="row"><div class="av__cell" data-col-id="text" data-dtype="text"></div></div></div></div>';
         document.body.replaceChildren(owner);
+        if (mobile) {
+            const toolbar = document.createElement("div");
+            toolbar.id = "keyboardToolbar";
+            toolbar.className = "keyboard";
+            toolbar.style.cssText = "position:fixed;bottom:0;height:48px;z-index:100";
+            document.body.append(toolbar);
+        }
         const nodeElement = owner.firstElementChild;
         nodeElement.dataset.nodeId = "carrier-block";
         const anchorElement = nodeElement.querySelector("[data-col-id]");
-        const value = {id: "value", keyID: "text", blockID: "row", type: "text", text: {content: "Initial"}};
-        const column = {id: "text", type: "text"};
+        const value = {id: "value", keyID: "text", blockID: "row", ...(primary ?
+            {type: "block", isDetached: true, block: {content: "Initial"}} : {type: "text", text: {content: "Initial"}})};
+        const column = {id: "text", type: value.type};
+        anchorElement.dataset.dtype = value.type;
+        if (primary) anchorElement.dataset.detached = "true";
         const cell = {id: "value", value};
         const stableCells = [{groupID: "", rowID: "row", colID: "text", rowIndex: 0, colIndex: 0, cell, column}];
         const data = {viewType: "table", view: {columns: [column], rows: [{id: "row", cells: [cell]}]}};
         dataByElement.set(nodeElement, data);
         const saves = [];
         let closed = 0;
-        const protyle = {element: standalone ? document.createElement("div") : owner,
+        const protyle = {options: {}, element: standalone ? document.createElement("div") : owner, wysiwyg: {element: owner},
             notebookId, path: "/document.sy", block: {rootID: "document"}};
         editor.openAVRichTextEditor({protyle, nodeElement, anchorElement, value, stableCells,
-            onSave: (...args) => saves.push(args), onDestroy: () => closed++});
+            onSave: (...args) => saves.push(args), onDestroy: () => closed++, prepareNextInput});
+        if (mobile) {
+            assert.equal(mask().querySelector(".b3-dialog__header").textContent, primary ? "Primary key" : "Text");
+        }
         return {owner, protyle, nodeElement, anchorElement, value, stableCells, saves, data, closed: () => closed};
     };
+    {
+        const state = createOwner(false, "box", undefined, true);
+        state.data.view.rows[0].cells = [{value: {...state.value, block: {...state.value.block, id: "legacy"}}}];
+        fragment.pendingInput = "draft";
+        state.anchorElement.addEventListener("mouseenter", () => state.anchorElement.append(document.createElement("button")), {once: true});
+        state.anchorElement.dispatchEvent(new MouseEvent("mouseenter"));
+        await settle();
+        assert.equal(state.closed(), 0);
+        assert.equal(getComputedStyle(mask()).backgroundColor, "rgba(0, 0, 0, 0)");
+        mask().dispatchEvent(new MouseEvent("mousedown", {bubbles: true}));
+        await settle();
+        assert.equal(state.saves[0][0].block.content, "Initialdraft");
+        assert.equal(state.closed(), 1);
+    }
     // 文本字段块引复用真实文档上下文，不把临时段落或数据库条目当作搜索来源。
     for (const isMobile of [false, true]) {
         mobile = isMobile;
         for (const standalone of [false, true]) {
             for (const notebookId of ["box", "encrypted-box"]) {
                 const state = createOwner(standalone, notebookId);
+                await settle();
                 for (const splitChar of ["((", "（（", "[[", "【【"]) {
                     fragment.protyle.hint.splitChar = splitChar;
                     const hint = fragment.protyle.options.hint.extend.find(item => item.key === splitChar);
@@ -158,16 +244,15 @@ const runCases = async (sources) => {
     for (const mode of ["document", "desktop-row", "mobile-row"]) {
         mobile = mode === "mobile-row";
         const state = createOwner(mode !== "document");
+        await settle();
         if (mobile) {
-            const toolbar = document.createElement("div");
-            toolbar.className = "keyboard";
-            toolbar.style.zIndex = "100";
-            document.body.append(toolbar);
+            const toolbar = document.querySelector("#keyboardToolbar");
             const confirm = document.querySelector('[data-type="confirm"]');
-            assert.equal(document.querySelectorAll(".av__richtext-actions button").length, 1);
+            assert.equal(document.querySelectorAll('.b3-dialog__action [data-type="confirm"]').length, 1);
             assert.equal(confirm.textContent, window.siyuan.languages.confirm);
             const rect = confirm.getBoundingClientRect();
-            assert.ok(rect.bottom <= toolbar.getBoundingClientRect().top, "actions must remain above the keyboard toolbar");
+            assert.ok(rect.bottom <= toolbar.getBoundingClientRect().top,
+                `actions must remain above the keyboard toolbar: ${JSON.stringify({button:rect,toolbar:toolbar.getBoundingClientRect(),panel:confirm.closest(".b3-dialog__container").getBoundingClientRect()})}`);
             assert.ok(confirm.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)),
                 "mobile actions must receive pointer events");
         }
@@ -175,7 +260,7 @@ const runCases = async (sources) => {
             fragment.input.append(document.createTextNode(input));
             fragment.input.dispatchEvent(new InputEvent("input", {bubbles: true, data: input}));
             await settle();
-            assert.ok(document.querySelector(".av__richtext-mask"), `${mode}: input must keep the editor open`);
+            assert.ok(mask(), `${mode}: input must keep the editor open`);
             assert.equal(fragment.destroyed, false);
             assert.equal(document.activeElement, fragment.input);
         }
@@ -195,23 +280,25 @@ const runCases = async (sources) => {
         assert.equal(state.saves[0][2], state.stableCells);
         assert.equal(state.closed(), 1);
         assert.equal(hasAVEditorSession(state.owner), false);
-        assert.equal(document.querySelector(".av__richtext-mask"), null);
+        assert.equal(mask(), null);
 
         if (mobile) {
             const unchanged = createOwner(true);
+            await settle();
             document.querySelector('[data-type="confirm"]').click();
             await settle();
             assert.equal(unchanged.saves.length, 0);
             assert.equal(unchanged.closed(), 1);
-            assert.equal(document.querySelector(".av__richtext-mask"), null);
+            assert.equal(mask(), null);
 
             const returned = createOwner(true);
+            await settle();
             fragment.pendingInput = "pending";
             editor.destroyAVRichTextEditor(true);
             await settle();
             assert.equal(returned.saves[0][0].text.content, "Initialpending");
             assert.equal(returned.closed(), 1);
-            assert.equal(document.querySelector(".av__richtext-mask"), null);
+            assert.equal(mask(), null);
         }
 
         const removed = createOwner(mode !== "document");
@@ -223,7 +310,144 @@ const runCases = async (sources) => {
         assert.equal(removed.closed(), 1, `${mode}: closing the owner must cancel the editor`);
         assert.equal(fragment.destroyed, true);
         assert.equal(hasAVEditorSession(removed.owner), false);
-        assert.equal(document.querySelector(".av__richtext-mask"), null);
+        assert.equal(mask(), null);
+    }
+    for (const isMobile of [false, true]) {
+        mobile = isMobile;
+        for (const html of ["<p>First</p>", "<ul><li>First</li></ul>"]) {
+            const state = createOwner(false, "box", () => () => assert.fail("text Enter must keep editing"));
+            await settle();
+            fragment.input.innerHTML = html;
+            fragment.input.focus();
+            const range = document.createRange();
+            range.selectNodeContents(fragment.input);
+            range.collapse(false);
+            getSelection().removeAllRanges();
+            getSelection().addRange(range);
+            const enter = isMobile ?
+                new InputEvent("beforeinput", {inputType: "insertParagraph", bubbles: true, cancelable: true}) :
+                new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true});
+            fragment.input.dispatchEvent(enter);
+            assert.equal(enter.defaultPrevented, false);
+            document.execCommand("insertParagraph");
+            document.execCommand("insertText", false, "Second");
+            await settle();
+            assert.equal(fragment.input.children.length, html.startsWith("<ul>") ? 1 : 2);
+            if (html.startsWith("<ul>")) assert.equal(fragment.input.querySelectorAll("li").length, 2);
+            assert.ok(mask());
+            assert.equal(fragment.destroyed, false);
+            assert.equal(state.saves.length, 0);
+            editor.destroyAVRichTextEditor(true);
+            await settle();
+            assert.equal(state.saves.length, 1);
+            assert.ok(state.saves[0][0].text.content.includes("Second"));
+            assert.equal(mask(), null);
+        }
+        const {prepareAVContinuousInput} = load("./continuousInput");
+        const {resolveAVSelectedCell} = load("./selectionState");
+        const openedRows = [];
+        let currentAnchor;
+        const prepareNextInput = anchor => prepareAVContinuousInput(state.protyle, state.nodeElement, [anchor], next => {
+            const rowID = next.closest(".av__row").dataset.id;
+            const target = resolveAVSelectedCell(state.data, {groupID: "", rowID, colID: "text"});
+            openedRows.push(rowID);
+            currentAnchor = next;
+            editor.openAVRichTextEditor({protyle: state.protyle, nodeElement: state.nodeElement,
+                anchorElement: next, value: target.cell.value, stableCells: [target],
+                onSave: (...args) => state.saves.push(args), prepareNextInput});
+        });
+        const state = createOwner(false, "box", prepareNextInput, true);
+        currentAnchor = state.anchorElement;
+        for (const rowID of ["next1", "next2"]) {
+            const value = {...state.value, id: rowID + "-value", blockID: rowID};
+            state.data.view.rows.push({id: rowID, cells: [{id: value.id, value}]});
+            state.nodeElement.querySelector(".av__body").insertAdjacentHTML("beforeend",
+                `<div class="av__row" data-id="${rowID}"><div class="av__cell" data-col-id="text" data-dtype="block" data-detached="true"></div></div>`);
+        }
+        for (let row = 0; row < 3; row++) {
+            currentAnchor.replaceWith(currentAnchor.cloneNode());
+            fragment.input.textContent = String(row);
+            await settle();
+            const newline = new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true});
+            fragment.input.dispatchEvent(newline);
+            assert.equal(newline.defaultPrevented, false, "plain Enter remains available for block content");
+            assert.equal(state.saves.length, row);
+            const enter = new KeyboardEvent("keydown", {key: "Enter", ctrlKey: true, bubbles: true, cancelable: true});
+            fragment.input.dispatchEvent(enter);
+            assert.equal(enter.defaultPrevented, true, `${isMobile ? "mobile" : "desktop"}: confirm after row redraw`);
+            await settle();
+            assert.equal(state.saves.length, row + 1);
+            assert.deepEqual(openedRows, ["next1", "next2"].slice(0, row + 1));
+            assert.equal(Boolean(mask()), row < 2);
+        }
+    }
+    for (const isMobile of [false, true]) {
+        mobile = isMobile;
+        window.siyuan.menus.menu.element.className = "fn__none";
+        window.siyuan.config.keymap = {editor: {general: {}}};
+        const state = createOwner(false);
+        editor.destroyAVRichTextEditor(false);
+        await settle();
+        const selection = load("./selectionState");
+        const {avKeydown} = load("./keydown");
+        const {prepareAVContinuousInput} = load("./continuousInput");
+        const textColumn = state.data.view.columns[0];
+        const primaryColumn = {id: "primary", type: "block"};
+        state.data.view.columns.push(primaryColumn);
+        state.data.view.rows.push({id: "next", cells: [{value: {...state.value, id: "next-text", blockID: "next"}}]});
+        for (const row of state.data.view.rows) {
+            row.cells.push({value: {id: row.id + "-primary", keyID: "primary", blockID: row.id,
+                type: "block", isDetached: true, block: {content: "Initial"}}});
+        }
+        const points = state.data.view.rows.flatMap(row => [textColumn, primaryColumn].map(column =>
+            ({groupID: "", rowID: row.id, colID: column.id})));
+        const redraw = () => {
+            state.nodeElement.querySelector(".av__body").innerHTML = state.data.view.rows.map(row =>
+                `<div class="av__row" data-id="${row.id}">${state.data.view.columns.map(column =>
+                    `<div class="av__cell" data-col-id="${column.id}" data-dtype="${column.type}" data-detached="true"></div>`).join("")}</div>`).join("");
+            selection.restoreAVCellSelection(state.nodeElement);
+        };
+        redraw();
+        delete dependencies["./rangeSelect"];
+        const ranges = load("./rangeSelect");
+        const cells = state.nodeElement.querySelectorAll(".av__cell");
+        assert.equal(ranges.setAVCellAnchor(state.nodeElement, cells[cells.length - 1]), true);
+        assert.equal(ranges.selectAVCellRange(state.nodeElement, cells[0]), true);
+        const prepareNextInput = (anchor, rangeOnly) => prepareAVContinuousInput(state.protyle, state.nodeElement,
+            [anchor], openRangeCell, rangeOnly);
+        openRangeCell = anchor => {
+            const point = selection.getAVCellSelection(state.nodeElement).input;
+            const target = selection.resolveAVSelectedCell(state.data, point);
+            assert.equal(anchor.dataset.colId, point.colID);
+            editor.openAVRichTextEditor({protyle: state.protyle, nodeElement: state.nodeElement,
+                anchorElement: anchor, value: target.cell.value, stableCells: [target],
+                onSave: (...args) => state.saves.push(args), prepareNextInput});
+        };
+        const enter = new KeyboardEvent("keydown", {key: "Enter", cancelable: true});
+        assert.equal(avKeydown(enter, state.nodeElement, state.protyle, () => false), true);
+        assert.equal(enter.defaultPrevented, true);
+        for (let index = 0; index < points.length; index++) {
+            await settle();
+            assert.deepEqual(selection.getAVCellSelection(state.nodeElement).input, points[index]);
+            redraw();
+            await settle();
+            fragment.input.textContent = "Value " + index;
+            if (mobile) document.querySelector('[data-type="confirm"]').click();
+            else fragment.input.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true,
+                cancelable: true, ctrlKey: true}));
+            await settle();
+            assert.equal(state.saves.length, index + 1);
+            assert.equal(state.saves[index][2].length, 1);
+            assert.equal(state.saves[index][2][0].rowID, points[index].rowID);
+            assert.equal(state.saves[index][2][0].colID, points[index].colID);
+        }
+        assert.equal(mask(), null);
+        assert.equal(selection.getAVCellSelection(state.nodeElement).cells.length, 4);
+        assert.equal(state.nodeElement.querySelectorAll(".av__cell--active").length, 4);
+        const active = state.nodeElement.querySelectorAll(".av__cell--select");
+        assert.equal(active.length, 1);
+        assert.equal(active[0].dataset.colId, "primary");
+        assert.equal(active[0].closest(".av__row").dataset.id, "next");
     }
     // 普通数据库行刷新后仍按稳定标识编辑；目标字段删除后取消编辑。
     mobile = false;
@@ -240,16 +464,62 @@ const runCases = async (sources) => {
     assert.equal(document.querySelector(".av__richtext-mask"), null);
 };
 
+const checkMobileSafeArea = async (safeTop, width, height) => {
+    const assert = require("node:assert/strict");
+    assert.equal(innerWidth, width);
+    assert.equal(innerHeight, height);
+    document.body.replaceChildren();
+    window.siyuan.mobile.size = {portrait: {height1: height}, landscape: {height1: height}};
+    for (const [frontend, platform, expectedTop] of [
+        ["mobile", "android", 0],
+        ["mobile", "ios", safeTop],
+        ["mobile", "harmony", safeTop],
+        ["browser-mobile", "android", safeTop],
+    ]) {
+        document.documentElement.dataset.frontend = frontend;
+        document.body.className = "body--" + platform;
+        const dialog = window.qaAVAdaptiveDialog({content: '<div class="av__richtext-editor av__richtext-editor--sheet"><div class="av__richtext-host">Text</div></div><div class="b3-dialog__action"><button class="b3-button b3-button--text">Confirm</button></div>',
+            containerClassName: "mobile-av-richtext-sheet"});
+        await new Promise(resolve => setTimeout(resolve, 180));
+        const panel = dialog.element.querySelector(".mobile-sheet-panel");
+        const grip = panel.querySelector(".b3-menu__title--root");
+        assert.equal(panel.getBoundingClientRect().height, height / 2);
+        for (const [type, y] of [["touchstart", 100], ["touchmove", 40], ["touchend", 40]]) {
+            const point = {identifier: 1, clientX: 100, clientY: y};
+            const event = new Event(type, {bubbles: true, cancelable: true});
+            Object.assign(event, {touches: [point], changedTouches: [point]});
+            grip.dispatchEvent(event);
+        }
+        const confirm = dialog.element.querySelector(".b3-button");
+        const rect = panel.getBoundingClientRect();
+        const label = `${frontend}/${platform}, safe area ${safeTop}px, viewport ${innerWidth}x${innerHeight}`;
+        assert.equal(rect.top, expectedTop, `${label}: respect the frontend's top safe area`);
+        assert.equal(rect.left, 0, label);
+        assert.equal(rect.right, innerWidth, label);
+        assert.equal(rect.bottom, innerHeight, label);
+        if (expectedTop === 0) {
+            assert.ok(panel.contains(document.elementFromPoint(innerWidth / 2, 1)),
+                `${label}: the editor must cover the underlying document at the top`);
+        }
+        const buttonRect = confirm.getBoundingClientRect();
+        assert.ok(confirm.contains(document.elementFromPoint(buttonRect.left + buttonRect.width / 2,
+            buttonRect.top + buttonRect.height / 2)), `${label}: confirmation must remain reachable`);
+        await dialog.requestClose("back");
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+};
+
 const runElectron = async () => {
     const {app, BrowserWindow} = require("electron");
     app.setPath("userData", process.argv[2]);
     app.commandLine.appendSwitch("disable-gpu");
     await app.whenReady();
-    const win = new BrowserWindow({show: false, webPreferences: {nodeIntegration: true, contextIsolation: false}});
+    const win = new BrowserWindow({show: false,
+        webPreferences: {nodeIntegration: true, contextIsolation: false, backgroundThrottling: false, offscreen: true}});
     let exitCode = 0;
     try {
         const ts = require("typescript");
-        const sources = Object.fromEntries(["richTextEditor", "editorSession", "selectionState", "capabilities", "capabilities.generated"].map(name => ["./" + name,
+        const sources = Object.fromEntries(["richTextEditor", "continuousInput", "keydown", "rangeSelect", "viewType", "editorSession", "selectionState", "capabilities", "capabilities.generated"].map(name => ["./" + name,
             ts.transpileModule(readFileSync(path.join(__dirname, `../src/protyle/render/av/${name}.ts`), "utf8"),
                 {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020}}).outputText]));
         const hintSource = ts.createSourceFile("extend.ts", readFileSync(path.join(__dirname,
@@ -262,8 +532,27 @@ const runElectron = async () => {
         await win.loadURL("data:text/html,<html><body></body></html>");
         await win.webContents.insertCSS(require("sass").compile(path.join(__dirname, "../src/assets/scss/mobile.scss"),
             {logger: {warn() {}}}).css);
-        await win.webContents.executeJavaScript(`(${runCases.toString()})(${JSON.stringify(sources)})`);
-        console.log("AV rich text editor lifecycle cases passed");
+        await win.webContents.insertCSS(".mobile-bottom-sheet-dialog .mobile-bottom-sheet {transition:none}");
+        await win.webContents.executeJavaScript(`(${runCases.toString()})(${JSON.stringify(sources)}, ${JSON.stringify(path.join(__dirname, ".."))})`);
+        win.webContents.debugger.attach("1.3");
+        for (const safeTop of [0, 24, 48]) {
+            await win.webContents.debugger.sendCommand("Emulation.setSafeAreaInsetsOverride", {
+                insets: {top: safeTop, right: 0, bottom: 0, left: 0},
+            });
+            // 覆盖键盘展开、收起和横屏时的可见窗口尺寸。
+            for (const [width, height] of [[390, 800], [390, 400], [800, 390]]) {
+                await win.webContents.debugger.sendCommand("Emulation.setDeviceMetricsOverride", {
+                    width, height, deviceScaleFactor: 1, mobile: false,
+                });
+                const result = await win.webContents.executeJavaScript(`(async () => { try {
+                    await (${checkMobileSafeArea.toString()})(${safeTop}, ${width}, ${height});
+                    return "safe-area-layout-ok";
+                } catch (error) { return String(error.stack); } })()`);
+                assert.equal(result, "safe-area-layout-ok");
+            }
+        }
+        win.webContents.debugger.detach();
+        console.log("AV rich text editor lifecycle, continuous input and safe-area cases passed");
     } catch (error) {
         console.error(error);
         exitCode = 1;
@@ -279,17 +568,17 @@ if (process.versions.electron && process.type === "browser") {
         require("electron").app.exit(1);
     });
 } else {
-    require("node:test").it("keeps rich text input and saving attached to the visible database row owner", {
+    require("node:test").it("preserves database text editor lifecycle, continuous input and mobile safe-area coverage", {
         skip: process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY,
-        timeout: 45000,
+        timeout: 65000,
     }, async () => {
         const env = {...process.env};
         delete env.ELECTRON_RUN_AS_NODE;
         const profile = mkdtempSync(path.join(os.tmpdir(), "siyuan-av-rich-editor-"));
         try {
             const {stdout} = await require("node:util").promisify(require("node:child_process").execFile)(
-                require("electron"), [__filename, profile], {env, windowsHide: true, timeout: 40000});
-            assert.match(stdout, /AV rich text editor lifecycle cases passed/);
+                require("electron"), [__filename, profile], {env, windowsHide: true, timeout: 60000});
+            assert.match(stdout, /AV rich text editor lifecycle, continuous input and safe-area cases passed/);
         } finally {
             assert.equal(path.dirname(path.resolve(profile)), path.resolve(os.tmpdir()));
             assert.ok(path.basename(profile).startsWith("siyuan-av-rich-editor-"));

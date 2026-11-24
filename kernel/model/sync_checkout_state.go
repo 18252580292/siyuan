@@ -6,6 +6,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -14,10 +15,36 @@ import (
 	"github.com/siyuan-note/dejavu"
 	"github.com/siyuan-note/dejavu/entity"
 	"github.com/siyuan-note/siyuan/kernel/apicontract"
+	"github.com/siyuan-note/siyuan/kernel/cache"
+	"github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
 var syncCheckoutRevision atomic.Int64
+
+var errSyncCheckoutBusy = errors.New("sync checkout write admission is busy")
+
+func (task *syncCheckoutTask) beginIndexing() {
+	task.Lock()
+	defer task.Unlock()
+	task.indexing = true
+	task.message = Conf.Language(436)
+	task.revision = syncCheckoutRevision.Add(1)
+	task.broadcastLocked(0)
+}
+
+func updateSyncCheckoutIndexMessage(message string) {
+	activeSyncCheckout.Lock()
+	defer activeSyncCheckout.Unlock()
+	if task := activeSyncCheckout.task; task != nil {
+		task.Lock()
+		defer task.Unlock()
+		if task.indexing && task.message != message {
+			task.message = message
+			task.revision = syncCheckoutRevision.Add(1)
+		}
+	}
+}
 
 type syncCheckoutClient struct {
 	token     string
@@ -52,6 +79,9 @@ func (task *syncCheckoutTask) snapshotLocked() apicontract.SyncCheckoutState {
 		Blocking: task.phase != "background" && task.phase != "done", Canceling: task.canceling,
 		Current: task.progress.Written, Total: task.progress.Size, Message: task.message,
 		UpsertRootIDs: []string{}, RemoveRootIDs: []string{}}
+	if task.indexing {
+		state.Current, state.Total = 0, 0
+	}
 	roots := map[string]bool{}
 	if task.phase == "background" || task.phase == "done" {
 		for id, upsert := range task.refreshedRoots {
@@ -121,8 +151,12 @@ func IsSyncCheckoutApplying() bool {
 	return false
 }
 
-// prepareApply 先排空各窗口输入，再取得既有写接口和编辑事务的串行区。
 func (task *syncCheckoutTask) prepareApply() error {
+	return task.prepareWriteProtection(true)
+}
+
+// prepareWriteProtection 先排空各窗口输入，再取得既有写接口和编辑事务的串行区。
+func (task *syncCheckoutTask) prepareWriteProtection(deferForRecovery bool) error {
 	if err := task.ctx.Err(); err != nil {
 		return err
 	}
@@ -132,6 +166,9 @@ func (task *syncCheckoutTask) prepareApply() error {
 		return nil
 	}
 	task.Unlock()
+	if deferForRecovery && sql.IndexRecoveryPending() {
+		return errSyncCheckoutBusy
+	}
 	var sessions []*melody.Session
 	for {
 		if err := waitForSyncUI(task.ctx, false, false); err != nil {
@@ -178,7 +215,7 @@ func (task *syncCheckoutTask) prepareApply() error {
 	}
 	// 等待同步锁的写请求会持有读租约，不能反向等待；此次应用稍后重试。
 	if !dataImportAccess.TryLock() {
-		return fmt.Errorf("%w: %s", dejavu.ErrIndexFileChanged, Conf.Language(239))
+		return errSyncCheckoutBusy
 	}
 	task.Lock()
 	task.releaseWrites = dataImportAccess.Unlock
@@ -187,7 +224,8 @@ func (task *syncCheckoutTask) prepareApply() error {
 	if err := lockAssetRelink(ctx, &flushLock); err != nil {
 		return err
 	}
-	task.releaseWrites = func() { flushLock.Unlock(); dataImportAccess.Unlock() }
+	finishDocTreeChange := cache.BeginDocTreeMutation("")
+	task.releaseWrites = func() { finishDocTreeChange(); flushLock.Unlock(); dataImportAccess.Unlock() }
 	for _, tx := range takeQueuedTransactions() {
 		flushTx(tx)
 	}
@@ -213,10 +251,12 @@ func (task *syncCheckoutTask) completeApply() {
 	for _, file := range task.removes {
 		changes.Removes = append(changes.Removes, file)
 	}
+	previousNotebookConfs := task.previousNotebookConfs
 	task.Unlock()
 	if changes.DataChanged() {
+		task.beginIndexing()
 		calcPetalDiff(task.beforePetals, changes)
-		processSyncMergeResult(false, false, changes, &dejavu.TrafficStat{}, "c", 0, true)
+		processSyncMergeResult(false, false, changes, &dejavu.TrafficStat{}, "c", 0, true, previousNotebookConfs)
 	}
 	task.Lock()
 	if task.indexedPaths == nil {
@@ -239,11 +279,13 @@ func (task *syncCheckoutTask) completeApply() {
 		}
 	}
 	task.upserts, task.removes = map[string]*entity.File{}, map[string]*entity.File{}
+	clear(task.previousNotebookConfs)
 	if task.releaseWrites != nil {
 		task.releaseWrites()
 		task.releaseWrites = nil
 	}
 	task.phase, task.revision = "background", syncCheckoutRevision.Add(1)
+	task.indexing = false
 	task.broadcastLocked(0)
 	task.Unlock()
 }
@@ -289,6 +331,9 @@ func reconcileSyncCheckoutChanges(changes *dejavu.MergeResult) (bool, error) {
 	for _, file := range changes.Upserts {
 		task.upserts[file.Path] = file
 		delete(task.removes, file.Path)
+		if boxID := syncNotebookConfBoxID(file.Path); boxID != "" {
+			delete(task.previousNotebookConfs, boxID)
+		}
 	}
 	for _, file := range changes.Removes {
 		task.removes[file.Path] = file

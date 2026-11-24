@@ -1,6 +1,9 @@
 import {onWindowWorkspaceStorageChanged} from "./workspace";
+import {registerColorPickerWindow} from "../colorPicker/panel";
+import {registerDatePickerWindow} from "../datePicker/panel";
 import {closeNotebookHistoryDialogs} from "../history/notebookDialogs";
 import {invalidateHomeRecentDocs} from "../layout/home";
+import {closeDocumentTitleDialogs} from "../protyle/header/documentTitleDialogs";
 import {clearDocumentCreationPlans} from "../util/configuredDocument";
 import {closeNotebookLivePhotos} from "../protyle/preview/livePhoto";
 import {Constants} from "../constants";
@@ -57,6 +60,8 @@ class App {
     public appId: string;
 
     constructor() {
+        registerColorPickerWindow();
+        registerDatePickerWindow();
         addBaseURL();
         this.appId = Constants.SIYUAN_APPID;
 
@@ -177,6 +182,7 @@ class App {
                             case "closeBox":
                             case "removeBox":
                                 invalidateHomeRecentDocs(data.data.box);
+                                closeDocumentTitleDialogs({notebookId: data.data.box});
                                 closeNotebookHistoryDialogs(data.data.box);
                                 clearDocumentCreationPlans(data.data.box);
                                 closeNotebookLivePhotos(data.data.box);
@@ -187,13 +193,14 @@ class App {
                                         if (initTab) {
                                             const initTabData = JSON.parse(initTab);
                                             if (initTabData.instance === "Editor" && data.data.box === initTabData.notebookId) {
-                                                tab.parent.removeTab(tab.id);
+                                                tab.parent.removeTab(tab.id, false, false, true, true);
                                             }
                                         }
                                     }
                                 });
                                 break;
                             case "removeDoc":
+                                closeDocumentTitleDialogs({rootIDs: data.data.ids});
                                 removeBlockPanelEditors({rootIDs: data.data.ids});
                                 getAllTabs().forEach((tab) => {
                                     if (tab.headElement) {
@@ -201,7 +208,7 @@ class App {
                                         if (initTab) {
                                             const initTabData = JSON.parse(initTab);
                                             if (initTabData.instance === "Editor" && data.data.ids.includes(initTabData.rootId)) {
-                                                tab.parent.removeTab(tab.id);
+                                                tab.parent.removeTab(tab.id, false, false, true, true);
                                             }
                                         }
                                     }
@@ -256,11 +263,11 @@ class App {
             await notebookPromise;
             await loadPlugins(this);
             getLocalStorage(() => {
-                void loadLanguages(window.siyuan.config.appearance.lang, Constants.SIYUAN_VERSION, (languages: IObject) => {
+                void loadLanguages(window.siyuan.config.appearance.lang, Constants.SIYUAN_VERSION, (languages) => {
                     window.siyuan.languages = languages;
                     void initializeEnglishCommandTranslations(
                         window.siyuan.config.appearance.lang,
-                        languages as Record<string, string>,
+                        languages,
                         Constants.SIYUAN_VERSION,
                     );
                     window.siyuan.menus = new Menus(this);

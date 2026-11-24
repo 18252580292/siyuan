@@ -6,7 +6,7 @@
 		"id": "20260804171004-aiagt03",
 		"title": "AI Agent",
 		"type": "doc",
-		"updated": "20261027140312"
+		"updated": "20261115103438"
 	},
 	"Children": [
 		{
@@ -34,7 +34,7 @@
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "The AI agent can do more than answer questions. It can use SiYuan's built-in tools, skills, MCP services, and plugin capabilities to search, read, and operate on the knowledge base. It works through tasks step by step and requests confirmation before changing data."
+					"Data": "The AI agent can do more than answer questions. It can use SiYuan's built-in tools, skills, MCP services, and plugin capabilities to search, read, and operate on the knowledge base. It works through tasks step by step and requests confirmation before changing data. On mobile, the chat header displays the AI-generated label."
 				}
 			]
 		},
@@ -158,7 +158,7 @@
 				},
 				{
 					"Type": "NodeText",
-					"Data": "."
+					"Data": ". If you use MiniMax-H3-Image or MiniMax-H3-Image-Highspeed with MiniMax’s official API, set the image generation timeout to 600 seconds as MiniMax recommends."
 				}
 			]
 		},
@@ -317,7 +317,7 @@
 			"HeadingLevel": 2,
 			"Properties": {
 				"id": "20260804170027-iffmsq0",
-				"updated": "20261027140312"
+				"updated": "20261115062149"
 			},
 			"Children": [
 				{
@@ -440,7 +440,7 @@
 							"Children": [
 								{
 									"Type": "NodeText",
-									"Data": "Drag blocks into the agent input"
+									"Data": "Drag blocks from a document into the agent input to insert block references"
 								}
 							]
 						}
@@ -538,7 +538,7 @@
 			"HeadingLevel": 3,
 			"Properties": {
 				"id": "20260804170039-x813t3f",
-				"updated": "20261027140312"
+				"updated": "20261115103438"
 			},
 			"Children": [
 				{
@@ -552,7 +552,7 @@
 			"Type": "NodeParagraph",
 			"Properties": {
 				"id": "20260804170040-oce2o3k",
-				"updated": "20260816114944"
+				"updated": "20261105133947"
 			},
 			"Children": [
 				{
@@ -588,7 +588,119 @@
 				},
 				{
 					"Type": "NodeText",
-					"Data": "While the agent is running, select the stop button to interrupt the current task. Results are generally more reliable when the goal, scope, and destination are explicit."
+					"Data": "While the agent is running, select the stop button to interrupt the current task. Automatic retries keep and continue the same thinking card. Stopping keeps already-visible output while the server finishes saving and recovery, but does not undo completed actions. A slow connection may interrupt generation; reopen the session to recover saved content. Results are generally more reliable when the goal, scope, and destination are explicit."
+				}
+			]
+		},
+		{
+			"ID": "20261122191701-0o75l48",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261122191701-0o75l48",
+				"updated": "20261122191701"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Select text in a note and choose Quote in Agent Chat. On desktop, the first quote from an editor opens the floating Agent Chat panel. If the panel is hidden when you add another quote, a brief notification shows the total number of quotes in the draft. A note excerpt includes the starting and ending block IDs and selection offsets. To quote a chat message, use its quote button. To quote a passage, release the mouse button or lift your finger after selecting it, then choose Quote text next to the selection. Quotes appear inline with your instructions. You can add several, remove them individually, and click a sent quote to return to its source."
+				}
+			]
+		},
+		{
+			"ID": "20261122191702-d2ctxp8",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261122191702-d2ctxp8",
+				"updated": "20261122191702"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Choose Quick phrases beside the input to send a phrase with the current draft. Agent Chat and AI Edit share custom actions. Use Manage to add, edit, or delete them. In a template, {{input}} stands for the draft."
+				}
+			]
+		},
+		{
+			"ID": "20261115062149-v84vob9",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261115062149-v84vob9",
+				"updated": "20261115062149"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "On desktop and mobile, you can keep composing while a local session runs. Sending at this time queues a snapshot of the message and its references; review the queue above the input and cancel individual messages there. Messages send in order after a normal response ends, using the current model and approval settings. Stopping, an error, or switching sessions pauses the queue; return to that session and use the queue's send button to continue. Queued messages stay only in the current frontend's memory and are lost on refresh or exit. A session running in another instance allows drafting but does not accept queued messages here."
+				}
+			]
+		},
+		{
+			"ID": "20261115062149-nb4deva",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261115062149-nb4deva",
+				"updated": "20261115062149"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "When the app loses focus or is hidden, pending approvals, unanswered questions, and normally completed replies can trigger system notifications. Delivery depends on the client and system notification permissions. Locking the screen or losing the connection does not guarantee that a task will continue."
+				}
+			]
+		},
+		{
+			"ID": "20261115103438-l8lubnb",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261115103438-l8lubnb",
+				"updated": "20261115103438"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "On Windows desktop, while SiYuan is running, clicking a pending-confirmation notification restores its original workspace window, opens the corresponding agent session, and highlights the approval or question card. Clicking only navigates; it never sends a draft or approves an operation. Drafts and unfinished message edits are kept when switching away and restored when you return. If an image is still uploading, navigation waits for it to finish. Handled, expired, or missing targets display a notice and do not regain approval controls. This does not support starting an exited app or notification navigation in mobile clients or browsers."
+				}
+			]
+		},
+		{
+			"ID": "20261111083018-c643006",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261111083018-c643006",
+				"updated": "20261111084137"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Within the current conversation turn, the agent checks repeated calls involving eligible built-in reads, as well as calls that fail or return empty results, using a window of the 10 most recent eligible calls. When the same tool with the same arguments returns the same result 3 times, the model is prompted to change strategy; at 5 occurrences, tool use stops. A changed result for the same target resets that target’s count; successful writes or user interaction reset the observation window. This protection covers a limited range of repeated calls and cannot detect every lack of progress."
+				}
+			]
+		},
+		{
+			"ID": "20261111083018-6202b92",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261111083018-6202b92",
+				"updated": "20261111083018"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "After the tool call round limit is reached or repeated calls cause a stop, if the model provides no valid text reply, the system displays and saves an explicit interruption notice stating that the task may still be incomplete. Stopping tool use does not mean the task is complete and does not undo completed actions."
+				}
+			]
+		},
+		{
+			"ID": "20261122115000-5j2n0xw",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261122115000-5j2n0xw",
+				"updated": "20261122115000"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "In the Android app, tap Insert image below the input to open the system photo picker when available. Tap Choose image from files next to it to browse folders. Both options let you select multiple PNG, JPEG, GIF, or WebP images."
 				}
 			]
 		},
@@ -704,7 +816,7 @@
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "Read and search operations usually run immediately. Operations that create, modify, move, delete, or import data display a confirmation card that identifies possible local writes, data egress, and external charges."
+					"Data": "Local-only reads and searches usually run immediately. Operations that create, modify, move, delete or import data, or send network requests, display confirmation cards according to capability settings. The cards identify possible local writes, data egress and external charges. Online search, web fetching, the cloud inbox and online Bazaar queries send requests externally; direct web fetching and HTTP requests may also save downloads in the workspace. A cost flag means a paid service may be involved, not that every call necessarily incurs a charge. Downloading on-demand assets or preparing a snapshot before a write may also contact the sync provider and write local resources. If local writes, data egress or charges are added after confirmation, the call is stopped and must be confirmed again with the current configuration."
 				}
 			]
 		},
@@ -779,7 +891,7 @@
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "The agent supports creating, searching, switching, renaming, and deleting sessions. Sessions preserve messages, references, tool calls, and results and can be viewed across synchronized instances."
+					"Data": "The agent supports creating, searching, switching, renaming, and deleting sessions. Sessions preserve messages, references, tool calls, and results and can be viewed across synchronized instances. If a send conflicts with a saved session revision, the agent reloads the saved conversation when available. Review the draft before sending again."
 				}
 			]
 		},
@@ -846,7 +958,7 @@
 			"HeadingLevel": 2,
 			"Properties": {
 				"id": "20260804170050-oqdi4d2",
-				"updated": "20260816130653"
+				"updated": "20261102182306"
 			},
 			"Children": [
 				{
@@ -938,7 +1050,7 @@
 				},
 				{
 					"Type": "NodeText",
-					"Data": " to search for and select installed skills."
+					"Data": " to search for and select installed skills when the slash menu is enabled. On mobile, the slash menu is disabled by default. You can select skills from the keyboard toolbar's plus panel regardless of the slash menu setting."
 				}
 			]
 		},
@@ -947,7 +1059,7 @@
 			"Type": "NodeParagraph",
 			"Properties": {
 				"id": "20260804170053-2qtiajj",
-				"updated": "20260804180000"
+				"updated": "20261102182306"
 			},
 			"Children": [
 				{
@@ -984,12 +1096,255 @@
 			]
 		},
 		{
+			"ID": "20261102182306-o2wjkat",
+			"Type": "NodeHeading",
+			"Properties": {
+				"id": "20261102182306-o2wjkat",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Installing external skills"
+				}
+			],
+			"HeadingLevel": 3
+		},
+		{
+			"ID": "20261102182306-5s5zhgw",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-5s5zhgw",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "owner/repo"
+				},
+				{
+					"Type": "NodeText",
+					"Data": ", "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "npx skills add owner/repo -g"
+				},
+				{
+					"Type": "NodeText",
+					"Data": ", and repository URLs such as "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " install from the whole repository. SiYuan tries "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "main"
+				},
+				{
+					"Type": "NodeText",
+					"Data": ", then "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "master"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " if the download fails. The command form only extracts the repository name: it does not execute the command or apply filters such as "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "--skill"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "."
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-kd6xeav",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-kd6xeav",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "A branch-level tree URL such as "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo/tree/dev"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " installs repository skills at that reference. A subdirectory tree URL such as "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo/tree/main/skills/example"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " installs only skills within that directory: one for a single-skill directory, or the skills within a collection. Branch names containing "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "/"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " are supported; resolution prefers the longest valid reference prefix and also supports tags and commit references. A missing directory or a directory without skills produces an error instead of installing the whole repository."
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-r8b3o09",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-r8b3o09",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Repository archives and release ZIP URLs such as "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo/releases/download/v1.0/skills.zip"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " are extracted and searched recursively for skill directories containing "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": ". A collection can install multiple skills at once. Once a skill directory is found, its contents are not searched for additional skills; the directory and its supporting resources are copied together. Downloads are limited to 10 MB; subdirectory tree installation still downloads the repository archive."
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-9i2vl41",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-9i2vl41",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "A blob URL such as "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo/blob/main/skills/example/SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " or a raw URL such as "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://raw.githubusercontent.com/owner/repo/main/skills/example/SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " installs only that "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": ", without supporting scripts or references. Single-file installation requires "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "name"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " in Front Matter. Use the skill directory tree URL or a ZIP when supporting resources are needed."
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-seehzv8",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-seehzv8",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Installation writes to the workspace skill directory by skill name. ZIP installation replaces the entire directory of an existing skill with the same name. A blob/raw single-file installation overwrites only its "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": ", preserving other existing files. Back up local changes before reinstalling."
+				},
+				{
+					"Type": "NodeText",
+					"Data": " The installer stores installation records outside skill directories in data/storage/ai/agent/skills.json. The skill list reports the sanitized source URL, resolved repository reference and subdirectory when available, a full commit SHA only when known, installation time, SiYuan version, and a deterministic SHA-256 snapshot of all regular files and their relative paths. The digest describes the directory immediately after installation, not its current integrity or trustworthiness. For a single-file installation, sourceScope is manifest-only: the URL identifies only SKILL.md, while the digest also includes retained resources whose origin is not established by this installation. ZIP installation uses directory scope. Records follow skill directory renames and are removed on deletion; older or manually created skills without records show unknown. An interrupted replacement may leave the source unknown rather than retain an incorrect binding. Copy the entire workspace, including this record file, when migrating. These records do not enable, update, or approve a skill automatically."
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-545dgka",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-545dgka",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "There is currently no command to check for skill updates. Compare versions with the upstream source yourself, then reinstall when appropriate."
+				}
+			]
+		},
+		{
 			"ID": "20260804170054-1c4wqjk",
 			"Type": "NodeHeading",
 			"HeadingLevel": 2,
 			"Properties": {
 				"id": "20260804170054-1c4wqjk",
-				"updated": "20261026182137"
+				"updated": "20261102193434"
 			},
 			"Children": [
 				{
@@ -1003,12 +1358,12 @@
 			"Type": "NodeParagraph",
 			"Properties": {
 				"id": "20261026182137-wjxw9c7",
-				"updated": "20261026182137"
+				"updated": "20261102193434"
 			},
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "External MCP tools load on demand. The agent initially receives only a service list and loads a service's tool definitions when needed; those tools become available in the next model request. You can name the service you want to use in your message. Loading lasts only for the current user request and its tool rounds; the next user message starts unloaded. Multiple services can be loaded without a fixed count limit, and the model can unload services it no longer needs to save context. Disabled tools stay unavailable and execution approval policies still apply. Disable the built-in mcp tool in agent capability settings to send all external tool definitions again; re-enable it to restore on-demand loading."
+					"Data": "External MCP tools load on demand. The agent initially receives only a service list and loads a service's tool definitions when needed; those tools become available in the next model request. You can name the service you want to use in your message. Loading lasts only for the current user request and its tool rounds; the next user message starts unloaded. Multiple services can be loaded without a fixed count limit, and the model can unload services it no longer needs to save context. Disabled tools stay unavailable and execution approval policies still apply. Disable the built-in mcp tool in agent capability settings to send all external tool definitions again; re-enable it to restore on-demand loading. Use the exact service ID, rather than its display name, when calling the mcp discovery tool. Calling it with action=list and no server lists available service IDs; failure messages distinguish a service name, an unknown ID, a disabled service, connection or tool availability issues, and capability policy restrictions."
 				}
 			]
 		},
@@ -1130,7 +1485,7 @@
 			"Type": "NodeHeading",
 			"Properties": {
 				"id": "20261018102417-6nqgr74",
-				"updated": "20261024164212"
+				"updated": "20261028114540"
 			},
 			"Children": [
 				{
@@ -1192,6 +1547,20 @@
 				{
 					"Type": "NodeText",
 					"Data": ", choose the search and fetch providers separately. The defaults are Exa search and direct fetching. To use DeepSeek, enter a DeepSeek API Key shared by Search and Fetch; this setting is independent of your chat model."
+				}
+			]
+		},
+		{
+			"ID": "20261028114540-vrw37hz",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261028114540-vrw37hz",
+				"updated": "20261028114540"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Exa uses rate-limited anonymous access when its API Key is empty. Enter your own Exa API Key to use your account quota; queries are sent to Exa and charges may apply. Exa and DeepSeek keys are stored separately and retained when switching providers. Clear the Exa key to return to anonymous access. If an authenticated request fails, SiYuan reports the error without falling back to anonymous access or another provider. API keys are encrypted in local configuration and excluded from configuration exports."
 				}
 			]
 		},
@@ -1351,6 +1720,77 @@
 			]
 		},
 		{
+			"ID": "20261106140529-48za467",
+			"Type": "NodeHeading",
+			"Properties": {
+				"id": "20261106140529-48za467",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Document and database writes"
+				}
+			],
+			"HeadingLevel": 2
+		},
+		{
+			"ID": "20261106140529-2axxwlu",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261106140529-2axxwlu",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "When creating or moving documents, prefer the parent document ID to select the location. Use an empty parentID for the notebook root and provide the title separately. Do not infer document identity from display paths."
+				}
+			]
+		},
+		{
+			"ID": "20261106140529-trtz9b7",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261106140529-trtz9b7",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Let the system generate IDs for new blocks. Read existing content before updating and preserve its block IDs. Tools reject malformed IDs, duplicates and conflicts with existing blocks."
+				}
+			]
+		},
+		{
+			"ID": "20261106140529-a7ihaxq",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261106140529-a7ihaxq",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "For database batches, database.items_add adds up to 100 rows with other field values supplied for each row; database.items_update updates up to 1000 cells. Each call commits in one transaction and preserves unspecified cells. Read field metadata first, provide values matching each field type, and inspect the saved values returned. Do not automatically retry additions whose execution result is unknown."
+				}
+			]
+		},
+		{
+			"ID": "20261106140529-ho86trj",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261106140529-ho86trj",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Number and date values require a number or date object. When supplying content, also specify isNotEmpty: true sets the value and false clears it. An object containing only content is not a complete cell value. Computed fields cannot be written directly."
+				}
+			]
+		},
+		{
 			"ID": "20260804170109-sbl6g5j",
 			"Type": "NodeHeading",
 			"HeadingLevel": 2,
@@ -1375,7 +1815,7 @@
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "Before the first write to workspace data in a task turn, the agent automatically creates a data snapshot, with at most one snapshot per turn. If the result is not acceptable, use the rollback action on the snapshot notice in the session."
+					"Data": "Before the first write to workspace data in a task turn, the agent automatically creates a data snapshot, with at most one snapshot per turn. Initialize a local data repository key before requesting workspace writes; no cloud account is required. Without a key, the agent reports this prerequisite before requesting write confirmation, and read operations remain available. If the automatic snapshot fails, the write is blocked. Select Restore draft on the error card to bring the original message, references, and attachments back to the input for review before sending. If the result is not acceptable, use the rollback action on the snapshot notice in the session."
 				}
 			]
 		},
@@ -1390,6 +1830,35 @@
 				{
 					"Type": "NodeText",
 					"Data": "The snapshot covers workspace data, but not changes made to external systems by external MCP services or plugins. Regenerating an answer, stopping a task, or deleting a session also does not automatically undo completed write operations."
+				}
+			]
+		},
+		{
+			"ID": "20261115153000-9d2f24d",
+			"Type": "NodeHeading",
+			"HeadingLevel": 2,
+			"Properties": {
+				"id": "20261115153000-9d2f24d",
+				"updated": "20261115153000"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Plugin development"
+				}
+			]
+		},
+		{
+			"ID": "20261115153000-7b3d0a9",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261115153000-7b3d0a9",
+				"updated": "20261115153000"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "When repeatedly packaging a managed plugin project, successful packaging keeps up to 8 recent archives with a total size of at most 256 MiB. After the new archive, download copy, and project metadata are saved, older archives and their matching download copies are removed as needed. The current archive is always retained. Source files and code recovery checkpoints are not removed. If publication fails, existing archives are preserved; if cleanup fails, the new archive is retained and an error is reported."
 				}
 			]
 		},

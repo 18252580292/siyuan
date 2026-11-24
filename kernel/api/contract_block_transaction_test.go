@@ -79,12 +79,14 @@ func TestAPIContractHeadingTransactions(t *testing.T) {
 		t.Fatal(err)
 	}
 	var language struct {
-		Time map[string]any `json:"_time"`
+		Time   map[string]any `json:"_time"`
+		Kernel map[int]string `json:"_kernel"`
 	}
 	if err = json.Unmarshal(langData, &language); err != nil {
 		t.Fatal(err)
 	}
 	util.TimeLangs[model.Conf.Lang] = language.Time
+	util.Langs[model.Conf.Lang] = language.Kernel
 	{
 		confSectionValue0, confSectionValue1, confSectionValue2 := conf.NewFileTree(), conf.NewSync(), conf.NewNotebookCrypto()
 		model.Conf.FileTree.Store(confSectionValue0)
@@ -160,6 +162,9 @@ func TestAPIContractHeadingTransactions(t *testing.T) {
 	testAPIContractMindmapMigration(t, engine, box.ID, docID)
 	testAPIContractListConversion(t, engine, docID)
 	testAPIContractTransactionCompletion(t, engine, docID, paragraphID)
+	testAPIContractDocumentTitle(t, engine, box.ID, docID)
+	testAPIContractNotebookTitle(t, box.ID)
+
 	testAPIContractHistoryQueueOrder(t, engine, docID, paragraphID)
 	testAPIContractRiffMutations(t, paragraphID)
 	for _, entry := range []struct {

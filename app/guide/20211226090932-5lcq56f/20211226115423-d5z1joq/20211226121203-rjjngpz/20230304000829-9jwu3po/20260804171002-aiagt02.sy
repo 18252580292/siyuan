@@ -6,7 +6,7 @@
 		"id": "20260804171002-aiagt02",
 		"title": "AI 智能體",
 		"type": "doc",
-		"updated": "20261027140312"
+		"updated": "20261115103438"
 	},
 	"Children": [
 		{
@@ -34,7 +34,7 @@
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "AI 智能體不僅可以回答問題，還可以呼叫思源內建工具、技能、MCP 服務和外掛能力，搜尋、讀取並操作知識庫。它會根據任務分步執行，並在需要修改資料時請求確認。"
+					"Data": "AI 智能體不僅可以回答問題，還可以呼叫思源內建工具、技能、MCP 服務和外掛能力，搜尋、讀取並操作知識庫。它會根據任務分步執行，並在需要修改資料時請求確認。行動端對話標題列會顯示「AI 產生」標示。"
 				}
 			]
 		},
@@ -158,7 +158,7 @@
 				},
 				{
 					"Type": "NodeText",
-					"Data": " 中設定支援圖片輸出的模型。"
+					"Data": " 中設定支援圖片輸出的模型。透過 MiniMax 官方 API 使用 MiniMax-H3-Image 或 MiniMax-H3-Image-Highspeed 時，請依照 MiniMax 的建議將圖片生成逾時設為 600 秒。"
 				}
 			]
 		},
@@ -289,7 +289,7 @@
 			"HeadingLevel": 2,
 			"Properties": {
 				"id": "20260804170027-qlngedh",
-				"updated": "20261027140312"
+				"updated": "20261115062149"
 			},
 			"Children": [
 				{
@@ -412,7 +412,7 @@
 							"Children": [
 								{
 									"Type": "NodeText",
-									"Data": "將區塊拖曳到智能體輸入框"
+									"Data": "將文件中的區塊拖曳到智能體輸入框以插入區塊引用"
 								}
 							]
 						}
@@ -510,7 +510,7 @@
 			"HeadingLevel": 3,
 			"Properties": {
 				"id": "20260804170039-1z57i1s",
-				"updated": "20261027140312"
+				"updated": "20261115103438"
 			},
 			"Children": [
 				{
@@ -524,7 +524,7 @@
 			"Type": "NodeParagraph",
 			"Properties": {
 				"id": "20260804170040-98fzzbm",
-				"updated": "20260816114944"
+				"updated": "20261105133947"
 			},
 			"Children": [
 				{
@@ -560,7 +560,119 @@
 				},
 				{
 					"Type": "NodeText",
-					"Data": "智能體執行時可以點選停止按鈕中止目前任務。描述目標、範圍和預期輸出位置越明確，執行結果通常越穩定。"
+					"Data": "智能體執行時可以點選停止按鈕中止目前任務。自動重試時會保留並續寫原思考卡。停止後會保留已顯示的內容，等待伺服器端完成儲存和恢復，但不會撤銷已執行的操作。連線過慢時生成可能中斷，可重新開啟會話恢復已儲存的內容。描述目標、範圍和預期輸出位置越明確，執行結果通常越穩定。"
+				}
+			]
+		},
+		{
+			"ID": "20261122191701-d0lta4q",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261122191701-d0lta4q",
+				"updated": "20261122191701"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "在筆記中選取文字，點選「引用到智能體」。桌面端在同一個編輯器中首次引用時會展開浮動的智能體面板。之後新增引用時，如果面板已收合，短暫提示會顯示草稿中的引用總數。筆記摘錄會帶入起訖區塊 ID 和選取位置。在對話中選取文字並放開後，點選取範圍旁的「引用文字」即可引用該段。要引用整則訊息，可點訊息旁的引用按鈕。引用會顯示在輸入的文字之間，可以新增多個，也可以逐一刪除。傳送後點選引用可回到來源。"
+				}
+			]
+		},
+		{
+			"ID": "20261122191702-u9aq6oi",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261122191702-u9aq6oi",
+				"updated": "20261122191702"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "點選輸入框旁的「快捷片語」，選擇片語即可連同目前草稿傳送。快捷片語與智慧編輯共用自訂動作，可在「管理」中新增、修改或刪除。範本中的 {{input}} 代表目前草稿。"
+				}
+			]
+		},
+		{
+			"ID": "20261115062149-f8gk17z",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261115062149-f8gk17z",
+				"updated": "20261115062149"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "桌面端和行動端都可以在本機會話執行時繼續輸入。此時傳送會將訊息及引用的快照加入佇列，可在輸入框上方檢視並逐一取消。正常回覆結束後，訊息依序傳送，使用傳送時的模型和批准設定。停止、發生錯誤或切換會話會暫停佇列；返回對應會話後，可透過佇列上方的傳送按鈕繼續。排隊訊息僅保存在目前前端的記憶體中，重新整理或結束後會遺失。會話在其他實例中執行時，本端可以編輯草稿，但不能加入傳送佇列。"
+				}
+			]
+		},
+		{
+			"ID": "20261115062149-3o0cwbc",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261115062149-3o0cwbc",
+				"updated": "20261115062149"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "應用程式失去焦點或隱藏時，待審批操作、待回答問題及正常完成的回覆可以觸發系統通知，能否送達取決於客戶端和系統通知權限。鎖定螢幕或連線中斷後，無法保證任務繼續執行。"
+				}
+			]
+		},
+		{
+			"ID": "20261115103438-iwe35ii",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261115103438-iwe35ii",
+				"updated": "20261115103438"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Windows 桌面應用程式執行時，點選待確認通知會恢復原工作空間視窗，開啟對應智能體會話並醒目顯示審批或問題卡片。點選僅用於導覽，不會傳送草稿或批准操作；切換前的草稿和尚未提交的訊息編輯會保留，返回時恢復。圖片仍在上傳時，跳轉會等待上傳完成。目標已處理、已過期或已無法存取時會顯示提示，不會恢復批准權限。此功能不包含結束後啟動應用程式，也不支援行動端或瀏覽器端的通知跳轉。"
+				}
+			]
+		},
+		{
+			"ID": "20261111083018-3fed692",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261111083018-3fed692",
+				"updated": "20261111084137"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "智能體會在目前一輪對話中，檢查符合條件的內建讀取，以及失敗或傳回空結果的重複呼叫，觀察範圍為最近 10 次符合條件的呼叫。同一工具使用相同參數傳回相同結果累計 3 次時，會提示模型調整策略；累計 5 次時，會停止呼叫工具。同一目標傳回的結果變化時，會重設該目標的計數；成功的寫入或使用者互動會重設觀察範圍。此保護僅涵蓋有限範圍的重複呼叫，無法識別所有沒有進展的情況。"
+				}
+			]
+		},
+		{
+			"ID": "20261111083018-10eb680",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261111083018-10eb680",
+				"updated": "20261111083018"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "達到工具呼叫輪數上限或因重複呼叫停止後，如果模型沒有提供有效的文字回覆，系統會顯示並儲存明確的中斷說明，提示目前任務可能尚未完成。停止呼叫工具不代表任務完成，也不會復原已完成的操作。"
+				}
+			]
+		},
+		{
+			"ID": "20261122115000-kq3vf82",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261122115000-kq3vf82",
+				"updated": "20261122115000"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "在 Android 用戶端，點選輸入框下方的「插入圖片」會優先開啟系統相簿。點選旁邊的「從檔案選取圖片」可瀏覽資料夾。兩種方式都支援多選，可上傳 PNG、JPEG、GIF 和 WebP 格式的圖片。"
 				}
 			]
 		},
@@ -662,7 +774,7 @@
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "讀取和搜尋通常會直接執行。建立、修改、移動、刪除或匯入資料等操作會顯示確認卡片，並標明可能產生的本機寫入、資料外傳和外部費用。可以確認執行、拒絕，或選擇 "
+					"Data": "僅在本機讀取和搜尋通常會直接執行。建立、修改、移動、刪除、匯入資料或傳送網路請求等操作會依能力設定顯示確認卡片，並標明可能產生的本機寫入、資料外傳和外部費用。線上搜尋、網頁擷取、雲端收集箱和集市線上查詢也會外傳請求；直接網頁擷取和 HTTP 請求還可能將下載檔案寫入工作空間。費用標記表示可能涉及付費服務，不表示每次呼叫必然收費。補齊隨需資源或建立寫入前快照也可能存取同步提供方並寫入本機資源。若確認後新增本機寫入、資料外傳或費用，呼叫會中止，需要依目前設定重新確認。可以確認執行、拒絕，或選擇 "
 				},
 				{
 					"Type": "NodeTextMark",
@@ -723,7 +835,7 @@
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "智能體支援建立、搜尋、切換、重新命名和刪除會話。會話會儲存訊息、引用、工具呼叫和執行結果，可在不同實例間同步檢視。"
+					"Data": "智能體支援建立、搜尋、切換、重新命名和刪除會話。會話會儲存訊息、引用、工具呼叫和執行結果，可在不同實例間同步檢視。如果傳送訊息時發生會話版本衝突，智能體會嘗試重新載入已儲存的會話。請檢查草稿後再傳送。"
 				}
 			]
 		},
@@ -790,7 +902,7 @@
 			"HeadingLevel": 2,
 			"Properties": {
 				"id": "20260804170050-vzu9h83",
-				"updated": "20260816130653"
+				"updated": "20261102182306"
 			},
 			"Children": [
 				{
@@ -873,7 +985,7 @@
 				},
 				{
 					"Type": "NodeText",
-					"Data": "，正文用於說明智能體應遵循的步驟和要求。輸入 "
+					"Data": "，正文用於說明智能體應遵循的步驟和要求。啟用斜線選單時，輸入 "
 				},
 				{
 					"Type": "NodeTextMark",
@@ -882,7 +994,7 @@
 				},
 				{
 					"Type": "NodeText",
-					"Data": " 可以搜尋並選擇已安裝的技能。"
+					"Data": " 可以搜尋並選擇已安裝的技能。行動端預設關閉斜線選單，可透過鍵盤工具列的加號面板選擇技能；加號面板不受斜線選單開關影響。"
 				}
 			]
 		},
@@ -891,7 +1003,7 @@
 			"Type": "NodeParagraph",
 			"Properties": {
 				"id": "20260804170053-5bb3f3k",
-				"updated": "20260804180000"
+				"updated": "20261102182306"
 			},
 			"Children": [
 				{
@@ -928,12 +1040,255 @@
 			]
 		},
 		{
+			"ID": "20261102182306-xsba3zf",
+			"Type": "NodeHeading",
+			"Properties": {
+				"id": "20261102182306-xsba3zf",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "安裝外部技能"
+				}
+			],
+			"HeadingLevel": 3
+		},
+		{
+			"ID": "20261102182306-7w4a8gh",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-7w4a8gh",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "owner/repo"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "、"
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "npx skills add owner/repo -g"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " 和儲存庫位址（如 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "）會按整個儲存庫安裝，先嘗試 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "main"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "，下載失敗後嘗試 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "master"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "。命令形式只用於擷取儲存庫名稱，不會執行命令，也不會套用 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "--skill"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " 等篩選參數。"
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-sqlbjea",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-sqlbjea",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "分支層級的 tree 位址（如 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo/tree/dev"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "）安裝該引用的儲存庫技能；子目錄 tree 位址（如 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo/tree/main/skills/example"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "）只安裝該目錄下的技能。單技能目錄安裝一個，集合目錄安裝其下的技能。支援名稱包含 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "/"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " 的分支；解析時優先選擇最長有效引用前綴，也支援標籤和提交引用。指定目錄不存在或沒有技能時會回報錯誤，不會改為整庫安裝。"
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-932vszx",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-932vszx",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "儲存庫封存檔和 release ZIP 位址（如 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo/releases/download/v1.0/skills.zip"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "）會解壓縮並遞迴尋找技能目錄中的 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "，集合儲存庫可能一次安裝多個技能。找到技能目錄後不再向其內部尋找其他技能；會複製該技能目錄及配套資源。下載大小上限為 10 MB，子目錄 tree 安裝仍需下載儲存庫封存檔。"
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-htnm61d",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-htnm61d",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "blob 位址（如 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://github.com/owner/repo/blob/main/skills/example/SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "）和 raw 位址（如 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "https://raw.githubusercontent.com/owner/repo/main/skills/example/SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "）只安裝單個 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "，不會下載配套的指令碼或參考資料。單檔安裝要求 Front Matter 中包含 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "name"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "。需要配套資源時請使用技能目錄的 tree 位址或 ZIP。"
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-r1rmrth",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-r1rmrth",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "安裝會依技能名稱寫入工作空間技能目錄：ZIP 安裝會取代同名技能的整個目錄；blob/raw 單檔安裝只覆寫同名技能的 "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "code",
+					"TextMarkTextContent": "SKILL.md"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "，保留既有的其他檔案。重新安裝前請備份本機修改。"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " 安裝器在技能目錄之外的 data/storage/ai/agent/skills.json 中儲存安裝記錄。技能清單提供移除憑證的來源 URL、可確定的儲存庫引用與子目錄、已知時的完整提交 SHA、安裝時間、思源版本，以及全部一般檔案和相對路徑的確定性 SHA-256 摘要。摘要標識安裝完成時的目錄快照，不證明目前內容未被修改或值得信任。單檔案安裝的 sourceScope 為 manifest-only：來源 URL 僅對應 SKILL.md，摘要還包含保留的資源，但本次安裝無法確定這些資源的來源。ZIP 安裝使用 directory 範圍。目錄重新命名會同步記錄，刪除會移除記錄；沒有記錄的舊技能或手動建立的技能顯示 unknown。覆寫安裝中斷時可能留下未知來源，而不會保留錯誤繫結。遷移時請複製整個工作空間，包括該記錄檔案。這些記錄不會自動啟用、更新或核准技能。"
+				}
+			]
+		},
+		{
+			"ID": "20261102182306-7w0fcb0",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261102182306-7w0fcb0",
+				"updated": "20261102182306"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "目前沒有檢查技能更新的入口；請自行比對上游版本，確認後重新安裝。"
+				}
+			]
+		},
+		{
 			"ID": "20260804170054-vppxnqj",
 			"Type": "NodeHeading",
 			"HeadingLevel": 2,
 			"Properties": {
 				"id": "20260804170054-vppxnqj",
-				"updated": "20261026182118"
+				"updated": "20261102193434"
 			},
 			"Children": [
 				{
@@ -947,12 +1302,12 @@
 			"Type": "NodeParagraph",
 			"Properties": {
 				"id": "20261026182118-ra8a1vy",
-				"updated": "20261026182118"
+				"updated": "20261102193434"
 			},
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "外部 MCP 工具按需載入。智能體預設只接收服務清單，需要時載入指定服務的工具定義，從下一輪模型請求開始可用；你也可以在訊息中指明要使用的服務。載入狀態僅保留在目前使用者請求及其工具執行輪次中，傳送下一則訊息時重新開始；可同時載入多個服務，不設固定數量上限，模型可卸載不再需要的服務以節省上下文。已停用的工具不會被載入，執行確認策略仍然生效。在智能體能力設定中停用內建 mcp 工具可恢復傳送全部外部工具定義，重新啟用則恢復按需載入。"
+					"Data": "外部 MCP 工具按需載入。智能體預設只接收服務清單，需要時載入指定服務的工具定義，從下一輪模型請求開始可用；你也可以在訊息中指明要使用的服務。載入狀態僅保留在目前使用者請求及其工具執行輪次中，傳送下一則訊息時重新開始；可同時載入多個服務，不設固定數量上限，模型可卸載不再需要的服務以節省上下文。已停用的工具不會被載入，執行確認策略仍然生效。在智能體能力設定中停用內建 mcp 工具可恢復傳送全部外部工具定義，重新啟用則恢復按需載入。呼叫 mcp 探索工具時，應使用精確的服務 ID，而非顯示名稱。使用 action=list 且不傳 server 可列出可用服務的 ID；失敗提示會區分服務名稱、未知 ID、服務停用、連線或工具可用性問題以及能力策略限制。"
 				}
 			]
 		},
@@ -1074,7 +1429,7 @@
 			"Type": "NodeHeading",
 			"Properties": {
 				"id": "20261018102417-6a7ncw2",
-				"updated": "20261018104335"
+				"updated": "20261028114540"
 			},
 			"Children": [
 				{
@@ -1136,6 +1491,20 @@
 				{
 					"Type": "NodeText",
 					"Data": " 中可以分別選擇搜尋和擷取服務，預設使用 Exa 搜尋和直接擷取。使用 DeepSeek 時，填寫 Search 和 Fetch 共用的 DeepSeek API 金鑰，此設定與對話模型無關。DeepSeek Search 請求 5 筆結果且不包含網頁正文，單筆摘要最多 800 個字元，總輸出最多 8,000 個字元。需要正文時再擷取特定網頁。"
+				}
+			]
+		},
+		{
+			"ID": "20261028114540-g32bxz8",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261028114540-g32bxz8",
+				"updated": "20261028114540"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "Exa API 金鑰留空時使用有限流的匿名服務，填寫自己的金鑰後使用相應帳戶額度。搜尋詞會傳送給 Exa，請求可能產生費用。Exa 與 DeepSeek 的金鑰分別儲存，切換服務時保留；清空 Exa 金鑰即可恢復匿名模式。帶金鑰的請求失敗時會傳回錯誤，不會自動退回匿名模式或切換其他服務。金鑰在本機設定中加密儲存，匯出設定時不會包含金鑰。"
 				}
 			]
 		},
@@ -1267,6 +1636,77 @@
 			]
 		},
 		{
+			"ID": "20261106140529-e32rmrx",
+			"Type": "NodeHeading",
+			"Properties": {
+				"id": "20261106140529-e32rmrx",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "文件與資料庫寫入"
+				}
+			],
+			"HeadingLevel": 2
+		},
+		{
+			"ID": "20261106140529-5u439a4",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261106140529-5u439a4",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "建立和移動文件時，優先使用父文件 ID 指定位置，根目錄使用空的 parentID，標題另外提供。不要根據顯示路徑推斷文件身分。"
+				}
+			]
+		},
+		{
+			"ID": "20261106140529-mlekcfk",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261106140529-mlekcfk",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "新區塊的 ID 由系統產生，更新前先讀取原內容並保留已有區塊 ID。工具會拒絕格式錯誤、重複或與現存區塊衝突的 ID。"
+				}
+			]
+		},
+		{
+			"ID": "20261106140529-7awftj7",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261106140529-7awftj7",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "批次維護資料庫時，可使用 database.items_add 一次新增最多 100 列，並為每列同時提供其他欄位的值；使用 database.items_update 一次更新最多 1000 個儲存格。每次呼叫在一個交易中提交，未指定的儲存格保持不變。先讀取欄位資訊，再依欄位類型填寫值，並核對傳回的儲存結果。執行結果未知時，不要自動重試新增操作。"
+				}
+			]
+		},
+		{
+			"ID": "20261106140529-7lgbi91",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261106140529-7lgbi91",
+				"updated": "20261106140529"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "數字和日期值需要對應的 number 或 date 物件；提供 content 時還需明確指定 isNotEmpty，true 表示設定值，false 表示清空。不要把僅含 content 的物件作為整個儲存格值。計算欄位不能直接寫入。"
+				}
+			]
+		},
+		{
 			"ID": "20260804170109-gephumz",
 			"Type": "NodeHeading",
 			"HeadingLevel": 2,
@@ -1291,7 +1731,7 @@
 			"Children": [
 				{
 					"Type": "NodeText",
-					"Data": "智能體在一輪任務中首次寫入工作空間資料前會自動建立資料快照，每輪最多建立一次。確認修改結果不符合預期時，可以在會話中的快照提示上執行回滾。"
+					"Data": "智能體在一輪任務中首次寫入工作空間資料前會自動建立資料快照，每輪最多建立一次。請求寫入前須先初始化本機資料倉庫金鑰，無需雲端帳號。尚未初始化時，智能體會在請求寫入確認前提示此前置條件，唯讀操作仍然可用。自動快照建立失敗時，本次寫入會被阻止。點選錯誤卡片上的「還原草稿」，即可將原訊息及其引用和附件還原到輸入框，檢查後再傳送。確認修改結果不符合預期時，可以在會話中的快照提示上執行回滾。"
 				}
 			]
 		},
@@ -1306,6 +1746,35 @@
 				{
 					"Type": "NodeText",
 					"Data": "快照涵蓋工作空間資料，但不涵蓋外部 MCP 服務或外掛對外部系統所做的修改。重新回答、停止任務或刪除會話也不會自動撤銷已完成的寫入操作。"
+				}
+			]
+		},
+		{
+			"ID": "20261115153000-ee33d4f",
+			"Type": "NodeHeading",
+			"HeadingLevel": 2,
+			"Properties": {
+				"id": "20261115153000-ee33d4f",
+				"updated": "20261115153000"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "外掛開發"
+				}
+			]
+		},
+		{
+			"ID": "20261115153000-9eaab17",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20261115153000-9eaab17",
+				"updated": "20261115153000"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "反覆打包受管外掛專案時，成功打包後最多保留最近的 8 個封存檔，總大小不超過 256 MiB。新封存檔、下載副本和專案中繼資料儲存完成後，系統按需清理較早的封存檔及其對應的下載副本，始終保留目前的封存檔。原始碼和程式碼復原檢查點不參與清理。發佈失敗時保留既有封存檔；清理失敗時保留新封存檔並回報錯誤。"
 				}
 			]
 		},

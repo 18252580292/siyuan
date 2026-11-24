@@ -141,6 +141,11 @@ body.body--harmony {
     margin-left: 2px;
   }
 
+  &__window-gap {
+    display: none;
+    -webkit-app-region: drag;
+  }
+
   #drag {
     -webkit-app-region: drag;
     color: var(--b3-toolbar-color);
@@ -290,6 +295,24 @@ body.body--harmony {
   }
 }
 
+html[data-frontend="desktop"] {
+  .body--toolbar-hide.body--windows:not(.body--fullscreen) #toolbar > #drag:not(.fn__hidden) ~ .toolbar__window-gap,
+  .body--toolbar-hide.body--linux:not(.body--fullscreen) #toolbar > #drag:not(.fn__hidden) ~ .toolbar__window-gap,
+  .body--toolbar-hide.body--mac:not(.body--fullscreen) #toolbar > #drag:not(.fn__hidden) ~ .toolbar__window-gap {
+    display: block;
+    flex: 0 0 24px;
+    align-self: stretch;
+  }
+
+  .body--mac #toolbar > .toolbar__window-gap {
+    order: -1;
+  }
+
+  #toolbar > #drag[data-topbar-reordering="true"] ~ .toolbar__window-gap {
+    -webkit-app-region: no-drag;
+  }
+}
+
 // 原生按钮的实际尺寸由 Electron 上报，页面仅为同一块区域预留空间。
 html.window-controls-overlay {
   --b3-window-controls-width: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px));
@@ -350,6 +373,26 @@ html.window-controls-overlay {
 }
 
 .status {
+  &--floating {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    max-width: 100%;
+    visibility: hidden;
+    pointer-events: none;
+    // 容器透明度即时切换，避免子控件的 visibility 过渡产生图标残留。
+    opacity: 0;
+    background-color: var(--b3-theme-background);
+    border-radius: var(--b3-border-radius) 0 0 0;
+    box-shadow: var(--b3-point-shadow);
+  }
+
+  &--floating-open {
+    visibility: visible;
+    pointer-events: auto;
+    opacity: 1;
+  }
+
   & > [data-entry-hidden="true"] {
     display: none !important;
   }

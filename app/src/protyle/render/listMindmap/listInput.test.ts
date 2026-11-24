@@ -80,7 +80,8 @@ const browserCases = async (source: string) => {
         const edits: {id: string; selection: Record<string, string>}[] = [];
         let focused = b;
         Object.assign(controller, {list, host, owner: {block: {rootID: "document"}, wysiwyg: {element: holder}}, disposed: false,
-            model: read(), view: {getSelectedId: () => focused, focusNode: (id: string) => { focused = id; },
+            model: read(), view: {captureHistoryViewport: () => JSON.stringify({scale: 1.25, x: -80, y: 45}),
+                getSelectedId: () => focused, focusNode: (id: string) => { focused = id; },
                 getContentHost: () => holder},
             refresh: () => { controller.model = read(); },
             edit: async (id: string, _host: HTMLElement, _replace: string, _clipboard: unknown, selection: Record<string, string>) => {
@@ -102,6 +103,7 @@ const browserCases = async (source: string) => {
         check.match(read().nodes.get(splitID).element.textContent, /ta.*Rich content/s);
         check.equal(edits.at(-1).selection.undoFocusStart, "0");
         check.deepEqual(JSON.parse(history.at(-1).undo.undoFocusMindmapSelection), selection);
+        check.deepEqual(JSON.parse(history.at(-1).undo.undoFocusMindmapViewport), {scale: 1.25, x: -80, y: 45});
         check.equal(history.at(-1).redo.undoFocusId, splitID);
         const transactionCount = history.length;
         await controller.listInput(splitID, {kind: "indent", html: html(splitID)}, edits.at(-1).selection);
@@ -177,7 +179,7 @@ test("mindmap list input preserves rich blocks, branch identity, transaction foc
     const names = ["listInput", "change", "replaceClipboardSource", "replaceSourceChildren"];
     const methods = controller.members.filter(item => names.includes(item.name?.getText(sourceFile)));
     assert.equal(methods.length, names.length);
-    const source = ["../../wysiwyg/listContext.ts", "summary.ts", "connectors.ts", "appearance.ts", "model.ts", "listInput.ts"]
+    const source = ["../../wysiwyg/listContext.ts", "summary.ts", "connectors.ts", "appearance.ts", "relationGeometry.ts", "model.ts", "listInput.ts"]
         .map(name => compile(readFileSync(path.join(__dirname, name), "utf8"))).join("\n") +
         compile(`class InputController {${methods.map(item => item.getText(sourceFile)).join("\n")}}`);
     const temporary = mkdtempSync(path.join(tmpdir(), "siyuan-mindmap-list-input-"));

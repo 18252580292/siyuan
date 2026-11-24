@@ -83,12 +83,25 @@ func GetMimeTypeByExt(filePath string) (ret string) {
 }
 
 func GetMimeTypeByPath(filePath string) (m *mimetype.MIME, ok bool) {
-	f, err := filelock.OpenFile(filePath, os.O_RDONLY, 0644)
+	managed := isManagedWorkspaceFile(filePath)
+	var f *os.File
+	var err error
+	if managed {
+		f, err = filelock.OpenFile(filePath, os.O_RDONLY, 0644)
+	} else {
+		filelock.Lock(filePath)
+		defer filelock.Unlock(filePath)
+		f, err = os.Open(filePath)
+	}
 	if err != nil {
 		logging.LogErrorf("open file [%s] failed: %s", filePath, err)
 		return
 	}
-	defer filelock.CloseFile(f)
+	if managed {
+		defer filelock.CloseFile(f)
+	} else {
+		defer f.Close()
+	}
 
 	m, err = mimetype.DetectReader(f)
 	if nil != err {
@@ -274,14 +287,8 @@ func RenameEmojiFile(oldPath, newPath string) error {
 	if oldPath == newPath {
 		return nil
 	}
-	first, second := oldPath, newPath
-	if first > second {
-		first, second = second, first
-	}
-	filelock.Lock(first)
-	defer filelock.Unlock(first)
-	filelock.Lock(second)
-	defer filelock.Unlock(second)
+	unlock := filelock.LockPaths(oldPath, newPath)
+	defer unlock()
 	if _, err := os.Lstat(newPath); err == nil {
 		return &os.LinkError{Op: "rename", Old: oldPath, New: newPath, Err: os.ErrExist}
 	} else if !os.IsNotExist(err) {

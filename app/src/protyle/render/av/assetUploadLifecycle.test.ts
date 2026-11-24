@@ -9,6 +9,7 @@ import * as insertPosition from "../../upload/insertPosition";
 import * as uploadResult from "../../upload/uploadResult";
 import * as fetchAppId from "../../../util/fetchAppId";
 import * as viewType from "./viewType";
+import * as host from "./host";
 
 const compile = (file: string) => transpileModule(readFileSync(join(__dirname, file), "utf8"), {
     compilerOptions: {module: ModuleKind.CommonJS, target: ScriptTarget.ES2022},
@@ -31,7 +32,7 @@ const createHarness = (standalone = true) => {
     ]};
     const render = () => {
         const next = document.createElement("div");
-        next.innerHTML = `<div data-av-id="database" data-node-id="carrier" data-attribute-id="row" data-av-type="table">
+        next.innerHTML = `<div data-type="NodeAttributeView" data-av-id="database" data-node-id="carrier" data-attribute-id="row" data-av-type="table">
 <div class="custom-attr__avvalue" data-av-id="database" data-row-id="row" data-col-id="assets" data-id="value" data-type="mAsset"></div>
 </div>`;
         if (block) {
@@ -86,6 +87,7 @@ const createHarness = (standalone = true) => {
         }
     }
     const mocks: Record<string, unknown> = {
+        "./host": host,
         "./insertPosition": insertPosition,
         "../../upload/insertPosition": insertPosition,
         "./uploadResult": uploadResult,
@@ -100,7 +102,6 @@ const createHarness = (standalone = true) => {
         "./row": {getFieldIdByCellElement: (item: HTMLElement) => item.dataset.rowId},
         "./batchValue": {getAVBatchEditMode: () => "replace"},
         "../../../util/pathName": {pathPosix: () => posix},
-        "../../util/hasClosest": {hasClosestBlock: (item: HTMLElement) => item.parentElement},
         "../../wysiwyg/transaction": {transaction: (_p: unknown, ops: IOperation[]) => operations.push(...ops)},
         "./action": {updateAttrViewCellAnimation() {}},
         "./cell": {
@@ -113,12 +114,13 @@ const createHarness = (standalone = true) => {
             },
         },
         "dayjs": () => ({format: () => "20261014070000"}),
+        filesize: {filesize: () => "1 KB"},
         "../../util/escape": {escapeHtml: (text: string) => text},
-        "../../dialog/confirmDialog": {confirmDialog: (_title: string, _message: string, yes: () => void) => {
+        "../../dialog/confirmDialog": {confirmDialog: ({confirm}: {confirm: () => void}) => {
             if (delayConfirmation) {
-                confirmations.push(yes);
+                confirmations.push(confirm);
             } else {
-                yes();
+                confirm();
             }
         }},
         "../../util/fetch": {fetchSyncPost: (_url: string, data: {id: string, assetPaths: string[]}) =>
@@ -141,15 +143,16 @@ const createHarness = (standalone = true) => {
             module, exports: module.exports, require: (name: string) => mocks[name] || {}, Promise,
             document: {body: document.body, baseURI: "https://siyuan.test/stage/build/app/", querySelector: (): Element | null => null},
             location: {origin: "https://siyuan.test"},
-            window: {siyuan: {languages: {uploadInsertTargetUnavailable: "unavailable", uploading: "uploading"}}},
+            window: {siyuan: {languages: {uploadInsertTargetUnavailable: "unavailable", uploading: "uploading",
+                upload: "upload", uploadFileTooLarge: "${x} ${y}"}}},
             FormData: FormDataStub, XMLHttpRequest: XHRStub, DataTransferItem: class {}, console,
         });
         return module.exports;
     };
     mocks["../../upload"] = load(uploadSource);
     const api = load<typeof import("./asset")>(assetSource);
-    const start = (kind: UploadKind, name = "image.png") => {
-        const files = [new File(["image"], name, {type: "image/png"})];
+    const start = (kind: UploadKind, name = "image.png", size = 5) => {
+        const files = [new File([new Uint8Array(size)], name, {type: "image/png"})];
         if (kind === "picker") {
             const menu = document.createElement("div");
             const input = document.createElement("input");
@@ -159,7 +162,7 @@ const createHarness = (standalone = true) => {
                 cellElements: [cell as unknown as HTMLElement], menuElement: menu as unknown as HTMLElement});
             input.dispatch("change");
         } else if (kind === "drop") {
-            api.dragUpload([{path: "/" + name, size: 5}], protyle as unknown as IProtyle, cell as unknown as HTMLElement);
+            api.dragUpload([{path: "/" + name, size}], protyle as unknown as IProtyle, cell as unknown as HTMLElement);
         } else {
             api.uploadFilesToAssetCell(files, protyle as unknown as IProtyle, cell as unknown as HTMLElement, {source: "paste"});
         }
@@ -245,7 +248,7 @@ describe("database asset upload lifecycle", () => {
         it(`${kind}: rechecks a closed owner after upload confirmation`, async () => {
             const h = createHarness();
             h.delayConfirmation();
-            h.start(kind);
+            h.start(kind, "image.png", 1024);
             await h.resume();
             assert.equal(h.requests.length, 0);
             h.owner.remove();

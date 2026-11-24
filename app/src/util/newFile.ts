@@ -1,5 +1,5 @@
 import {showMessage} from "../dialog/message";
-import {hasClosestBlock, hasTopClosestByTag} from "../protyle/util/hasClosest";
+import {hasClosestBlock} from "../protyle/util/hasClosest";
 /// #if !MOBILE
 import {Files} from "../layout/dock/Files";
 import {Editor} from "../editor";
@@ -189,13 +189,10 @@ function getNewFilePath(): Pick<NewDocRequest, "notebookId" | "currentPath" | "h
     if (!notebookId) {
         const fileModel = getDockByType("file")?.data.file;
         if (fileModel instanceof Files) {
-            const currentElement = fileModel.element.querySelector(".b3-list-item--focus");
-            if (currentElement) {
-                const topElement = hasTopClosestByTag(currentElement, "UL");
-                if (topElement) {
-                    notebookId = topElement.getAttribute("data-url");
-                }
-                currentPath = currentElement.getAttribute("data-path");
+            const current = fileModel.docTree.getFocusedItem();
+            if (current) {
+                notebookId = current.notebookId;
+                currentPath = current.path;
                 hasFocusTarget = true;
             }
         }
@@ -254,6 +251,7 @@ export const getDocCreateTemplatePath = (notebookId: string, callback: (template
 };
 
 function openCreatedDoc(app: App, id: string, onCreated?: (id: string, title: string) => void, title?: string) {
+    window.siyuan.menus.menu.remove();
     if (onCreated) {
         onCreated(id, title || "");
     }
@@ -315,7 +313,7 @@ export const newFileAtPath = (options: {
     onCreated: (id: string, title: string) => void;
 }) => {
     const title = normalizeDocumentTitle(options.name.trim());
-    if (!options.isValid() || (title && !validateName(title, undefined, true))) {
+    if (!options.isValid() || (title && !validateName(title))) {
         return;
     }
     let submitted = false;

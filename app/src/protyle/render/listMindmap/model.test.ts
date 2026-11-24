@@ -388,7 +388,9 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
             Constants: {CB_GET_HISTORY: "history", ATTRIBUTE_EDITING: "data-editing",
                 CUSTOM_SY_LIST_MINDMAP: "custom-sy-list-mindmap", CUSTOM_SY_LIST_MINDMAP_DATA: "custom-sy-list-mindmap-data"},
             isProtyleListItemFragment: () => false, isHiddenTabContent: () => false,
-            matchHotKey: (binding: unknown) => { check.equal(binding, undefined); return false; },
+            matchHotKey: (binding: {custom: string} | undefined, event: KeyboardEvent) => !!binding?.custom &&
+                (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey &&
+                binding.custom === "⌘" + event.key.toUpperCase(),
             isMobile: () => mobile, waitForPendingTransactions: async () => {},
             preserveUndoViewport: () => () => {},
             isEncryptedBox: () => false,
@@ -498,6 +500,60 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
         await new Promise(resolve => setTimeout(resolve, 0));
         check.equal(target.view.getSelectedId(), followingID, "after entering editing, deletion keeps the normal next-sibling policy");
         check.equal(operations.at(-1).doOperations[0].context.undoFocusId, followingID);
+        // 创建副本快捷键在节点选择态新增同级节点，空白画布仍交给外层块快捷键处理。
+        let outerDuplicates = 0;
+        const duplicate = (key: string, init: KeyboardEventInit = {}) => {
+            const event = new KeyboardEvent("keydown", {key, ctrlKey: true, bubbles: true, cancelable: true, ...init});
+            target.host.dispatchEvent(event);
+            return event;
+        };
+        const receiveDuplicate = () => outerDuplicates++;
+        root.addEventListener("keydown", receiveDuplicate);
+        for (const key of ["d", "p"]) {
+            window.siyuan.config.keymap.editor.general.duplicate = {default: "⌘D", custom: "⌘" + key.toUpperCase()};
+            for (const modifier of [{ctrlKey: true}, {ctrlKey: false, metaKey: true}]) {
+                target.view.focusNode(itemID);
+                const count = operations.length;
+                const beforeChildren = target.model.nodes.get(itemID).children.length;
+                check.equal(duplicate(key, modifier).defaultPrevented, true);
+                await new Promise(resolve => setTimeout(resolve, 0));
+                const created = target.model.nodes.get(target.view.getSelectedId());
+                check.notEqual(created.id, itemID);
+                check.equal(created.parentId, target.model.nodes.get(itemID).parentId);
+                check.equal(created.element.previousElementSibling.dataset.nodeId, itemID);
+                check.equal(created.children.length, 0, "node insertion does not duplicate the source branch");
+                check.equal(target.model.nodes.get(itemID).children.length, beforeChildren);
+                check.equal(operations.length, count + 1, "insertion uses one undoable transaction");
+                check.equal(outerDuplicates, 0, "selected-node shortcuts never reach whole-map duplication");
+                check.equal(operations.at(-1).undoOperations[0].context.undoFocusId, itemID);
+                check.equal(operations.at(-1).doOperations[0].context.undoFocusId, created.id);
+                await target.undo(false);
+                check.equal(target.model.nodes.has(created.id), false);
+                await target.undo(true);
+                check.equal(target.model.nodes.has(created.id), true);
+            }
+        }
+        target.view.focusNode(itemID);
+        const count = operations.length;
+        check.equal(duplicate("p", {repeat: true}).defaultPrevented, true);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        check.equal(operations.length, count, "holding the shortcut does not insert repeatedly");
+        target.view.clearSelection();
+        check.equal(duplicate("p").defaultPrevented, false);
+        check.equal(outerDuplicates, 1, "a canvas with no selected node keeps whole-map duplication");
+        target.view.focusNode(target.model.root.id);
+        check.equal(duplicate("p").defaultPrevented, true);
+        check.equal(outerDuplicates, 1, "the virtual root cannot fall back to whole-map duplication");
+        target.view.focusNode(itemID);
+        target.view.setEditing(itemID);
+        check.equal(duplicate("p").defaultPrevented, false, "text editing keeps its own shortcut routing");
+        target.view.setEditing();
+        target.view.setReadOnly(true);
+        duplicate("p");
+        check.equal(operations.length, count, "read-only maps cannot insert nodes");
+        target.view.setReadOnly(false);
+        root.removeEventListener("keydown", receiveDuplicate);
+        delete window.siyuan.config.keymap.editor.general.duplicate;
         controllers.forEach(controller => controller.destroy());
         root.remove();
     }
@@ -513,7 +569,7 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     const inputTransactions: {forward: IOperation[], backward: IOperation[]}[] = [];
     const inputAPI = new Function("Constants", "dayjs", "transaction", "hideElements", "mathRender", "highlightRender",
         "normalizeInlineFontFamilyStyle", "getBlockquoteContext", "revealTabsForTarget",
-        "updateTransaction", "isMac", "isOnlyMeta", "isNotCtrl", "isMobile", inputSource +
+        "updateTransaction", "isMac", "isInIOS", "isOnlyMeta", "isNotCtrl", "isMobile", inputSource +
         "; return {input, configureListItemInput, listShortcut, ListHint};")(
         {ZWSP: "\u200b", ATTRIBUTE_EDITING: "data-editing", KEYCODELIST: {76: "L", 74: "J"}}, () => ({format: () => "20260922120000"}),
         (_protyle: IProtyle, forward: IOperation[], backward: IOperation[]) => inputTransactions.push({forward, backward}),
@@ -521,7 +577,7 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
         (_protyle: IProtyle, block: HTMLElement, before: string) => {
             inputTransactions.push({forward: [{action: "update", id: block.dataset.nodeId, data: block.outerHTML}],
                 backward: [{action: "update", id: block.dataset.nodeId, data: before}]});
-        }, () => false, (event: KeyboardEvent) => event.ctrlKey && !event.metaKey,
+        }, () => false, () => false, (event: KeyboardEvent) => event.ctrlKey && !event.metaKey,
         (event: KeyboardEvent) => !event.ctrlKey && !event.metaKey, () => false);
     window.siyuan = {config: {editor: {markdown: {}}, keymap: {editor: {insert: {
         list: {custom: "⌘J"}, "ordered-list": {custom: "⇧⌘J"}, check: {custom: "⌘L"}, quote: {custom: ""},
@@ -1069,7 +1125,24 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     snapshotImage.parentElement.classList.add("protyle-image-container--compact");
     snapshotImage.parentElement.insertAdjacentHTML("beforeend", '<span class="protyle-image-resize">' +
         '<span class="protyle-block-resize touch-resize-active" data-resize-axis="both"></span></span>');
+    const captions = imageSnapshot.querySelectorAll<HTMLElement>(".img__name, .protyle-action__title, .img__alt");
+    check.ok(captions.length > 0);
+    for (const fontSize of ["28px", "8px"]) {
+        captions.forEach(caption => caption.style.setProperty("--protyle-image-font-size", fontSize));
+        check.equal(api.cleanListMindmapHTML(imageSnapshot.innerHTML), cleanImage);
+        check.ok(Array.from(captions).every(caption => caption.style.getPropertyValue("--protyle-image-font-size") === fontSize),
+            "snapshot cleanup must not alter live image captions");
+    }
     check.equal(api.cleanListMindmapHTML(imageSnapshot.innerHTML), cleanImage);
+    captions[0].style.color = "red";
+    const styledImage = document.createElement("div");
+    styledImage.innerHTML = api.cleanListMindmapHTML(imageSnapshot.innerHTML);
+    check.equal(styledImage.querySelector<HTMLElement>(".img__name, .protyle-action__title, .img__alt").style.color, "red",
+        "only the derived font size is removed from caption styles");
+    check.equal(api.cleanListMindmapHTML(styledImage.innerHTML), styledImage.innerHTML, "image cleanup is idempotent");
+    snapshotImage.parentElement.style.width = "90px";
+    check.notEqual(api.cleanListMindmapHTML(imageSnapshot.innerHTML), styledImage.innerHTML,
+        "persisted image width changes still alter the source snapshot");
     for (const state of ["img--select", "img--drag"]) {
         check.equal(api.cleanListMindmapHTML(`<span class="img ${state}"><img src="assets/image.png"></span>`),
             '<span class="img"><img src="assets/image.png"></span>');
@@ -1208,9 +1281,11 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
 
     // 复制后关系线与节点样式引用新块 ID，遇到任一损坏配置时不进行部分迁移。
     const copiedRoute = {version: 1, points: [{x: -35, y: 20, t: .5}], extension: "keep"};
+    const copiedRelationStyle = {pathStyle: "bezier", strokeStyle: "dotted", freeRoute: copiedRoute,
+        curve: {version: 1, from: {x: 50, y: -40}, to: {x: -20, y: 80}}};
     list.setAttribute("custom-sy-list-mindmap-data", JSON.stringify({version: 1, extension: "keep",
         nodes: {a: {bold: true}, b: {italic: true}, deleted: {bold: true}},
-        relations: [{id: "relation", from: "a", to: "b", label: "keep", route: copiedRoute, arrowDirection: "both"},
+        relations: [{id: "relation", from: "a", to: "b", label: "keep", route: copiedRoute, arrowDirection: "both", ...copiedRelationStyle},
             {id: "orphan", from: "a", to: "deleted", label: "remove"}]}));
     const copiedItems = list.querySelectorAll('[data-type="NodeListItem"]');
     copiedItems[0].setAttribute("data-node-id", "new-a");
@@ -1225,7 +1300,7 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     const remapped = JSON.parse(list.getAttribute("custom-sy-list-mindmap-data"));
     check.deepEqual(remapped.nodes, {"new-a": {bold: true}, "new-b": {italic: true}});
     check.deepEqual(remapped.relations, [{id: "relation", from: "new-a", to: "new-b", label: "keep",
-        route: copiedRoute, arrowDirection: "both"}]);
+        route: copiedRoute, arrowDirection: "both", ...copiedRelationStyle}]);
     check.equal(remapped.extension, "keep");
     check.equal(list.querySelector(".mindmap-view"), null);
     check.equal(list.hasAttribute("data-mindmap-view-rendered"), false);
@@ -1786,6 +1861,34 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
         check.equal(view.linePaths.filter((line: {relation: boolean}) => !line.relation).length, view.edges.length);
         view.setReadOnly(false);
     }
+    const styled = api.readListMindmap(list);
+    const capsule = alpha;
+    const rectangle = beta;
+    const underline = styled.root.children[0].children[0].id;
+    styled.metadata.connectorStyle = "bezier";
+    styled.metadata.nodes[capsule] = {...styled.metadata.nodes[capsule], shape: "capsule", connectorStyle: "orthogonal"};
+    styled.metadata.nodes[rectangle] = {...styled.metadata.nodes[rectangle], shape: "rectangle", connectorStyle: "spline"};
+    styled.metadata.nodes[underline] = {...styled.metadata.nodes[underline], shape: "underline",
+        backgroundColor: "#123456", textColor: "#ffffff"};
+    api.writeListMindmapMetadata(list, styled.metadata);
+    view.update(api.readListMindmap(list));
+    await settle();
+    const shapeStyle = (id: string) => getComputedStyle(view.getBlockById(id));
+    check.ok(parseFloat(shapeStyle(capsule).borderTopLeftRadius) > 0, "capsule nodes have rounded corners");
+    check.equal(shapeStyle(rectangle).borderTopLeftRadius, "0px");
+    check.equal(shapeStyle(rectangle).borderTopStyle, "solid");
+    check.equal(shapeStyle(underline).borderTopStyle, "none");
+    check.equal(shapeStyle(underline).borderBottomStyle, "solid");
+    check.equal(shapeStyle(underline).backgroundColor, "rgb(18, 52, 86)", "the underline preserves an explicit node fill");
+    const capsuleParent = view.positions.get(styled.root.id);
+    const capsulePosition = view.positions.get(capsule);
+    const branchX = (capsuleParent.x + capsuleParent.width + capsulePosition.x * 3) / 4;
+    const branchY = capsulePosition.y + capsulePosition.height / 2;
+    const bounds = viewport.getBoundingClientRect();
+    check.equal(view.findLine(new MouseEvent("click", {
+        clientX: bounds.left + view.offsetX + branchX * view.scale,
+        clientY: bounds.top + view.offsetY + branchY * view.scale,
+    }))?.id, capsule, "the incoming connector meets the shaped node's side and can be selected");
     if (connectorSource === null) {
         list.removeAttribute("custom-sy-list-mindmap-data");
     } else {
@@ -1794,6 +1897,7 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     delete model.metadata.connectorStyle;
     view.update(model);
     await settle();
+    check.equal(view.getBlockById(capsule).hasAttribute("data-mindmap-shape"), false, "restoring metadata restores the theme shape");
     check.equal(viewport.getAttribute("data-prevent-swipe"), "true");
     const originalCapture = HTMLElement.prototype.setPointerCapture;
     const originalHasCapture = HTMLElement.prototype.hasPointerCapture;
@@ -1904,7 +2008,7 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     view.setEditing();
     view.update(api.readListMindmap(list));
     check.equal(host.querySelector('[data-type="undo"], [data-type="redo"]'), null,
-        "history controls belong to the document action bar");
+        "history controls belong to the document menu and editing toolbar");
     finishAllowed = false;
     nodeElement(alpha).querySelector<HTMLButtonElement>(".mindmap-view__add-child").click();
     check.equal(additions.length, 0);
@@ -2407,7 +2511,7 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
         const managers = ["listMindmapManageNodeColors", "listMindmapManageLineColors"]
             .map(key => popup.querySelector<HTMLButtonElement>(`[aria-label="${key}"]`));
         check.deepEqual(managers.map(control => control.querySelector("use").getAttribute("xlink:href")),
-            ["#iconFont", "#iconLine"], "distinct icons identify the two settings controls");
+            ["#iconFont", "#iconSettings"], "distinct icons identify the two settings controls");
         check.equal(managers[0].getBoundingClientRect().right, managers[1].getBoundingClientRect().right,
             "settings stay in one fixed right-hand column with unequal custom palette sizes");
         check.ok(palettes[1].getBoundingClientRect().top >= palettes[0].getBoundingClientRect().bottom,
@@ -2517,7 +2621,12 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
         let last = -1;
         while (performance.now() < deadline && stable < 12) {
             await frame();
-            stable = !touchPalette.hasAttribute("data-scrolling") && Math.abs(touchPalette.scrollLeft - last) < .1 ? stable + 1 : 0;
+            const step = parseFloat(getComputedStyle(touchPalette).gridTemplateColumns);
+            const aligned = Math.abs(touchPalette.scrollLeft - Math.round(touchPalette.scrollLeft / step) * step) < 1 ||
+                Math.abs(touchPalette.scrollLeft - (touchPalette.scrollWidth - touchPalette.clientWidth)) < 1;
+            // 原生触屏惯性与吸附之间可能短暂停顿，只有已对齐的稳定位置才表示完成。
+            stable = aligned && !touchPalette.hasAttribute("data-scrolling") &&
+                Math.abs(touchPalette.scrollLeft - last) < .1 ? stable + 1 : 0;
             last = touchPalette.scrollLeft;
         }
         const step = parseFloat(getComputedStyle(touchPalette).gridTemplateColumns);
@@ -2872,8 +2981,11 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     const setRelationTheme = (property: string, value: string) =>
         host.style.setProperty(`--b3-mindmap-relation-${property}`, value);
     const checkRelation = (color: string, width: number) => {
-        checkLine(color, width);
-        check.equal(lineContext.fillStyle, color, "relation arrows share the connector color");
+        view.draw();
+        const context = view.relationFrom ? host.querySelector<HTMLCanvasElement>(".mindmap-view__relation-canvas").getContext("2d") : lineContext;
+        check.equal(context.strokeStyle, color);
+        check.equal(context.lineWidth, width);
+        check.equal(context.fillStyle, color, "relation arrows share the connector color");
     };
     view.scale = 0.5;
     setLineTheme("color", "#abcdef");
@@ -3240,12 +3352,14 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     view.update(model);
     await settle();
     check.equal(view.fallbackRoutes.has("drag-route"), true);
-    check.equal(host.querySelector<HTMLElement>(".mindmap-view__route-status").hidden, false);
+    check.equal(routeStatus.hidden, false);
+    check.equal(routeStatus.textContent, "listMindmapRouteFallback");
     check.equal(model.metadata.relations[0].route.points.length, 1, "unavailable routes retain their saved controls");
     model.metadata.relations[0].route = savedRoute;
     view.update(model);
     await settle();
     check.equal(view.fallbackRoutes.has("drag-route"), false);
+    check.equal(routeStatus.hidden, true);
     check.equal(JSON.stringify(view.relationRoutes.get("drag-route")), savedGeometry);
     relationChanges.length = 0;
     await dragHandle(-15);
@@ -3803,11 +3917,17 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     model = api.readListMindmap(list);
     options.model = model;
 
-    const titleView = new api.ListMindmapView({...options, onRootTitleChange: (title: string) => {
-        model.metadata.rootTitle = title;
-        api.writeListMindmapMetadata(list, model.metadata);
-        titleView.update(model);
-    }});
+    const rootTitleAdditions: {id: string; kind: string; title: string}[] = [];
+    const titleView = new api.ListMindmapView({...options,
+        onRootTitleChange: (title: string) => {
+            model.metadata.rootTitle = title;
+            api.writeListMindmapMetadata(list, model.metadata);
+            titleView.update(model);
+        },
+        onAdd: (id: string, kind: string) => {
+            rootTitleAdditions.push({id, kind, title: api.readListMindmap(list).metadata.rootTitle});
+        },
+    });
     await settle();
     const renameRoot = async (title: string, key: string) => {
         const node = nodeElement(model.root.id);
@@ -3842,6 +3962,47 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     check.equal(titleView.getContentHost(model.root.id).textContent, "");
     check.ok(nodeElement(model.root.id).classList.contains("mindmap-view__node--untitled"));
     check.equal(nodeElement(model.root.id).offsetWidth, nodeElement(model.root.id).offsetHeight);
+    const beginRootTitle = () => {
+        titleView.focusNode(model.root.id, false);
+        titleView.getContentHost(model.root.id).dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+        const input = host.querySelector<HTMLTextAreaElement>(".mindmap-view__root-title");
+        check.equal(document.activeElement, input);
+        return input;
+    };
+    const titleKey = (input: HTMLElement, key: string, init: KeyboardEventInit = {}) => {
+        const event = new KeyboardEvent("keydown", {key, bubbles: true, cancelable: true, ...init});
+        input.dispatchEvent(event);
+        return event.defaultPrevented;
+    };
+    const titleInputForTab = beginRootTitle();
+    titleInputForTab.value = "Tab title";
+    check.equal(titleKey(titleInputForTab, "Tab", {shiftKey: true}), false, "Shift+Tab keeps native navigation");
+    check.equal(titleKey(titleInputForTab, "Tab", {repeat: true}), true);
+    check.equal(document.activeElement, titleInputForTab, "a repeated Tab does not finish editing");
+    check.equal(rootTitleAdditions.length, 0);
+    check.equal(titleKey(titleInputForTab, "Tab"), true);
+    check.deepEqual(rootTitleAdditions, [{id: model.root.id, kind: "child", title: "Tab title"}]);
+
+    const composingTitleInput = beginRootTitle();
+    const nativeTitleKey = (key: string, code: number) =>
+        require("electron").ipcRenderer.invoke("mindmap-view-native-key", key, code);
+    const titleEnters: boolean[] = [];
+    composingTitleInput.addEventListener("keydown", event => {
+        if (event.key === "Enter") {
+            titleEnters.push(event.isComposing);
+        }
+    });
+    await ime("zhong");
+    check.equal(titleKey(composingTitleInput, "Tab", {isComposing: true}), false, "IME owns Tab while composing");
+    await nativeTitleKey("Enter", 13);
+    check.deepEqual(titleEnters, [true]);
+    check.equal(document.activeElement, composingTitleInput, "IME Enter does not exit the root title editor");
+    await insertText("中文根节点");
+    check.equal(document.activeElement, composingTitleInput);
+    check.equal(rootTitleAdditions.length, 1);
+    await nativeTitleKey("Tab", 9);
+    check.deepEqual(rootTitleAdditions, [{id: model.root.id, kind: "child", title: "Tab title"},
+        {id: model.root.id, kind: "child", title: "中文根节点"}]);
     titleView.destroy();
 
     const singleList = reset("* Single\n");
@@ -3986,6 +4147,8 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
         await nativeTouch([
             {type: "touchStart", touchPoints: [fingerAt(1)]},
             ...[-20, -40, -60, -80, -100].map(dy => ({type: "touchMove", touchPoints: [fingerAt(1, 0, dy)]})),
+            // 松手前停稳，避免阅读滑动的惯性污染后续独立的双指手势断言。
+            {type: "wait", delay: 200},
             {type: "touchEnd", touchPoints: []},
         ]);
         await new Promise(resolve => setTimeout(resolve, 200));
@@ -4092,77 +4255,112 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
         panView.offsetY = readingTransform[2];
         panView.draw();
         panView.setInteractionActive(false);
+        HTMLElement.prototype.setPointerCapture = originalCapture;
+        HTMLElement.prototype.hasPointerCapture = originalHasCapture;
+        HTMLElement.prototype.releasePointerCapture = originalReleaseCapture;
         const reader = document.createElement("input");
         reader.value = "Document reading selection";
         reader.style.cssText = "position:fixed;top:0;left:0";
         document.body.append(reader);
-        for (const modifier of ["control", "meta", "middle"]) {
-            const button = modifier === "middle" ? "middle" : "right";
-            const modifiers = modifier === "middle" ? [] : [modifier];
-            panView.setReadOnly(modifier === "meta");
-            panView.selectNode(panModel.root.id);
-            panView.inspector.hidden = true;
-            reader.focus({preventScroll: true});
-            reader.setSelectionRange(2, 8);
-            await settle();
-            const node = panHost.querySelector<HTMLElement>(`[data-mindmap-id="${panModel.root.id}"]`);
-            const point = centerPoint(node);
-            const end = {x: point.x + 30, y: point.y + 20};
-            const before = [panView.offsetX, panView.offsetY];
-            let auxiliaryClick: MouseEvent;
-            if (button === "middle") {
-                viewport.addEventListener("auxclick", event => auxiliaryClick = event, {once: true});
-            }
-            await nativeInput([
-                {type: "mouseMove", ...point},
-                {type: "mouseDown", ...point, button, clickCount: 1, modifiers},
-                {type: "mouseMove", ...end, button, modifiers},
-                {type: "mouseUp", ...end, button, clickCount: 1, modifiers},
-            ]);
-            check.deepEqual([panView.offsetX, panView.offsetY], [before[0] + 30, before[1] + 20]);
-            check.equal(panView.interactionActive, false, "temporary dragging preserves reading mode");
-            check.equal(document.activeElement, reader, "temporary dragging does not steal document focus");
-            check.deepEqual([reader.selectionStart, reader.selectionEnd], [2, 8]);
-            check.equal(panView.getSelectedId(), panModel.root.id);
-            if (button === "middle") {
-                check.equal(auxiliaryClick?.defaultPrevented, true, "middle release cancels the browser auxiliary action");
+        try {
+            for (const modifier of ["control", "meta", "middle"]) {
+                const button = modifier === "middle" ? "middle" : "right";
+                const modifiers = modifier === "middle" ? [] : [modifier];
+                panView.setReadOnly(modifier === "meta");
+                panView.selectNode(panModel.root.id);
+                panView.inspector.hidden = true;
+                reader.focus({preventScroll: true});
+                reader.setSelectionRange(2, 8);
+                await settle();
+                check.deepEqual([reader.selectionStart, reader.selectionEnd], [2, 8]);
+                const node = panHost.querySelector<HTMLElement>(`[data-mindmap-id="${panModel.root.id}"]`);
+                const point = centerPoint(node);
+                const end = {x: point.x + 30, y: point.y + 20};
+                const before = [panView.offsetX, panView.offsetY];
+                let auxiliaryClick: MouseEvent;
+                if (button === "middle") {
+                    viewport.addEventListener("auxclick", event => auxiliaryClick = event, {once: true});
+                }
                 await nativeInput([
-                    {type: "mouseDown", ...end, button, clickCount: 1},
-                    {type: "mouseUp", ...end, button, clickCount: 1},
+                    {type: "mouseMove", ...point},
+                    {type: "mouseDown", ...point, button, clickCount: 1, modifiers},
+                    {type: "mouseMove", ...end, button, modifiers},
+                    {type: "mouseUp", ...end, button, clickCount: 1, modifiers},
                 ]);
-                check.equal(panView.getSelectedId(), panModel.root.id, "a middle click preserves the selected node");
-                check.equal(document.activeElement, reader, "a middle click preserves document focus");
-                await nativeInput([{type: "mouseDown", ...end, button, clickCount: 1}]);
-                check.ok(panView.pointer?.pan);
-                viewport.dispatchEvent(new PointerEvent("pointercancel", {
-                    pointerId: panView.pointer.pointerId, pointerType: "mouse"}));
-                check.equal(panView.pointer, undefined, "canceling a middle drag releases its state");
-                await nativeInput([{type: "mouseUp", ...end, button, clickCount: 1}]);
+                check.deepEqual([panView.offsetX, panView.offsetY], [before[0] + 30, before[1] + 20]);
+                check.equal(panView.interactionActive, false, "temporary dragging preserves reading mode");
+                check.equal(document.activeElement, reader, "temporary dragging does not steal document focus");
+                check.deepEqual([reader.selectionStart, reader.selectionEnd], [2, 8], `${modifier} dragging preserves the input selection`);
+                check.equal(reader.value, "Document reading selection", `${modifier} dragging does not paste into the focused input`);
+                check.equal(panView.getSelectedId(), panModel.root.id);
+                if (button === "middle") {
+                    check.equal(auxiliaryClick?.defaultPrevented, true, "middle release cancels the browser auxiliary action");
+                    await nativeInput([
+                        {type: "mouseDown", ...end, button, clickCount: 1},
+                        {type: "mouseUp", ...end, button, clickCount: 1},
+                    ]);
+                    check.equal(panView.getSelectedId(), panModel.root.id, "a middle click preserves the selected node");
+                    check.equal(document.activeElement, reader, "a middle click preserves document focus");
+                    check.deepEqual([reader.selectionStart, reader.selectionEnd], [2, 8]);
+                    check.equal(reader.value, "Document reading selection", "a middle click does not paste into the focused input");
+                    await nativeInput([{type: "mouseDown", ...end, button, clickCount: 1}]);
+                    check.ok(panView.pointer?.pan);
+                    viewport.dispatchEvent(new PointerEvent("pointercancel", {
+                        pointerId: panView.pointer.pointerId, pointerType: "mouse"}));
+                    check.equal(panView.pointer, undefined, "canceling a middle drag releases its state");
+                    await nativeInput([{type: "mouseUp", ...end, button, clickCount: 1}]);
+                    check.deepEqual([reader.selectionStart, reader.selectionEnd], [2, 8]);
+                    check.equal(reader.value, "Document reading selection", "releasing a canceled middle drag does not paste");
+                    const outside = {x: Math.round(viewport.getBoundingClientRect().right + 24), y: end.y};
+                    check.ok(outside.x < window.innerWidth);
+                    check.equal(viewport.contains(document.elementFromPoint(outside.x, outside.y)), false);
+                    let capturedRelease: PointerEvent;
+                    viewport.addEventListener("pointerup", event => capturedRelease = event, {once: true});
+                    await nativeInput([
+                        {type: "mouseMove", ...end},
+                        {type: "mouseDown", ...end, button, clickCount: 1},
+                    ]);
+                    check.ok(panView.pointer?.pan, "cross-boundary drag starts on the canvas");
+                    check.ok(viewport.hasPointerCapture(panView.pointer.pointerId));
+                    await nativeInput([{type: "mouseMove", ...outside, button}]);
+                    check.ok(panView.pointer?.pan, "cross-boundary dragging retains pointer state");
+                    check.ok(viewport.hasPointerCapture(panView.pointer.pointerId));
+                    await nativeInput([{type: "mouseUp", ...outside, button, clickCount: 1}]);
+                    check.equal(capturedRelease?.defaultPrevented, true, "captured release outside the canvas cancels native paste");
+                    check.equal(panView.pointer, undefined);
+                    check.equal(document.activeElement, reader);
+                    check.deepEqual([reader.selectionStart, reader.selectionEnd], [2, 8]);
+                    check.equal(reader.value, "Document reading selection", "dragging beyond the canvas preserves the focused input");
+                }
+                let receivedWheel: WheelEvent;
+                let scrollingFinished = false;
+                viewport.addEventListener("wheel", event => receivedWheel = event, {once: true});
+                scrollHost.addEventListener("scrollend", () => scrollingFinished = true, {once: true});
+                await nativeInput([
+                    {type: "keyUp", keyCode: modifier === "control" ? "Control" : "Meta"},
+                    {type: "mouseMove", ...end, modifiers: []},
+                    {type: "mouseWheel", ...end, deltaX: 0, deltaY: -80, canScroll: true, modifiers: []},
+                ]);
+                const deadline = performance.now() + 1000;
+                while ((!scrollHost.scrollTop || !scrollingFinished) && performance.now() < deadline) {
+                    await frame();
+                }
+                check.ok(scrollHost.scrollTop > 0, "ordinary wheel input still scrolls the document after temporary panning: " +
+                    JSON.stringify({modifier, point: end, target: document.elementFromPoint(end.x, end.y)?.className,
+                        wheel: receivedWheel && {ctrlKey: receivedWheel.ctrlKey, metaKey: receivedWheel.metaKey,
+                            defaultPrevented: receivedWheel.defaultPrevented}}));
+                scrollHost.scrollTop = 0;
+                await settle();
+                panView.offsetX = readingTransform[1];
+                panView.offsetY = readingTransform[2];
+                panView.draw();
             }
-            let receivedWheel: WheelEvent;
-            let scrollingFinished = false;
-            viewport.addEventListener("wheel", event => receivedWheel = event, {once: true});
-            scrollHost.addEventListener("scrollend", () => scrollingFinished = true, {once: true});
-            await nativeInput([
-                {type: "keyUp", keyCode: modifier === "control" ? "Control" : "Meta"},
-                {type: "mouseMove", ...end, modifiers: []},
-                {type: "mouseWheel", ...end, deltaX: 0, deltaY: -80, canScroll: true, modifiers: []},
-            ]);
-            const deadline = performance.now() + 1000;
-            while ((!scrollHost.scrollTop || !scrollingFinished) && performance.now() < deadline) {
-                await frame();
-            }
-            check.ok(scrollHost.scrollTop > 0, "ordinary wheel input still scrolls the document after temporary panning: " +
-                JSON.stringify({modifier, point: end, target: document.elementFromPoint(end.x, end.y)?.className,
-                    wheel: receivedWheel && {ctrlKey: receivedWheel.ctrlKey, metaKey: receivedWheel.metaKey,
-                        defaultPrevented: receivedWheel.defaultPrevented}}));
-            scrollHost.scrollTop = 0;
-            await settle();
-            panView.offsetX = readingTransform[1];
-            panView.offsetY = readingTransform[2];
-            panView.draw();
+        } finally {
+            reader.remove();
+            HTMLElement.prototype.setPointerCapture = () => undefined;
+            HTMLElement.prototype.hasPointerCapture = () => false;
+            HTMLElement.prototype.releasePointerCapture = () => undefined;
         }
-        reader.remove();
         panView.setReadOnly(false);
         check.ok(Array.from(panHost.querySelectorAll(".mindmap-view__toolbar use"))
             .every(icon => icon.getAttribute("xlink:href") !== "#iconEdit"), "canvas activation has no separate pencil button");
@@ -4181,6 +4379,10 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
             }), "at least one actual node remains visible after panning the cropped map");
             check.equal(panView.offsetX, fixedX, "vertical movement does not shift the horizontal position");
         };
+        const status = panHost.querySelector<HTMLElement>(".mindmap-view__route-status");
+        check.equal(status.hidden, true);
+        const statusObserver = new MutationObserver(() => {});
+        statusObserver.observe(status, {attributes: true, childList: true, characterData: true, subtree: true});
         for (const deltaY of [100000, -100000]) {
             const event = new WheelEvent("wheel", {deltaY, bubbles: true, cancelable: true});
             viewport.dispatchEvent(event);
@@ -4190,6 +4392,9 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
             viewport.dispatchEvent(next);
             check.equal(next.defaultPrevented, true, "active canvas keeps wheel input at the pan boundary");
         }
+        const statusMutations = statusObserver.takeRecords();
+        statusObserver.disconnect();
+        check.equal(statusMutations.length, 0, "wheel panning leaves the unchanged route status DOM alone");
         panView.offsetY = 120 - rootPosition.y;
         panView.draw();
         viewport.dispatchEvent(new PointerEvent("pointerdown", touch));
@@ -5130,7 +5335,7 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     new Function("protyle", "services", `const {${Object.keys(services).join(",")}} = services;\n` + dragSource)
         .call(Object.assign(dragOwner.wysiwyg, {host: dragHost, owner: dragOwner}), dragOwner, services);
     const dragErrors: string[] = [];
-    const collectDragError = (event: ErrorEvent) => dragErrors.push(event.message);
+    const collectDragError = (event: ErrorEvent) => dragErrors.push(event.error?.stack || event.message);
     window.addEventListener("error", collectDragError);
     await settle();
     const selectedIDs = () => Array.from(dragEditor.querySelectorAll<HTMLElement>(".protyle-wysiwyg--select"))
@@ -5208,9 +5413,46 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
     taskStyle.remove();
     hostParent.remove();
 
+    // 结构撤销在布局完成后恢复操作前取景，保留小数偏移和缩放。
+    const historyList = reset("- Root\n  - First\n  - Second\n");
+    const historyHost = document.createElement("div");
+    historyHost.style.width = "700px";
+    document.body.append(historyHost);
+    const historyView = new api.ListMindmapView({host: historyHost, model: api.readListMindmap(historyList)});
+    await settle();
+    Object.assign(historyView, {scale: 1.25, offsetX: -80.5, offsetY: 45.25});
+    historyView.draw();
+    const historyViewport = historyView.captureHistoryViewport();
+    const historySource = historyList.outerHTML;
+    const historyModel = api.readListMindmap(historyList);
+    const insertedHistoryItem = (() => {
+        const holder = document.createElement("div");
+        holder.innerHTML = lute.Md2BlockDOM("- Inserted\n");
+        return holder.firstElementChild.firstElementChild as HTMLElement;
+    })();
+    check.ok(api.addListMindmapNode(historyList, historyModel.root.children[0].id, "before", insertedHistoryItem));
+    historyView.update(api.readListMindmap(historyList));
+    historyView.focusNode(insertedHistoryItem.dataset.nodeId);
+    await settle();
+    const restoredHistory = document.createElement("div");
+    restoredHistory.innerHTML = historySource;
+    historyView.update(api.readListMindmap(restoredHistory.firstElementChild));
+    historyView.restoreHistoryViewport(historyViewport);
+    await settle();
+    check.equal(historyView.captureHistoryViewport(), historyViewport, "undo restores exact pan and zoom after reflow");
+    for (const invalid of ["{", "null", JSON.stringify({scale: 0, x: 1, y: 2}), JSON.stringify({scale: 1, x: "1", y: 2})]) {
+        historyView.restoreHistoryViewport(invalid);
+        await settle();
+        check.equal(historyView.captureHistoryViewport(), historyViewport, "invalid context preserves the current viewport");
+    }
+    historyView.destroy();
+    historyHost.remove();
+
     // 概要的触屏点选、编辑、复制及列表往返使用真实 DOM 和 Lute。
     const summaryList = reset("- Root\n  - First\n    - Descendant\n  - Second\n  - Third\n");
     const summaryModel = api.readListMindmap(summaryList);
+    summaryModel.metadata.appearance = {version: 1, palette: ["#2563eb", "#15803d"], rootColor: "#1e293b"};
+    api.writeListMindmapMetadata(summaryList, summaryModel.metadata);
     const summaryIds = summaryModel.root.children.map((node: ListMindmapNode) => node.id);
     const summaryHost = document.createElement("div");
     summaryHost.style.width = "700px";
@@ -5246,23 +5488,60 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
         check.equal(summaryButton.disabled, false, "a single real node can create a summary");
         check.equal(api.readListMindmap(summaryList).metadata.summaries?.length || 0, 0,
             "selecting a single node does not create a summary automatically");
-        if (id === summaryIds[0]) {
-            await require("electron").ipcRenderer.invoke("mindmap-view-native-touch", [
-                {type: "touchStart", touchPoints: [{id: 1, ...centerPoint(summaryButton)}]},
-                {type: "touchEnd", touchPoints: []},
-            ]);
-            await settle();
-        } else {
-            await clickMouse(summaryButton);
+        const fallbackSizing = id === summaryIds[1];
+        const originalSupports = CSS.supports;
+        if (fallbackSizing) {
+            CSS.supports = (property: string, value?: string) => property === "field-sizing" ? false :
+                value === undefined ? originalSupports(property) : originalSupports(property, value);
+        }
+        try {
+            if (id === summaryIds[0]) {
+                await require("electron").ipcRenderer.invoke("mindmap-view-native-touch", [
+                    {type: "touchStart", touchPoints: [{id: 1, ...centerPoint(summaryButton)}]},
+                    {type: "touchEnd", touchPoints: []},
+                ]);
+                await settle();
+            } else {
+                await clickMouse(summaryButton);
+            }
+        } finally {
+            CSS.supports = originalSupports;
         }
         check.deepEqual(api.readListMindmap(summaryList).metadata.summaries[0].nodeIds, [id]);
         const editor = summaryHost.querySelector<HTMLInputElement>(".mindmap-view__summary-editor");
         check.ok(editor, "single-node creation opens summary text editing");
         check.equal(document.activeElement, editor);
+        if (fallbackSizing) {
+            editor.style.setProperty("field-sizing", "fixed");
+        }
+        editor.value = "概要";
+        editor.dispatchEvent(new Event("input", {bubbles: true}));
+        check.ok(editor.offsetWidth >= 44 && editor.offsetWidth <= 46,
+            "two Chinese characters use two em plus shared input padding with native and fallback sizing");
+        const shortWidth = editor.offsetWidth;
+        editor.value = "Long summary text ".repeat(10);
+        editor.dispatchEvent(new Event("input", {bubbles: true}));
+        await settle();
+        check.ok(editor.offsetWidth > shortWidth && editor.offsetWidth <= 240,
+            "native and fallback inputs grow up to the maximum width");
+        editor.value = "";
+        editor.dispatchEvent(new Event("input", {bubbles: true}));
+        check.equal(editor.offsetWidth, 44, "clearing text shrinks the input to its minimum width");
+        editor.value = "输入法组合文字";
+        editor.dispatchEvent(new Event("input", {bubbles: true}));
+        editor.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", isComposing: true, bubbles: true}));
+        check.equal(document.activeElement, editor, "composition Enter keeps the summary editor open");
+        editor.value = "概要";
+        editor.dispatchEvent(new CompositionEvent("compositionend", {data: editor.value, bubbles: true}));
+        check.ok(editor.offsetWidth >= 44 && editor.offsetWidth <= 46, "composition completion also updates width");
         editor.value = "Single node summary";
         editor.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
         await settle();
         check.equal(api.readListMindmap(summaryList).metadata.summaries[0].label, "Single node summary");
+        if (id === summaryModel.root.id) {
+            check.equal(summaryHost.querySelector<HTMLElement>(".mindmap-view__summary").style.backgroundColor,
+                summaryView.nodeElements.get(id).style.backgroundColor, "root summaries inherit the root background");
+        }
         summaryView.focusNode(id);
         check.equal(summaryButton.disabled, true, "an identical single-node summary cannot be created twice");
         summaryButton.click();
@@ -5272,6 +5551,10 @@ const browserCases = async (sourceCode: string, css: string, taskSource: string,
         api.writeListMindmapMetadata(summaryList, resetSingleSummary.metadata);
         summaryView.update(api.readListMindmap(summaryList));
     }
+    const unthemedSummary = api.readListMindmap(summaryList);
+    delete unthemedSummary.metadata.appearance;
+    api.writeListMindmapMetadata(summaryList, unthemedSummary.metadata);
+    summaryView.update(api.readListMindmap(summaryList));
     const virtualSummaryList = reset("- First\n- Second\n");
     const virtualSummaryModel = api.readListMindmap(virtualSummaryList);
     const virtualSummaryHost = document.createElement("div");
@@ -5772,7 +6055,7 @@ test("list mindmap mutations preserve block data in the real DOM and Lute", {
             compilerOptions: {target: typescript.ScriptTarget.ES2021},
         }).outputText;
     const inputModules = ["../../../util/escape.ts", "../../util/normalizeText.ts", "../../runtimeCapabilities.ts",
-        "../../../util/keymapBindings.ts", "../../util/hotKey.ts",
+        "../../../util/keymapBindings.ts", "../../../util/shortcut.ts", "../../util/hotKey.ts",
         "../../util/longTextWrap.ts", "../../util/inlineElementBoundary.ts", "../../util/inlineElementMarker.ts",
         "../../util/hasClosest.ts", "../../wysiwyg/getBlock.ts", "../../util/selection.ts",
         "../../wysiwyg/taskListMarker.ts", "../../wysiwyg/turnIntoList.ts", "../../wysiwyg/input.ts"];
@@ -5832,7 +6115,7 @@ test("list mindmap mutations preserve block data in the real DOM and Lute", {
     const source = tabsSource + compile(path.join(__dirname, "../../wysiwyg/tabsList.ts")) +
         compile(path.join(__dirname, "../av/richTextValue.ts")) + compile(path.join(__dirname, "../../wysiwyg/listContext.ts")) +
         compile(path.join(__dirname, "summary.ts")) + compile(path.join(__dirname, "connectors.ts")) +
-        compile(path.join(__dirname, "appearance.ts")) + compile(path.join(__dirname, "model.ts")) +
+        compile(path.join(__dirname, "appearance.ts")) + compile(path.join(__dirname, "relationGeometry.ts")) + compile(path.join(__dirname, "model.ts")) +
         compile(path.join(__dirname, "preferences.ts")) + compile(path.join(__dirname, "fold.ts")) +
         compile(path.join(__dirname, "routing.ts")) + compile(path.join(__dirname, "pan.ts")) +
         compile(path.join(__dirname, "clipboard.ts")) + compile(path.join(__dirname, "view.ts")) +
@@ -5912,7 +6195,10 @@ test("list mindmap mutations preserve block data in the real DOM and Lute", {
 app.setPath("userData", ${JSON.stringify(path.join(temporary, "profile"))});
 app.commandLine.appendSwitch("disable-gpu");
 app.whenReady().then(async () => {
-    const win = new BrowserWindow({show: false, webPreferences: {nodeIntegration: true, contextIsolation: false, offscreen: true}});
+    // macOS 离屏合成器的原生触屏吸附可能停在中间位置，用真实窗口验证触摸滚动。
+    const nativeWindow = process.platform === "darwin";
+    const win = new BrowserWindow({show: nativeWindow,
+        webPreferences: {nodeIntegration: true, contextIsolation: false, offscreen: !nativeWindow}});
     win.webContents.debugger.attach("1.3");
     ipcMain.handle("mindmap-view-ime", async (_event, text) => {
         await win.webContents.debugger.sendCommand("Input.imeSetComposition", {
@@ -5921,6 +6207,11 @@ app.whenReady().then(async () => {
     });
     ipcMain.handle("mindmap-view-insert-text", async (_event, text) => {
         await win.webContents.debugger.sendCommand("Input.insertText", {text});
+    });
+    ipcMain.handle("mindmap-view-native-key", async (_event, key, windowsVirtualKeyCode) => {
+        const params = {key, code: key, windowsVirtualKeyCode};
+        await win.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {type: "rawKeyDown", ...params});
+        await win.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {type: "keyUp", ...params});
     });
     ipcMain.handle("mindmap-view-print-media", async (_event, media) => {
         await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {media});

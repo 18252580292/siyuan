@@ -1,4 +1,4 @@
-import {Dialog} from "../dialog";
+import {AdaptiveDialog} from "../dialog/adaptiveDialog";
 import {showMessage} from "../dialog/message";
 import {fetchSyncPost} from "../util/fetch";
 import {ContractFormData} from "../util/contractFormData";
@@ -15,11 +15,12 @@ export const openNotebookArchiveDialog = async (refresh: () => void) => {
         return;
     }
     const lang = window.siyuan.languages;
-    const dialog = new Dialog({
+    const dialog = new AdaptiveDialog({
+        mobileSheet: {beforeClose: () => !busy},
         title: lang.archiveEncryptedNotebooks,
         width: isMobile() ? "92vw" : "560px",
         content: `<div class="b3-dialog__content">
-    <div class="ft__secondary">${lang.archiveEncryptedNotebooksTip}</div>
+    <div class="ft__secondary">${lang.archiveEncryptedNotebooksTip}<br>${lang.archiveEncryptedNotebooksSyncTip}</div>
     <div class="fn__hr"></div>
     <div data-type="notebooks">${response.data.notebooks.map((item) => `<label class="b3-label fn__flex">
         <input class="b3-switch" type="checkbox" value="${escapeHtml(item.id)}">
@@ -91,6 +92,7 @@ export const openNotebookArchiveDialog = async (refresh: () => void) => {
             if (result.code !== 0) {
                 return;
             }
+            busy = false;
             dialog.destroy();
             showMessage(lang.archivedEncryptedNotebooks, 10000);
             refresh();
@@ -103,7 +105,8 @@ export const openNotebookArchiveDialog = async (refresh: () => void) => {
 
 export const openNotebookArchiveImportDialog = (refresh: () => void) => {
     const lang = window.siyuan.languages;
-    const dialog = new Dialog({
+    const dialog = new AdaptiveDialog({
+        mobileSheet: {beforeClose: (): boolean => !button.disabled},
         title: lang.restoreEncryptedNotebooks,
         width: isMobile() ? "92vw" : "560px",
         content: `<div class="b3-dialog__content">
@@ -143,6 +146,7 @@ export const openNotebookArchiveImportDialog = (refresh: () => void) => {
                 showMessage(response.msg, 7000, "error");
                 return;
             }
+            button.disabled = false;
             dialog.destroy();
             showMessage(lang.imported);
             refresh();

@@ -1,8 +1,10 @@
-import {confirmDialog} from "../dialog/confirmDialog";
+import {createDesktopConfirmDialog} from "../dialog/confirmDialog";
+import {openColorPicker} from "../colorPicker";
+import {openDatePicker} from "../datePicker";
 import {Plugin} from "./index";
 import {hideMessage, showMessage} from "../dialog/message";
 import {Dialog} from "../dialog";
-import {openInputDialog} from "../dialog/inputDialog";
+import {openPluginInputDialog} from "../dialog/inputDialog";
 import {fetchGet, fetchPost, fetchSyncPost} from "../util/fetch";
 import {getBackend, getFrontend} from "../util/functions";
 /// #if !MOBILE
@@ -38,6 +40,7 @@ import {openEmojiPanel} from "../emoji";
 import {openAssetPicker} from "../asset/picker";
 import {adjustEditorFontSize, setEditorFontSize} from "../util/editorFontSize";
 import {insertEditorContent, IInsertContentOptions} from "./insertContent";
+import {openDocTreeMenu} from "./openDocTreeMenu";
 /// #if !MOBILE
 import {isDockPanelVisible, toggleDockPanel} from "../layout/dock/panel";
 /// #endif
@@ -312,19 +315,17 @@ export const expandDocTree = async (options: {
         }
     });
     let liElement: HTMLElement;
-    let notebookId = options.id;
     const file = getModelByDockType("file") as MobileFiles | Files;
     if (typeof options.isSetCurrent === "undefined") {
         options.isSetCurrent = true;
     }
     if (isNotebook) {
-        liElement = file.element.querySelector(`.b3-list[data-url="${options.id}"]`)?.firstElementChild as HTMLElement;
+        liElement = await file.selectItem(options.id, "/", undefined, undefined, options.isSetCurrent);
     } else {
         const response = await fetchSyncPost("/api/block/getBlockInfo", {id: options.id});
         if (response.code !== 0 || response.data.publishAccessRequired) {
             return;
         }
-        notebookId = response.data.box;
         liElement = await file.selectItem(response.data.box, response.data.path, undefined, undefined, options.isSetCurrent);
     }
     if (!liElement) {
@@ -333,11 +334,10 @@ export const expandDocTree = async (options: {
     if (options.isSetCurrent || typeof options.isSetCurrent === "undefined") {
         file.setCurrent(liElement);
     }
-    const toggleElement = liElement.querySelector(".b3-list-item__arrow");
-    if (toggleElement.classList.contains("b3-list-item__arrow--open")) {
-        return;
+    const item = file.docTree.getItemFromElement(liElement);
+    if (item) {
+        await file.docTree.toggle(item.occurrenceKey, true);
     }
-    file.getLeaf(liElement, notebookId);
 };
 
 const openEmoji = (options: {
@@ -408,9 +408,23 @@ const isBottomDockVisible = () => {
     /// #endif
 };
 
+// 插件 API 保持位置参数与桌面行为，与内部统一后的 options 调用形态解耦。
+const confirmForPlugin = (title: string, text: string,
+                          confirmCallback?: (dialog?: Dialog) => void,
+                          cancelCallback?: (dialog: Dialog) => void,
+                          isDelete = false,
+                          extraAction?: {label: string, callback: () => void},
+                          confirmLabel?: string) => {
+    return createDesktopConfirmDialog({
+        title, text, confirm: confirmCallback, cancel: cancelCallback, isDelete, extraAction, confirmLabel,
+    });
+};
+
 const createAPI = () => ({
+    openColorPicker,
+    openDatePicker,
     adaptHotkey: updateHotkeyTip,
-    confirm: confirmDialog,
+    confirm: confirmForPlugin,
     Constants,
     showMessage,
     hideMessage,
@@ -431,7 +445,7 @@ const createAPI = () => ({
     ProtyleMethod,
     Plugin,
     Dialog,
-    openInputDialog,
+    openInputDialog: openPluginInputDialog,
     Menu,
     Setting,
     getAllEditor,
@@ -449,6 +463,7 @@ const createAPI = () => ({
     saveLayout,
     globalCommand,
     expandDocTree,
+    openDocTreeMenu,
     openEmoji,
     openAssetPicker,
     toggleLeftDock,

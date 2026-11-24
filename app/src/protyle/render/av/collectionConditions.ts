@@ -1,10 +1,10 @@
+import {openInputDialog} from "../../../dialog/inputDialog";
 import type {AVAutomationBlockAttributeInput, AVAutomationBlockSourceInput} from "../../../types/api";
 import {Menu} from "../../../plugin/Menu";
 import {toggleMenu} from "../../../menus/menuToggle";
 import {bindAliasInput} from "../../../menus/aliasInput";
 import {escapeAttr, escapeHtml} from "../../../util/escape";
 import {isMobile} from "../../../util/functions";
-import {openInputDialog} from "../../../dialog/inputDialog";
 import {upDownHint} from "../../../util/upDownHint";
 
 export const toggleCollectionType = (types: string[], type: string) => {

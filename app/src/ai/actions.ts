@@ -1,8 +1,8 @@
+import {AdaptiveDialog} from "../dialog/adaptiveDialog";
 import {toggleMenu} from "../menus/menuToggle";
 import {markMenuInnerScroll} from "../menus/Menu";
-import {fetchPost} from "../util/fetch";
+import {fetchPost, fetchSyncPost} from "../util/fetch";
 import {focusByRange} from "../protyle/util/selectionOffsets";
-import {Dialog} from "../dialog";
 import {isMobile} from "../util/functions";
 import {Constants} from "../constants";
 import {escapeAriaLabel, escapeAttr, escapeHtml} from "../util/escape";
@@ -11,6 +11,7 @@ import {Menu} from "../plugin/Menu";
 import {upDownHint} from "../util/upDownHint";
 import {clearAIEditorHistory, startAIEditorAction} from "./editor";
 import {isDisabledFeature} from "../protyle/util/compatibility";
+import {bindOneTimeAction} from "./oneTimeAction";
 
 interface IAIEditorAction {
     id: string;
@@ -19,8 +20,8 @@ interface IAIEditorAction {
 }
 
 const editDialog = (item: IAIEditorAction) => {
-    const dialog = new Dialog({
-        title: window.siyuan.languages.update,
+    const dialog = new AdaptiveDialog({
+        title: item.id ? window.siyuan.languages.update : window.siyuan.languages.aiCustomAction,
         content: `<div class="b3-dialog__content">
     <input class="b3-text-field fn__block" placeholder="${window.siyuan.languages.memo}">
     <div class="fn__hr"></div>
@@ -42,6 +43,7 @@ const editDialog = (item: IAIEditorAction) => {
         (btnsElement[2] as HTMLButtonElement).click();
     });
     customElement.value = item.action;
+    if (!item.id) btnsElement[0].classList.add("fn__none");
     btnsElement[1].addEventListener("click", () => {
         dialog.destroy();
     });
@@ -50,24 +52,26 @@ const editDialog = (item: IAIEditorAction) => {
             showMessage(window.siyuan.languages["_kernel"][142]);
             return;
         }
-        fetchPost("/api/ai/editor/saveAction", {
-            id: item.id,
-            name: nameElement.value,
-            action: customElement.value,
-        }, () => {
-            dialog.destroy();
+        void dialog.runPending(async () => {
+            const response = await fetchSyncPost("/api/ai/editor/saveAction", {
+                id: item.id,
+                name: nameElement.value,
+                action: customElement.value,
+            });
+            return response.code === 0;
         });
     });
     btnsElement[0].addEventListener("click", () => {
-        fetchPost("/api/ai/editor/removeAction", {id: item.id}, () => {
-            dialog.destroy();
+        void dialog.runPending(async () => {
+            const response = await fetchSyncPost("/api/ai/editor/removeAction", {id: item.id});
+            return response.code === 0;
         });
     });
-    nameElement.focus();
+    dialog.focusWhenReady(() => nameElement);
 };
 
 const customDialog = (protyle: IProtyle, elements: HTMLElement[], range?: Range) => {
-    const dialog = new Dialog({
+    const dialog = new AdaptiveDialog({
         title: window.siyuan.languages.aiCustomAction,
         content: `<div class="b3-dialog__content">
     <input class="b3-text-field fn__block" value="" placeholder="${window.siyuan.languages.memo}">
@@ -104,14 +108,15 @@ const customDialog = (protyle: IProtyle, elements: HTMLElement[], range?: Range)
             showMessage(window.siyuan.languages["_kernel"][142]);
             return;
         }
-        fetchPost("/api/ai/editor/saveAction", {
-            name: nameElement.value,
-            action: customElement.value,
-        }, () => {
-            dialog.destroy();
+        void dialog.runPending(async () => {
+            const response = await fetchSyncPost("/api/ai/editor/saveAction", {
+                name: nameElement.value,
+                action: customElement.value,
+            });
+            return response.code === 0;
         });
     });
-    nameElement.focus();
+    dialog.focusWhenReady(() => nameElement);
 };
 
 const filterAI = (element: HTMLElement, inputElement: HTMLInputElement) => {
@@ -156,7 +161,11 @@ const openAIActions = (actions: IAIEditorAction[], elements: HTMLElement[], prot
         iconHTML: "",
         type: "empty",
         label: `<div class="fn__flex-column b3-menu__filter">
-    <input class="b3-text-field fn__flex-shrink"/>
+    <textarea class="b3-text-field fn__flex-shrink" rows="2" aria-label="${escapeAriaLabel(window.siyuan.languages.aiOneTimeAction)}" placeholder="${escapeAttr(window.siyuan.languages.aiOneTimeAction)}"></textarea>
+    <div class="fn__hr"></div>
+    <button class="b3-button fn__flex-shrink" data-type="run-once" disabled>${window.siyuan.languages.use}</button>
+    <div class="fn__hr"></div>
+    <input class="b3-text-field fn__flex-shrink" aria-label="${escapeAriaLabel(window.siyuan.languages.search)}" placeholder="${escapeAttr(window.siyuan.languages.search)}"/>
     <div class="fn__hr"></div>
     <div class="b3-list fn__flex-1 b3-list--background">
        <div class="b3-list-item b3-list-item--narrow b3-list-item--focus" data-action="Continue writing">
@@ -191,6 +200,11 @@ const openAIActions = (actions: IAIEditorAction[], elements: HTMLElement[], prot
             /// #endif
             const listElement = element.querySelector(".b3-list");
             const inputElement = element.querySelector("input");
+            bindOneTimeAction(element.querySelector("textarea"), element.querySelector('[data-type="run-once"]'),
+                isMobile(), (action) => {
+                    menu.close();
+                    startAIEditorAction(protyle, elements, range, action);
+                });
             const runAction = (itemElement: HTMLElement) => {
                 let action = itemElement.dataset.action;
                 if (itemElement.dataset.type === "saved") {
@@ -279,8 +293,31 @@ const openAIActions = (actions: IAIEditorAction[], elements: HTMLElement[], prot
         y: rect.bottom,
         h: rect.height,
     });
-    menu.element.querySelector("input").focus();
+    menu.element.querySelector("textarea").focus();
     /// #endif
+};
+
+export const openAgentPhrases = (target: HTMLElement, run: (instruction: string) => void) => {
+    const lang = window.siyuan.languages;
+    void toggleMenu({target, build: (_menu, session) => {
+        fetchPost("/api/ai/editor/lsActions", {}, response => {
+            if (!session.isCurrent() || !target.isConnected) return;
+            const menu = new Menu("agent-phrases");
+            const saved: IAIEditorAction[] = response.data || [];
+            const builtins = [lang.aiContinueWrite, lang.aiTranslate, lang.aiExtractSummary, lang.aiPolish,
+                lang.aiBrainStorm, lang.aiFixGrammarSpell];
+            [...builtins.map(action => ({name: action, action})), ...saved].forEach(item => {
+                menu.addItem({iconHTML: "", label: escapeHtml(item.name || item.action), click: () => run(item.action || item.name)});
+            });
+            menu.addSeparator();
+            menu.addItem({iconHTML: "", label: lang.manage, submenu: [
+                {label: lang.new, icon: "iconAdd", click: () => editDialog({id: "", name: "", action: ""})},
+                ...saved.map(item => ({label: escapeHtml(item.name || item.action), click: () => editDialog(item)})),
+            ]});
+            const rect = target.getBoundingClientRect();
+            session.show(() => menu.open({x: rect.left, y: rect.bottom, h: rect.height, target}));
+        });
+    }});
 };
 
 let aiActionsRequestID = 0;

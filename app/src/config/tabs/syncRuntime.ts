@@ -1,8 +1,9 @@
+import {confirmDialog} from "../../dialog/confirmDialog";
 import {config as configApi} from "../util/configApi";
 import {fetchSyncPost} from "../../util/fetch";
+import {escapeHtml} from "../../util/escape";
 import {processSync} from "../../dialog/processSystem";
 import {progressLoading} from "../../dialog/progress";
-import {confirmDialog} from "../../dialog/confirmDialog";
 import {updateAccountPanelVisibility} from "./accountUi";
 import {hideMessage, showMessage} from "../../dialog/message";
 import {refreshSyncCloudDirBlock} from "../../sync/syncGuide";
@@ -37,8 +38,13 @@ const setSyncProvider = async (provider: Config.ISync["provider"]) => {
     let started = false;
     try {
         const confirmed = await new Promise<boolean>((resolve) => {
-            confirmDialog(window.siyuan.languages.syncProvider, window.siyuan.languages.syncProviderChangeConfirm,
-                () => resolve(true), () => resolve(false), false, undefined, window.siyuan.languages.syncProviderChangeContinue);
+            confirmDialog({
+                title: window.siyuan.languages.syncProvider,
+                text: window.siyuan.languages.syncProviderChangeConfirm,
+                confirm: () => resolve(true),
+                cancel: () => resolve(false),
+                confirmLabel: window.siyuan.languages.syncProviderChangeContinue,
+            });
         });
         if (!confirmed) {
             return;
@@ -90,7 +96,8 @@ const setSyncAssetDownloadMode = async (mode: Config.ISync["assetDownloadMode"])
         await configApi.set("sync.assetDownloadMode", mode);
     } catch (error) {
         console.warn("[config] failed to update asset download mode", error);
-        showMessage(window.siyuan.languages.syncAssetDownloadModeFailed, 5000, "error");
+        showMessage(error instanceof Error && error.message ? escapeHtml(error.message) :
+            window.siyuan.languages.syncAssetDownloadModeFailed, 7000, "error");
     } finally {
         window.clearTimeout(progressTimeout);
         if (messageId) {

@@ -51,6 +51,7 @@ func toContractAVTable(value *av.Table) *apicontract.AVTable {
 		return nil
 	}
 	return &apicontract.AVTable{
+		Nested:             toContractAVNestedResult(value.Nested),
 		AVBaseInstance:     toContractAVBaseInstance(value.BaseInstance),
 		Calendar:           toContractAVCalendarSettings(value.Calendar),
 		CalendarRange:      toContractAVCalendarRange(value.CalendarRange),
@@ -76,6 +77,7 @@ func toContractAVBaseInstance(value *av.BaseInstance) *apicontract.AVBaseInstanc
 		Group:             toContractAVViewGroup(value.Group),
 		PageSize:          value.PageSize,
 		ShowIcon:          value.ShowIcon,
+		ShowRelationIcon:  value.ShowRelationIcon,
 		WrapField:         value.WrapField,
 		GroupKey:          toContractAVKey(value.GroupKey),
 		GroupValue:        toContractAVValue(value.GroupValue),
@@ -191,6 +193,8 @@ func toContractAVValueBlock(value *av.ValueBlock) *apicontract.AVValueBlock {
 		ID:               value.ID,
 		Icon:             value.Icon,
 		Content:          value.Content,
+		Rich:             toContractAVPrimaryRich(value.Rich),
+		RichBlockDOM:     value.RichBlockDOM,
 		RefSubtype:       string(value.RefSubtype),
 		Created:          value.Created,
 		Updated:          value.Updated,
@@ -201,13 +205,27 @@ func fromContractAVValueBlock(value *apicontract.AVValueBlock) *av.ValueBlock {
 		return nil
 	}
 	return &av.ValueBlock{
-		ID:         value.ID,
-		Icon:       value.Icon,
-		Content:    value.Content,
-		RefSubtype: av.BlockRefSubtype(value.RefSubtype),
-		Created:    value.Created,
-		Updated:    value.Updated,
+		ID:           value.ID,
+		Icon:         value.Icon,
+		Content:      value.Content,
+		Rich:         fromContractAVPrimaryRich(value.Rich),
+		RichBlockDOM: value.RichBlockDOM,
+		RefSubtype:   av.BlockRefSubtype(value.RefSubtype),
+		Created:      value.Created,
+		Updated:      value.Updated,
 	}
+}
+func toContractAVPrimaryRich(value *av.ValuePrimaryRich) *apicontract.AVValuePrimaryRich {
+	if value == nil {
+		return nil
+	}
+	return &apicontract.AVValuePrimaryRich{Spec: value.Spec, Format: value.Format, Content: value.Content}
+}
+func fromContractAVPrimaryRich(value *apicontract.AVValuePrimaryRich) *av.ValuePrimaryRich {
+	if value == nil {
+		return nil
+	}
+	return &av.ValuePrimaryRich{Spec: value.Spec, Format: value.Format, Content: value.Content}
 }
 func toContractAVValueText(value *av.ValueText) *apicontract.AVValueText {
 	if value == nil {
@@ -662,11 +680,34 @@ func toContractAVRelation(value *av.Relation) *apicontract.AVRelation {
 		return nil
 	}
 	return &apicontract.AVRelation{
+		DetailView:       toContractAVRelationDetailView(value.DetailView),
 		AvID:             value.AvID,
 		IsTwoWay:         value.IsTwoWay,
 		BackKeyID:        value.BackKeyID,
 		CandidateFilters: avContractSlice(value.CandidateFilters, func(value *av.ViewFilter) *apicontract.AVViewFilter { return toContractAVViewFilter(value) }),
 	}
+}
+
+func toContractAVRelationDetailView(value *av.RelationDetailView) *apicontract.AVRelationDetailView {
+	if value == nil {
+		return nil
+	}
+	return &apicontract.AVRelationDetailView{Spec: value.Spec, Enabled: value.Enabled, ViewID: value.ViewID}
+}
+
+func fromContractAVRelationContext(value *apicontract.AVRelationContext) *model.AttributeViewRelationContext {
+	if value == nil {
+		return nil
+	}
+	return &model.AttributeViewRelationContext{SourceAvID: value.SourceAvID, SourceItemID: value.SourceItemID, RelationKeyID: value.RelationKeyID}
+}
+
+func fromContractAVRelationCellContext(value *apicontract.AVRelationCellContext) *model.AttributeViewRelationCellContext {
+	if value == nil {
+		return nil
+	}
+	return &model.AttributeViewRelationCellContext{RelationContext: *fromContractAVRelationContext(&value.RelationContext),
+		SourceItemIDs: append([]string(nil), value.SourceItemIDs...)}
 }
 func toContractAVRollup(value *av.Rollup) *apicontract.AVRollup {
 	if value == nil {
@@ -773,6 +814,7 @@ func toContractAVTableRow(value *av.TableRow) *apicontract.AVTableRow {
 		return nil
 	}
 	return &apicontract.AVTableRow{
+		Hierarchy:         toContractAVItemHierarchy(value.Hierarchy),
 		ConditionalColors: toContractAVItemConditionalColors(value.ConditionalColors),
 		ID:                value.ID,
 		Cells:             avContractSlice(value.Cells, func(value *av.TableCell) *apicontract.AVTableCell { return toContractAVTableCell(value) }),
@@ -941,6 +983,7 @@ func toContractAVNewItemTemplate(value *av.NewItemTemplate) *apicontract.AVNewIt
 		ContentTemplatePath: value.ContentTemplatePath,
 		HideInFileTree:      value.HideInFileTree,
 		OpenAfterCreate:     value.OpenAfterCreate,
+		OpenInCurrentTab:    value.OpenInCurrentTab,
 	}
 }
 func toContractAVNewItemFieldValue(value *av.NewItemFieldValue) *apicontract.AVNewItemFieldValue {
@@ -986,9 +1029,10 @@ func toContractAVAttributeViewData(value *model.AttributeViewData) *apicontract.
 		return nil
 	}
 	return &apicontract.AVAttributeViewData{
-		Spec: value.Spec,
-		ID:   value.ID,
-		Name: value.Name,
+		SubItems: toContractAVSubItemsConfig(value.SubItems),
+		Spec:     value.Spec,
+		ID:       value.ID,
+		Name:     value.Name,
 		CustomColors: avContractSlice(value.CustomColors, func(value *av.AttributeViewCustomColor) *apicontract.AVAttributeViewCustomColor {
 			return toContractAVAttributeViewCustomColor(value)
 		}),
@@ -1023,6 +1067,7 @@ func toContractAVView(value *av.View) *apicontract.AVView {
 		return nil
 	}
 	return &apicontract.AVView{
+		SubItemsDisplay:   value.SubItemsDisplay,
 		ConditionalColors: avContractSlice(value.ConditionalColors, toContractAVConditionalColorRule),
 		ID:                value.ID,
 		Icon:              value.Icon,
@@ -1043,6 +1088,7 @@ func toContractAVView(value *av.View) *apicontract.AVView {
 		GroupCreated:      value.GroupCreated,
 		Groups:            avContractSlice(value.Groups, func(value *av.View) *apicontract.AVView { return toContractAVView(value) }),
 		GroupItemIDs:      value.GroupItemIDs,
+		SubItemsItemIDs:   value.SubItemsItemIDs,
 		GroupCalc:         toContractAVGroupCalc(value.GroupCalc),
 		GroupKey:          toContractAVKey(value.GroupKey),
 		GroupVal:          toContractAVValue(value.GroupVal),
@@ -1067,10 +1113,11 @@ func toContractAVBaseLayout(value *av.BaseLayout) *apicontract.AVBaseLayout {
 		return nil
 	}
 	return &apicontract.AVBaseLayout{
-		Spec:      value.Spec,
-		ID:        value.ID,
-		ShowIcon:  value.ShowIcon,
-		WrapField: value.WrapField,
+		Spec:             value.Spec,
+		ID:               value.ID,
+		ShowIcon:         value.ShowIcon,
+		ShowRelationIcon: value.ShowRelationIcon,
+		WrapField:        value.WrapField,
 	}
 }
 func toContractAVViewTableColumn(value *av.ViewTableColumn) *apicontract.AVViewTableColumn {
@@ -1193,8 +1240,9 @@ func toContractAVBlockAttributeViewKeys(value *model.BlockAttributeViewKeys) *ap
 		return nil
 	}
 	return &apicontract.AVBlockAttributeViewKeys{
-		AvID:   value.AvID,
-		AvName: value.AvName,
+		NotebookID: value.NotebookID,
+		AvID:       value.AvID,
+		AvName:     value.AvName,
 		CustomColors: avContractSlice(value.CustomColors, func(value *av.AttributeViewCustomColor) *apicontract.AVAttributeViewCustomColor {
 			return toContractAVAttributeViewCustomColor(value)
 		}),
@@ -1295,12 +1343,13 @@ func toContractAVAttributeViewRenderTarget(value *model.AttributeViewRenderTarge
 		return nil
 	}
 	return &apicontract.AVAttributeViewRenderTarget{
-		Status:   value.Status,
-		ItemID:   value.ItemID,
-		GroupID:  value.GroupID,
-		Index:    value.Index,
-		Offset:   value.Offset,
-		PageSize: value.PageSize,
+		AncestorIDs: value.AncestorIDs,
+		Status:      value.Status,
+		ItemID:      value.ItemID,
+		GroupID:     value.GroupID,
+		Index:       value.Index,
+		Offset:      value.Offset,
+		PageSize:    value.PageSize,
 	}
 }
 func toContractAVCreateAttributeViewItemResult(value *model.CreateAttributeViewItemResult) *apicontract.AVCreateAttributeViewItemResult {
@@ -1308,12 +1357,13 @@ func toContractAVCreateAttributeViewItemResult(value *model.CreateAttributeViewI
 		return nil
 	}
 	return &apicontract.AVCreateAttributeViewItemResult{
-		ItemID:          value.ItemID,
-		BlockID:         value.BlockID,
-		Content:         value.Content,
-		IsDetached:      value.IsDetached,
-		Warnings:        value.Warnings,
-		OpenAfterCreate: value.OpenAfterCreate,
+		ItemID:           value.ItemID,
+		BlockID:          value.BlockID,
+		Content:          value.Content,
+		IsDetached:       value.IsDetached,
+		Warnings:         value.Warnings,
+		OpenAfterCreate:  value.OpenAfterCreate,
+		OpenInCurrentTab: value.OpenInCurrentTab,
 	}
 }
 func toContractAVCreateAttributeViewItemDocsResult(value *model.CreateAttributeViewItemDocsResult) *apicontract.AVCreateAttributeViewItemDocsResult {

@@ -1,5 +1,8 @@
 .block {
   &__popover {
+    // 浮窗左侧为嵌入块、标题和折叠按钮预留横排空间。
+    --b3-protyle-min-padding-left: 64px;
+    font-size: 14px;
     background-color: var(--b3-theme-background);
     position: absolute;
     box-shadow: var(--b3-menu-shadow, var(--b3-dialog-shadow));
@@ -20,6 +23,15 @@
       opacity: 1;
     }
 
+    &--backlinks {
+      height: 70vh;
+
+      > .block__content {
+        overflow: hidden;
+        min-height: 0;
+      }
+    }
+
     & > .block__icons {
       border-radius: var(--b3-menu-radius, var(--b3-border-radius-b)) var(--b3-menu-radius, var(--b3-border-radius-b)) 0 0;
 
@@ -27,6 +39,19 @@
         height: var(--b3-ui-panel-height, 42px);
         touch-action: none;
       }
+    }
+  }
+
+  &__backlinks {
+    min-height: 0;
+
+    > .backlinkMList__header,
+    > .backlinkMList {
+      display: none;
+    }
+
+    > .backlinkList__header {
+      flex-wrap: wrap;
     }
   }
 
@@ -113,10 +138,17 @@
     line-height: 16px;
 
     &--tap:active:not([disabled]),
-    &:hover:not([disabled]):not(.block__icon--text):not(.block__icon--warning):not(.block__icon--subtle),
+    &:hover:not([disabled]):not(.block__icon--text):not(.block__icon--warning):not(.block__icon--subtle):not(.block__icon--tap),
     &--active {
       color: var(--b3-theme-on-background);
       background-color: var(--b3-list-icon-hover);
+    }
+
+    @media (hover: hover) {
+      &--tap:hover:not([disabled]):not(.block__icon--text):not(.block__icon--warning):not(.block__icon--subtle) {
+        color: var(--b3-theme-on-background);
+        background-color: var(--b3-list-icon-hover);
+      }
     }
 
     &--show {
@@ -148,6 +180,15 @@
         min-height: 44px;
         justify-content: center;
       }
+    }
+
+    &--inset {
+      box-sizing: border-box;
+      justify-content: center;
+      border: var(--b3-icon-background-inset, 0px) solid transparent;
+      border-radius: calc(var(--b3-border-radius) + var(--b3-icon-background-inset, 0px));
+      background-clip: padding-box;
+      transition-property: color, opacity, background-color;
     }
 
     &--tap {

@@ -2,6 +2,7 @@ import {removeSearchCriterion} from "../config/util/resourceConfig";
 import {toggleMenu} from "../menus/menuToggle";
 import type {FileTreeGetDocRequestInput} from "../types/api";
 import {updateSearchMethodControls} from "./methodCapabilities";
+import {bindSearchInput} from "./input";
 import {getAttr} from "./attrs";
 import type {APICallbackResponse, APIPOSTRoutes, BlockQueryRequestInput} from "../types/api";
 import {getAllModels} from "../layout/getAll";
@@ -61,6 +62,7 @@ import {electronUndo} from "../protyle/undo";
 import {getContenteditableElement} from "../protyle/wysiwyg/getBlock";
 import {IDatabaseItemOpenData, openDatabaseItem} from "../protyle/render/av/openDatabaseItem";
 import {scheduleSearchRequest} from "./request";
+import {observeSearchResultSnippets} from "./resultSnippet";
 import {
     buildSearchRequest,
     cloneSearchConfig,
@@ -311,6 +313,9 @@ export const genSearch = (app: App, config: Config.IUILayoutTabSearchConfig, ele
         },
     });
     unRefEdit.resize();
+    [edit, unRefEdit].forEach(editor => {
+        editor.protyle.element.tabIndex = -1;
+    });
     if (closeCB) {
         if (data.layout === 1) {
             if (data.col) {
@@ -710,7 +715,7 @@ export const genSearch = (app: App, config: Config.IUILayoutTabSearchConfig, ele
                                 submenu: [{
                                     iconHTML: "",
                                     label: window.siyuan.languages.topBottomLayout,
-                                    current: isPopover ? localData.layout === 0 : localData.layoutTab === 0,
+                                    checked: isPopover ? localData.layout === 0 : localData.layoutTab === 0,
                                     click() {
                                         element.querySelector(".search__layout").classList.remove("search__layout--row");
                                         edit.protyle.element.style.width = "";
@@ -731,7 +736,7 @@ export const genSearch = (app: App, config: Config.IUILayoutTabSearchConfig, ele
                                 }, {
                                     iconHTML: "",
                                     label: window.siyuan.languages.leftRightLayout,
-                                    current: isPopover ? localData.layout === 1 : localData.layoutTab === 1,
+                                    checked: isPopover ? localData.layout === 1 : localData.layoutTab === 1,
                                     click() {
                                         element.querySelector(".search__layout").classList.add("search__layout--row");
                                         edit.protyle.element.style.height = "";
@@ -1002,11 +1007,7 @@ export const genSearch = (app: App, config: Config.IUILayoutTabSearchConfig, ele
         }
         saveKeyList("keys", searchInputElement.value, config);
     });
-    searchInputElement.addEventListener("beforeinput", (event: InputEvent) => {
-        if (event.inputType === "insertLineBreak" && config.method !== 2) {
-            event.preventDefault();
-        }
-    });
+    bindSearchInput(searchInputElement, () => config.method);
     searchInputElement.addEventListener("keydown", (event) => {
         electronUndo(event);
     });
@@ -1078,10 +1079,13 @@ const openSearchBlockEditor = (options: {
         currentRange = null;
     }
     if (currentRange) {
-        const rangeBlockElement = hasClosestBlock(currentRange.startContainer);
+        const titleElement = options.protyle.title?.editElement;
+        const isTitleRange = titleElement?.contains(currentRange.startContainer);
+        const rangeBlockElement = isTitleRange ? titleElement : hasClosestBlock(currentRange.startContainer);
         if (rangeBlockElement) {
-            options.id = rangeBlockElement.getAttribute("data-node-id");
-            const offset = getSelectionOffset(getContenteditableElement(rangeBlockElement) || rangeBlockElement,
+            options.id = isTitleRange ? options.rootId : rangeBlockElement.getAttribute("data-node-id");
+            const offset = getSelectionOffset(isTitleRange ? titleElement :
+                (getContenteditableElement(rangeBlockElement) || rangeBlockElement),
                 null, options.protyle.highlight.ranges[options.protyle.highlight.rangeIndex]);
             const scrollAttr: IScrollAttr = {
                 rootId: options.protyle.block.rootID,
@@ -1335,22 +1339,30 @@ export const getArticle = (options: {
                 if (!isCurrent()) {
                     return;
                 }
-                options.edit.protyle.query = {
-                    key: options.value || null,
-                    method: options.config?.method || null,
-                    types: options.config?.types || null,
-                    subTypes: options.config?.subTypes || null,
-                };
-                // https://ld246.com/article/1770132984152
-                if (options.edit.protyle.options.render.title) {
-                    options.edit.protyle.wysiwyg.renderCustom(response.data.ial);
-                }
                 onGet({
                     updateReadonly: true,
                     isValid: isCurrent,
                     data: getResponse,
                     protyle: options.edit.protyle,
                     action: zoomIn ? [Constants.CB_GET_ALL, Constants.CB_GET_HTML] : [Constants.CB_GET_HTML],
+                    beforeAVRender: () => {
+                        options.edit.protyle.query = {
+                            key: options.value || null,
+                            method: options.config?.method || null,
+                            types: options.config?.types || null,
+                            subTypes: options.config?.subTypes || null,
+                        };
+                        // https://ld246.com/article/1770132984152
+                        if (options.edit.protyle.options.render.title) {
+                            options.edit.protyle.wysiwyg.renderCustom(response.data.ial);
+                        }
+                    },
+                    afterCB: () => {
+                        // Title metadata belongs to the document applied by onGet, which may wait for an unsaved title.
+                        if (options.edit.protyle.options.render.title) {
+                            options.edit.protyle.title.render(options.edit.protyle, response);
+                        }
+                    },
                     afterAVRender: async () => {
                         if (getResponse.code !== 0) {
                             return;
@@ -1429,10 +1441,6 @@ export const getArticle = (options: {
                         }
                     }
                 });
-                // 只能放在 onGet 后，否则 title 不会更新 https://github.com/siyuan-note/siyuan/issues/16739
-                if (options.edit.protyle.options.render.title) {
-                    options.edit.protyle.title.render(options.edit.protyle, response);
-                }
             });
         });
     });
@@ -1616,9 +1624,9 @@ export const inputEvent = (element: Element, config: Config.IUILayoutTabSearchCo
                         const blocks = emitBeforeSearchResultsRender(response.data.blocks, edit, requestConfig, searchInputElement);
                         onSearch(blocks, edit, element, requestConfig, requestFocusId);
                         if (response.data.matchedBlockCount > 0) {
-                            let text = window.siyuan.languages.findInDoc.replace("${x}", response.data.matchedRootCount).replace("${y}", response.data.matchedBlockCount);
+                            let text = window.siyuan.languages.findInDoc.replace("${x}", String(response.data.matchedRootCount)).replace("${y}", String(response.data.matchedBlockCount));
                             if ("docMode" in response.data && response.data.docMode) {
-                                text = window.siyuan.languages.matchDoc.replace("${x}", response.data.matchedRootCount);
+                                text = window.siyuan.languages.matchDoc.replace("${x}", String(response.data.matchedRootCount));
                             }
                             searchResultElement.innerHTML = `${requestConfig.page}/${response.data.pageCount || 1}<span class="fn__space"></span>
 <span class="ft__on-surface">${text}</span>`;
@@ -1638,6 +1646,7 @@ const onSearch = (data: IBlock[], edit: Protyle, element: Element, config: Confi
                       currentId?: string,
                       newId?: string
                   }) => {
+    const groupFolded = config.group === 1 && Boolean(window.siyuan.config.search?.groupFolded);
     let resultHTML = "";
     let currentData;
     let newData;
@@ -1647,11 +1656,11 @@ const onSearch = (data: IBlock[], edit: Protyle, element: Element, config: Confi
         if (item.children) {
             resultHTML += `<div class="b3-list-item">
 <span class="b3-list-item__toggle b3-list-item__toggle--hl">
-    <svg class="b3-list-item__arrow b3-list-item__arrow--open"><use xlink:href="#iconRight"></use></svg>
+    <svg class="b3-list-item__arrow${groupFolded ? "" : " b3-list-item__arrow--open"}"><use xlink:href="#iconRight"></use></svg>
 </span>
 ${getFileTreeIconHTML(getNotebookIcon(item.box), "notebook", "b3-list-item__graphic", true)}
 <span class="b3-list-item__text ariaLabel" style="color: var(--b3-theme-on-surface)" data-tooltip-encoding="none" aria-label="${escapeHtmlTextAndAttr(title)}">${title}</span>
-</div><div>`;
+</div><div${groupFolded ? ' class="fn__none"' : ""}>`;
             item.children.forEach((childItem) => {
                 if (focusId) {
                     if (childItem.id === focusId.currentId) {
@@ -1721,7 +1730,8 @@ ${countHTML}
         edit.protyle.element.classList.add("fn__none");
         element.querySelector(".search__drag").classList.add("fn__none");
     }
-    element.querySelector("#searchList").innerHTML = resultHTML || (
+    const listElement = element.querySelector("#searchList");
+    listElement.innerHTML = resultHTML || (
         config.method === 0 ? `<div class="b3-list-item b3-list-item--focus" data-type="search-new">
     <svg class="b3-list-item__graphic"><use xlink:href="#iconFile"></use></svg>
     <span class="b3-list-item__text">
@@ -1736,6 +1746,7 @@ ${countHTML}
         ${window.siyuan.languages.emptyContent}
     </span>
 </div>`);
+    observeSearchResultSnippets(listElement);
     if (currentData) {
         const currentList = element.querySelector(`[data-node-id="${currentData.id}"]`) as HTMLElement;
         if (currentList) {

@@ -1,9 +1,9 @@
+import {confirmDialog} from "../dialog/confirmDialog";
 import {config as configApi} from "./util/configApi";
 import {showMessage} from "../dialog/message";
 import {fetchPost} from "../util/fetch";
 import {ContractFormData} from "../util/contractFormData";
 import type {APIPOSTRoutes} from "../types/api";
-import {confirmDialog} from "../dialog/confirmDialog";
 import {highlightRender} from "../protyle/render/highlightRender";
 import {Constants} from "../constants";
 import {getFrontend, isBrowser, isMobile} from "../util/functions";
@@ -42,8 +42,12 @@ import {
     isBazaarPackageType,
 } from "./bazaar/packageConfig";
 import {genBazaarPackagePanelHTML} from "./bazaar/html";
+import {filterBazaarPackagesByCompatibility} from "./bazaar/filters";
 import {bindBazaarEvents} from "./bazaar/events";
-import {renderBazaarInstall} from "./bazaar/installTask";
+import {closeBazaarFilterMenu, refreshBazaarFilterMenu} from "./bazaar/filterMenu";
+import {getBazaarBatchUpdate, renderBazaarInstall} from "./bazaar/installTask";
+import {bazaarConfigApi} from "./bazaar/runtime";
+import {isBazaarBatchUpdateExcluded} from "./bazaar/batchUpdatePreference";
 import {
     bindRatingUserChange,
     genCardRatingHTML,
@@ -152,6 +156,7 @@ export const bazaar = {
         this.element = element;
     },
     _invalidateMount() {
+        closeBazaarFilterMenu(this.element);
         Array.from(this._bazaarCardRenderStates.keys()).forEach((container) => {
             this._disposeBazaarCardRender(container);
         });
@@ -338,7 +343,7 @@ export const bazaar = {
                         <option ${localSort.downloadedPlugin === "6" ? "selected" : ""} data-plugin-only="true" value="6">${window.siyuan.languages.sortByDisabledFirst}</option>
                     </select>
                 </div>
-                <input spellcheck="false" data-type="downloaded-filter" class="b3-text-field config-bazaar__filter" placeholder="${window.siyuan.languages.enterKey} ${window.siyuan.languages.search}">
+                <input spellcheck="false" data-type="downloaded-filter" class="b3-text-field config-bazaar__filter" placeholder="${escapeAttr(window.siyuan.languages.searchPlaceholder)}">
                 <div class="fn__flex config-bazaar__actions">
                     <label class="block__icon block__icon--show config-bazaar__local-package ariaLabel" data-type="install-local-package" data-position="north" aria-label="${window.siyuan.languages.installLocalBazaarPackage}">
                         <svg class="b3-button__icon"><use xlink:href="#iconUpload"></use></svg>
@@ -418,6 +423,15 @@ export const bazaar = {
             ` data-position="north" aria-label="${window.siyuan.languages.incompatiblePluginTip}"`;
         const tooltipClass = bazaarType === "themes" ? "" : " ariaLabel";
         return `<span class="fn__space"></span><span${tooltip} class="fn__flex-center${tooltipClass} b3-chip b3-chip--error b3-chip--small">${window.siyuan.languages.incompatible}</span>`;
+    },
+    _genInstalledPluginVersionTip(item: IBazaarItem | undefined, bazaarType: TBazaarType) {
+        return bazaarType === "plugins" && item?.disallowInstall ?
+            window.siyuan.languages.bazaarNeedVersion.replace("${x}", item.minAppVersion) : "";
+    },
+    _genInstalledPluginSwitchHTML(item: IBazaarItem) {
+        return `<span class="fn__space"></span><span class="fn__space"></span>
+<input class="ariaLabel b3-switch fn__flex-center" type="checkbox" data-type="plugin-enable" data-position="north"
+aria-label="${escapeAttr(window.siyuan.languages[item.enabled ? "disable" : "enable"])}"${item.enabled ? " checked" : ""}${isBazaarPackageEnableDisabled("plugins", item) ? " disabled" : ""}>`;
     },
     _genDeprecatedChipHTML(item: IBazaarItem, reserveSpace = true) {
         if (!item.deprecated) {
@@ -630,12 +644,69 @@ ${primaryAction ? '<div class="fn__hr"></div>' : ""}
         }
         return window.siyuan.languages.bazaarNeedVersion.replace("${x}", item.updateRequiredMinAppVer || "");
     },
-    _genUpdateButtonHTML(item: IBazaarItem | undefined, bazaarType: TBazaarType, reserveSpace = false) {
-        if (!item?.outdated && !reserveSpace) {
+    _batchUpdatePreferenceSaving: false,
+    _genBatchUpdatePreferenceHTML(type: TBazaarType, name: string) {
+        const checked = isBazaarBatchUpdateExcluded(window.siyuan.config.bazaar.batchUpdateExcluded, type, name);
+        return `<button type="button" role="switch" aria-checked="${checked}" aria-busy="${bazaar._batchUpdatePreferenceSaving}" data-type="skip-batch-update"
+            ${bazaar._batchUpdatePreferenceSaving || getBazaarBatchUpdate() ? "disabled" : ""}
+            aria-label="${window.siyuan.languages.bazaarSkipBatchUpdate}" data-position="north"
+            class="ariaLabel block__icon block__icon--show config-bazaar__skip-update${checked ? " block__icon--active" : ""}">
+            <svg><use xlink:href="#iconLock"></use></svg></button>`;
+    },
+    _refreshBatchUpdatePreferences() {
+        bazaar.element?.querySelectorAll<HTMLButtonElement>('[data-type="skip-batch-update"]').forEach(button => {
+            const owner = button.closest("[data-name][data-package-type]");
+            const type = owner?.getAttribute("data-package-type");
+            if (!isBazaarPackageType(type)) return;
+            const checked = isBazaarBatchUpdateExcluded(window.siyuan.config.bazaar.batchUpdateExcluded,
+                type, owner.getAttribute("data-name"));
+            button.setAttribute("aria-checked", String(checked));
+            button.classList.toggle("block__icon--active", checked);
+            button.disabled = bazaar._batchUpdatePreferenceSaving || Boolean(getBazaarBatchUpdate());
+            button.setAttribute("aria-busy", String(bazaar._batchUpdatePreferenceSaving));
+        });
+        if (bazaar._isUpdatePanelActive() && bazaar._updateState === "loaded" && !getBazaarBatchUpdate()) {
+            bazaar.element?.querySelector('[data-type="install-all"]')?.classList.toggle("fn__none",
+                !bazaar._getBatchUpdateItems().some(({item}) => !item.available.disallowUpdate));
+        }
+    },
+    async _toggleBatchUpdatePreference(type: TBazaarType, name: string, source?: HTMLElement) {
+        const restoreFocus = source && document.activeElement === source;
+        const packageSource = source?.closest("[data-package-source]")?.getAttribute("data-package-source");
+        if (bazaar._batchUpdatePreferenceSaving || getBazaarBatchUpdate()) return;
+        bazaar._batchUpdatePreferenceSaving = true;
+        bazaar._refreshBatchUpdatePreferences();
+        const next = !isBazaarBatchUpdateExcluded(window.siyuan.config.bazaar.batchUpdateExcluded, type, name);
+        try {
+            await bazaarConfigApi.patch(`batchUpdateExcluded.${type}`, {[name]: next});
+        } catch (error) {
+            showMessage(error instanceof Error ? error.message : String(error));
+        } finally {
+            const stillOwnsFocus = restoreFocus &&
+                (document.activeElement === document.body || document.activeElement === source);
+            bazaar._batchUpdatePreferenceSaving = false;
+            bazaar._refreshBatchUpdatePreferences();
+            if (stillOwnsFocus) {
+                bazaar.element?.querySelectorAll<HTMLButtonElement>('[data-type="skip-batch-update"]').forEach(button => {
+                    const owner = button.closest("[data-name][data-package-type]");
+                    if (owner?.getAttribute("data-name") === name && owner.getAttribute("data-package-type") === type &&
+                        owner.getAttribute("data-package-source") === packageSource && button.getClientRects().length > 0) {
+                        button.focus();
+                    }
+                });
+            }
+        }
+    },
+    _getBatchUpdateItems(): Array<{type: TBazaarType, item: IUpdatedBazaarItem}> {
+        return bazaar._getUpdatedItems().filter(({type, item}) =>
+            !isBazaarBatchUpdateExcluded(window.siyuan.config.bazaar.batchUpdateExcluded, type, item.installed.name));
+    },
+    _genUpdateButtonHTML(item: IBazaarItem | undefined, bazaarType: TBazaarType, keepSlot = false) {
+        if (!item?.outdated && !keepSlot) {
             return "";
         }
         const ariaLabel = item ? this._genUpdateButtonAriaLabel(item, bazaarType) : window.siyuan.languages.update;
-        return `<span data-position="north" data-type="install-t" ${item?.disallowUpdate ? "disabled" : ""} aria-label="${ariaLabel}" class="ariaLabel block__icon block__icon--show${item?.outdated ? "" : " fn__hidden"}">
+        return `<span data-position="north" data-type="install-t" ${item?.disallowUpdate ? "disabled" : ""} aria-label="${ariaLabel}" class="ariaLabel block__icon block__icon--show${item?.outdated ? "" : " fn__none"}">
     <svg class="ft__primary"><use xlink:href="#iconRefresh"></use></svg>
 </span>`;
     },
@@ -671,6 +742,7 @@ ${primaryAction ? '<div class="fn__hr"></div>' : ""}
             <svg><use xlink:href="#iconFolder"></use></svg>
         </span>
         ${bazaar._genOpenStorageHTML(installed, bazaarType)}
+        ${bazaar._genBatchUpdatePreferenceHTML(bazaarType, installed.name)}
         ${bazaar._genUpdateButtonHTML(available, bazaarType)}
     </div>
 </div>`;
@@ -774,7 +846,7 @@ ${primaryAction ? '<div class="fn__hr"></div>' : ""}
         counterElement.classList.remove("fn__none");
         counterElement.textContent = items.length.toString();
         installAllElement?.classList.toggle("fn__none",
-            !items.some(({item}) => !item.available.disallowUpdate));
+            !bazaar._getBatchUpdateItems().some(({item}) => !item.available.disallowUpdate));
         contentElement.innerHTML = items.map(({type, item}) => this._genUpdateItemHTML(item, type)).join("");
         loadUpdatedRatings(this);
         renderBazaarInstall(bazaar.element);
@@ -911,17 +983,18 @@ ${primaryAction ? '<div class="fn__hr"></div>' : ""}
             ${bazaarItem.disabledInPublish ? "" : `<button type="button" data-type="plugin-publish-data" class="block__icon block__icon--show ariaLabel" data-position="north" aria-label="${escapeAttr(window.siyuan.languages.pluginPublishDataTip)}"><svg aria-hidden="true"><use xlink:href="#iconUpload"></use></svg></button>`}</span>` : "";
                     const available = bazaar._getUpdatedItem(bazaarType, bazaarItem.name)?.available;
                     const ratingKey = getRatingKey(bazaarType, bazaarItem.name);
+                    const pluginVersionTip = bazaar._genInstalledPluginVersionTip(bazaarItem, bazaarType);
                     return `<div data-name="${escapeAttr(bazaarItem.name)}" data-package-type="${bazaarType}" data-package-source="downloaded" class="b3-card${bazaarItem.current ? " b3-card--current" : ""}">
     <div class="b3-card__img">${bazaar._genPackageIconHTML(bazaarItem.iconURL)}</div>
     <div class="fn__flex-1 fn__flex-column">
         <div class="b3-card__info b3-card__info--left fn__flex-1">
             ${escapeHtml(bazaarItem.preferredName)}
             <div class="b3-card__desc" title="${escapeAttr(bazaarItem.preferredDesc)}">${escapeHtml(bazaarItem.preferredDesc)}</div>
+            ${pluginVersionTip ? `<div class="ft__breakword">${escapeHtml(pluginVersionTip)}</div>` : ""}
         </div>
     </div>
     <div class="b3-card__actions b3-card__actions--right">
         ${publishSwitchHTML}
-        ${bazaar._genUpdateButtonHTML(available, bazaarType, true)}
         ${genRatePackageActionHTML(bazaar._data.downloadedRatingKeys.has(ratingKey), bazaar._data.userRatings.get(ratingKey))}
         ${bazaar._genIncompatibleChipHTML(bazaarItem, "installed", bazaarType)}
         ${bazaar._genDeprecatedChipHTML(bazaarItem)}
@@ -936,21 +1009,14 @@ ${primaryAction ? '<div class="fn__hr"></div>' : ""}
             <svg><use xlink:href="#iconFolder"></use></svg>
         </span>
         ${bazaar._genOpenStorageHTML(bazaarItem, bazaarType)}
+        ${bazaar._genUpdateButtonHTML(available, bazaarType, true)}
         <span data-position="north" class="ariaLabel block__icon block__icon--show${showSwitch ? "" : " fn__none"}" data-type="switch" aria-label="${window.siyuan.languages.use}">
             <svg><use xlink:href="#iconSelect"></use></svg>
         </span>
         <span data-position="north" class="ariaLabel block__icon block__icon--show${showDisable ? "" : " fn__none"}" data-type="package-disable" aria-label="${window.siyuan.languages.disable}">
             <svg><use xlink:href="#iconClose"></use></svg>
         </span>
-        <span class="fn__space${bazaarType === "plugins" ? "" : " fn__none"}"></span>
-        <span class="fn__space${bazaarType === "plugins" ? "" : " fn__none"}"></span>
-        <input ${((bazaarItem.disallowInstall && !bazaarItem.enabled) || bazaarItem.installedIncompatible) ? "disabled" : ""} 
-aria-label="${(bazaarItem.disallowInstall && !bazaarItem.enabled) ? window.siyuan.languages.bazaarNeedVersion.replace("${x}", bazaarItem.minAppVersion) : window.siyuan.languages[bazaarItem.enabled ? "disable" : "enable"]}"
-data-position="north" class="ariaLabel b3-switch fn__flex-center${bazaarType === "plugins" ? "" : " fn__none"}" 
-${bazaarItem.enabled ? "checked" : ""} 
-data-type="plugin-enable" 
-data-disabletip="${bazaarItem.disallowInstall ? window.siyuan.languages.bazaarNeedVersion.replace("${x}", bazaarItem.minAppVersion) : ""}"
-type="checkbox">
+        ${bazaarType === "plugins" ? bazaar._genInstalledPluginSwitchHTML(bazaarItem) : ""}
     </div>
 </div>`;
                 }).join("");
@@ -1101,8 +1167,10 @@ type="checkbox">
     ${bazaar._genReadmeMetaRow(window.siyuan.languages.installDate, installed.hInstallDate)}
     ${bazaar._genReadmeMetaRow(window.siyuan.languages.installSize, `<span data-type="installed-size">${window.siyuan.languages.loading}</span>`, true)}
 </section>` : "";
+        const pluginVersionTip = bazaar._genInstalledPluginVersionTip(installed, bazaarType);
         const compatibilitySection = `<section class="item__meta-section">
     <div class="item__meta-title">${window.siyuan.languages.bazaarCompatibility}</div>
+    ${pluginVersionTip ? `<div class="ft__breakword">${escapeHtml(pluginVersionTip)}</div>` : ""}
     ${bazaar._genReadmeMetaRow(window.siyuan.languages.bazaarMinAppVersion, compatibilityData.minAppVersion ? `v${compatibilityData.minAppVersion}` : "-")}
     ${compatibilityFieldVisibility.frontends ? bazaar._genReadmeMetaRow(window.siyuan.languages.bazaarPlatforms, frontendLabels.length ? bazaar._genReadmeChips(frontendLabels, true) : "-", true) : ""}
     ${compatibilityFieldVisibility.systems ? bazaar._genReadmeMetaRow(window.siyuan.languages.bazaarSystems, bazaar._genReadmeChips(systemLabels, true), true) : ""}
@@ -1113,7 +1181,7 @@ type="checkbox">
         const marketSection = available ? `<section class="item__meta-section">
     <div class="item__meta-title">${window.siyuan.languages.bazaarMarketInfo}</div>
     ${bazaar._genReadmeMetaRow(window.siyuan.languages.version, `v${available.version}`)}
-    ${bazaar._genReadmeMetaRow(window.siyuan.languages.releaseDate, available.hUpdated)}
+    ${bazaar._genReadmeMetaRow(window.siyuan.languages.bazaarUpdateDate, available.hUpdated)}
     ${bazaar._genReadmeMetaRow(window.siyuan.languages.pkgSize, available.hSize)}
     ${available.keywords?.length ? bazaar._genReadmeMetaRow(window.siyuan.languages.keywords, bazaar._genReadmeKeywords(available.keywords), true) : ""}
 </section>` : "";
@@ -1448,7 +1516,8 @@ type="checkbox">
             actionElement.dataset.type = enabled ? "package-disable" : "package-enable";
             actionElement.textContent = window.siyuan.languages[enabled ? "disable" : "enable"];
         }
-        actionElement.toggleAttribute("disabled", disabled);
+        const installed = bazaar._getPackageDetail("plugins", packageName)?.installed;
+        actionElement.toggleAttribute("disabled", disabled || Boolean(installed && isBazaarPackageEnableDisabled("plugins", installed)));
     },
     _setPluginEnabled(app: App, item: Pick<IBazaarItem, "name" | "enabled">, enabled: boolean, callback: () => void) {
         if (bazaar._pluginEnablePending.has(item.name)) {
@@ -1638,10 +1707,13 @@ type="checkbox">
             const data = response.data;
             if (response.code !== 0) {
                 if (data && "reason" in data && data.reason === "package-exists" && data.packageName) {
-                    confirmDialog("⚠️ " + window.siyuan.languages.update,
-                        window.siyuan.languages.confirmOverwriteLocalBazaarPackage.replace("${name}", escapeHtml(data.packageName)), () => {
+                    confirmDialog({
+                        title: "⚠️ " + window.siyuan.languages.update,
+                        text: window.siyuan.languages.confirmOverwriteLocalBazaarPackage.replace("${name}", escapeHtml(data.packageName)),
+                        confirm: () => {
                             bazaar._installLocalPackage(file, app, mount, true);
-                        });
+                        },
+                    });
                 } else if (data && "reason" in data && data.reason === "package-incompatible") {
                     showMessage(data.minAppVersion ?
                         window.siyuan.languages.bazaarNeedVersion.replace("${x}", data.minAppVersion) :
@@ -1665,14 +1737,18 @@ type="checkbox">
             }
             if (data.packageType === "plugins" && !data.updated) {
                 if (window.siyuan.config.bazaar.petalDisabled) {
-                    confirmDialog(window.siyuan.languages.confirm, window.siyuan.languages.enablePluginTip2);
+                    confirmDialog({title: window.siyuan.languages.confirm, text: window.siyuan.languages.enablePluginTip2});
                 } else {
-                    confirmDialog("💡 " + window.siyuan.languages.enablePlugin, window.siyuan.languages.enablePluginTip, () => {
-                        bazaar._setPluginEnabled(app, {name: data.packageName, enabled: false}, true, () => {
-                            if (bazaar._isMountCurrent(mount)) {
-                                bazaar._genMyHTML("plugins", app, false);
-                            }
-                        });
+                    confirmDialog({
+                        title: "💡 " + window.siyuan.languages.enablePlugin,
+                        text: window.siyuan.languages.enablePluginTip,
+                        confirm: () => {
+                            bazaar._setPluginEnabled(app, {name: data.packageName, enabled: false}, true, () => {
+                                if (bazaar._isMountCurrent(mount)) {
+                                    bazaar._genMyHTML("plugins", app, false);
+                                }
+                            });
+                        },
                     });
                 }
             }
@@ -1919,9 +1995,28 @@ type="checkbox">
             }
         });
     },
+    _refreshCompatibilityFilters() {
+        if (!this.element?.isConnected) return;
+        refreshBazaarFilterMenu(this.element);
+        this._refreshBatchUpdatePreferences();
+        BAZAAR_PACKAGE_TYPES.forEach((bazaarType) => {
+            const config = BAZAAR_PACKAGE_CONFIG[bazaarType];
+            const container = this.element.querySelector(`#${config.panelID}`) as HTMLElement;
+            const panel = container?.closest(".config-bazaar__panel");
+            if (!panel) return;
+            if (panel.getAttribute("data-init") === "true") {
+                this._renderBazaarCards(container,
+                    sortBazaarPackages(this._data[bazaarType], window.siyuan.storage[Constants.LOCAL_BAZAAR][config.tabType]),
+                    bazaarType, bazaarType === "themes" ?
+                        (panel.querySelector("#bazaarSelect") as HTMLSelectElement)?.value : undefined);
+            }
+        });
+    },
     _renderBazaarCards(container: Element, packages: IBazaarItem[], bazaarType: TBazaarType, themeModeValue?: string) {
         this._disposeBazaarCardRender(container);
-        const visiblePackages = filterBazaarPackagesByThemeMode(packages, bazaarType, themeModeValue);
+        const compatiblePackages = filterBazaarPackagesByCompatibility(packages,
+            window.siyuan.config.bazaar.compatibilityFilters?.[bazaarType]);
+        const visiblePackages = filterBazaarPackagesByThemeMode(compatiblePackages, bazaarType, themeModeValue);
         container.parentElement.querySelector(".counter").textContent = visiblePackages.length.toString();
         if (visiblePackages.length === 0) {
             container.innerHTML = `<div class="b3-cards b3-cards--nowrap"><ul class="b3-list b3-list--background"><li class="b3-list--empty">${window.siyuan.languages.emptyContent}</li></ul></div>`;

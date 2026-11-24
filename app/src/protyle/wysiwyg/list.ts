@@ -1,3 +1,4 @@
+import {openInputDialog} from "../../dialog/inputDialog";
 import {focusByWbr, getEditorRange, getUndoFocusContext} from "../util/selection";
 import {focusByRange} from "../util/selectionOffsets";
 import {transaction, turnsIntoOneTransaction, updateTransaction} from "./transaction";
@@ -21,7 +22,6 @@ import {
     type TListSubtype
 } from "./listContext";
 import {fetchSyncPost} from "../../util/fetch";
-import {openInputDialog} from "../../dialog/inputDialog";
 import {showMessage} from "../../dialog/message";
 import {activateTrackedRangeInsertion, type ITrackedRangeInsertion} from "../util/trackedRange";
 import {normalizeHTMLAssetIFrameBlockDOM} from "../../asset/html";

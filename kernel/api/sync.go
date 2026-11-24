@@ -6,12 +6,15 @@ package api
 
 import (
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/siyuan-note/dejavu"
 	"github.com/siyuan-note/dejavu/cloud"
 	"github.com/siyuan-note/logging"
 
@@ -396,7 +399,19 @@ func getBootSyncContract(c *gin.Context, request apicontract.EmptyRequest) (ret 
 	return
 }
 
+var getSyncSourceState = contractHandler(apicontract.GetSyncSourceState, getSyncSourceStateContract)
+
+func getSyncSourceStateContract(c *gin.Context, _ apicontract.EmptyRequest) apicontract.Response[apicontract.SyncSourceState] {
+	data, err := model.GetSyncSourceState()
+	if err != nil {
+		return apicontract.Failure[apicontract.SyncSourceState](-1, err.Error())
+	}
+	return apicontract.Success(data)
+}
+
 var performSync = contractHandler(apicontract.PerformSync, performSyncContract)
+
+const syncNoticeHeader = "X-Siyuan-Sync-Notice"
 
 func performSyncContract(c *gin.Context, request apicontract.PerformSyncRequest) (ret apicontract.Response[apicontract.Null]) {
 	confSyncSnapshot := model.Conf.LoadSync()
@@ -414,8 +429,26 @@ func performSyncContract(c *gin.Context, request apicontract.PerformSyncRequest)
 		}
 	}
 
+	if request.Source != "" {
+		upload, err := request.UploadDirection()
+		if err != nil {
+			return apicontract.Failure[apicontract.Null](-1, err.Error())
+		}
+		decision := model.SyncSourceDecision{Source: request.Source, LocalID: request.LocalID, CloudID: request.CloudID}
+		if upload {
+			err = model.SyncDataUpload(decision)
+		} else {
+			err = model.SyncDataDownload(decision)
+		}
+		if err != nil {
+			return syncSourceDecisionFailure(c, err)
+		}
+		return
+	}
 	if 3 != confSyncSnapshot.Mode {
-		model.SyncData(true)
+		if err := model.SyncData(true); err != nil {
+			return performSyncFailure(c, err)
+		}
 		return
 	}
 
@@ -425,11 +458,36 @@ func performSyncContract(c *gin.Context, request apicontract.PerformSyncRequest)
 		return apicontract.Failure[apicontract.Null](-1, err.Error())
 	}
 	if upload {
-		model.SyncDataUpload()
+		err = model.SyncDataUpload()
 	} else {
-		model.SyncDataDownload()
+		err = model.SyncDataDownload()
+	}
+	if err != nil {
+		return performSyncFailure(c, err)
 	}
 	return
+}
+
+func syncSourceDecisionFailure(c *gin.Context, err error) apicontract.Response[apicontract.Null] {
+	if errors.Is(err, dejavu.ErrSyncSourcePreviewChanged) {
+		return apicontract.Failure[apicontract.Null](2, "")
+	}
+	return performSyncFailure(c, err)
+}
+
+func performSyncFailure(c *gin.Context, err error) apicontract.Response[apicontract.Null] {
+	if version := c.GetHeader(syncNoticeHeader); version == "1" || version == "2" {
+		notice, pushed := model.SyncErrorNoticeFor(err)
+		if version == "2" && notice.ID != "" {
+			// 同步向导通过私有响应头读取通知元数据，提示文案由 msg 承载。
+			c.Header(syncNoticeHeader, fmt.Sprintf("%s;%d;%d", notice.ID, notice.Code, notice.CloseTimeout))
+			return apicontract.Failure[apicontract.Null](-1, notice.Message)
+		}
+		if version == "1" && pushed {
+			c.Header(syncNoticeHeader, "pushed")
+		}
+	}
+	return apicontract.Failure[apicontract.Null](-1, err.Error())
 }
 
 var performBootSync = contractHandler(apicontract.PerformBootSync, performBootSyncContract)

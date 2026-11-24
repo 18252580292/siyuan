@@ -3,7 +3,7 @@ import {Menu} from "../../../plugin/Menu";
 import {escapeAttr, escapeHtml} from "../../../util/escape";
 import {transaction} from "../../wysiwyg/transaction";
 import {getFieldsByData} from "./view";
-import {bindInlineFilterEvents, genEmptyFilterValue, getFiltersHTML, prepareFilterColumns} from "./filter";
+import {bindInlineFilterEvents, createInlineFilterData, genEmptyFilterValue, getFiltersHTML, prepareFilterColumns} from "./filter";
 import {closeInlineFilterDropdowns} from "./filterDropdown";
 import {AV_MANAGE_CUSTOM_COLORS_TYPE, getAVColorGridHTML, getAVColorOrder, getAVCustomColors} from "./color";
 import {getConditionalBackground, moveConditionalColorRule} from "./conditionalColor";
@@ -42,7 +42,8 @@ export const openConditionalColorsMenu = async (options: {
     const panelElement = menuElement.querySelector<HTMLElement>(".av__conditional-colors");
     const root = panelElement.querySelector<HTMLElement>("[data-rules]");
     onResize();
-    await prepareFilterColumns(data);
+    const panelFilterData: IAV = {...data, view: {...data.view, filters: rules.map(rule => rule.filter)}};
+    await prepareFilterColumns(panelFilterData);
     // 返回上级或关闭菜单后，不再更新已经移除的面板。
     if (!panelElement.isConnected) {
         return;
@@ -76,13 +77,14 @@ ${data.viewType === "table" || rule.target === "property" ? `<select class="b3-s
         root.querySelectorAll<HTMLElement>("[data-rule-id]").forEach(element => {
             const rule = rules.find(rule => rule.id === element.dataset.ruleId);
             const filterRoot = element.querySelector<HTMLElement>("[data-filter]");
-            const filterData: IAV = {...data, view: {...data.view, filters: [JSON.parse(JSON.stringify(rule.filter))]}};
+            const filterData = createInlineFilterData(panelFilterData, [JSON.parse(JSON.stringify(rule.filter))]);
             const renderFilter = () => fields.some(field => field.id === rule.filter.column) ?
                 getFiltersHTML(filterData, true) : `<span class="ft__on-surface">${lang.invalid}: ${escapeHtml(rule.filter.column)}</span>`;
             filterRoot.innerHTML = renderFilter();
             bindInlineFilterEvents(filterRoot, filterData, protyle, blockElement.dataset.nodeId, data.id, {
                 root: filterRoot,
                 render: renderFilter,
+                onResize,
                 save: filters => {
                     const field = fields.find(field => field.id === filters[0]?.column);
                     const current = rules.find(item => item.id === rule.id);

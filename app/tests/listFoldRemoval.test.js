@@ -14,7 +14,7 @@ const rendererSource = () => {
         assert.equal(statements.length, names.length, file);
         return statements.map(statement => statement.getText(source)).join("\n");
     };
-    const extractClick = (file, condition, call = "toggleListFold(", prefixNames = []) => {
+    const extractClick = (file, condition, call = "toggleListFold(", prefixNames = [], includeCondition = false) => {
         const source = ts.createSourceFile(file,
             readFileSync(path.join(__dirname, "../src/protyle", `${file}.ts`), "utf8"),
             ts.ScriptTarget.Latest, true);
@@ -31,7 +31,8 @@ const rendererSource = () => {
                         break;
                     }
                 }
-                matches.push(prefix ? `{${prefix}\n${node.thenStatement.getText(source)}}` : node.thenStatement.getText(source));
+                const body = includeCondition ? node.getText(source) : node.thenStatement.getText(source);
+                matches.push(prefix ? `{${prefix}\n${body}}` : body);
             }
             ts.forEachChild(node, visit);
         };
@@ -40,10 +41,10 @@ const rendererSource = () => {
         return matches[0];
     };
     const editorSource = readFileSync(path.join(__dirname, "../src/protyle/wysiwyg/index.ts"), "utf8");
-    const foldStart = editorSource.indexOf('            const actionElement = hasClosestByClassName(event.target, "protyle-action");');
-    const foldEnd = editorSource.indexOf("            const range = getEditorRange(this.element);", foldStart);
-    assert.ok(foldStart >= 0 && foldEnd > foldStart);
-    const foldClick = editorSource.slice(foldStart, foldEnd);
+    const actionStart = editorSource.indexOf('            const action = hasClosestByClassName(event.target, "protyle-action");');
+    const actionEnd = editorSource.indexOf("            const openListItemAttrByShift", actionStart);
+    assert.ok(actionStart >= 0 && actionEnd > actionStart);
+    const clickAction = editorSource.slice(actionStart, actionEnd);
     const embedStart = editorSource.indexOf('            const embedItemElement = hasClosestByClassName(event.target, "protyle-wysiwyg__embed");');
     const embedEnd = editorSource.indexOf("            if (commonClick(event, protyle))", embedStart);
     assert.ok(embedStart >= 0 && embedEnd > embedStart);
@@ -98,8 +99,8 @@ const rendererSource = () => {
         ${extract("wysiwyg/listContext", ["isListItemActionElement", "shouldFoldEmbeddedListByAlt"])}
         export const embeddedMouseDown = (protyle, event) => {
             const target = event.target;
-            if (shouldFoldEmbeddedListByAlt(event, protyle.disabled, hasClosestByClassName(target, "protyle-action")))
-                ${extractClick("wysiwyg/index", condition => condition.includes("shouldFoldEmbeddedListByAlt") && condition.includes("hasClosestByClassName(target"), "event.preventDefault()")}
+            ${extractClick("wysiwyg/index", condition => condition === "shouldFoldEmbeddedListByAlt(event, protyle.disabled, actionElement)",
+                "event.preventDefault()", ["action", "actionElement"], true)}
         };
         export const clickGutter = (protyle, foldElement, buttonElement) => ${extractClick("gutter/index",
         condition => condition.includes('buttonElement.getAttribute("data-type") === "NodeListItem"'), "toggleListFold(", ["foldButton", "foldArrow"])};
@@ -107,11 +108,13 @@ const rendererSource = () => {
         condition => condition === "event.altKey", 'toggleListFold(protyle, foldElement, "children")')};
         export const clickDot = (protyle, actionElement) => ${extractClick("wysiwyg/index",
         condition => condition === "event.altKey && !protyle.disabled")};
-        export const clickEmbed = (protyle, event) => {
+        export const clickEmbed = (protyle, event, mouseDownWithMeta = false) => {
             const ctrlIsPressed = event.ctrlKey || event.metaKey;
             const checkFold = (id, callback) => callback(false, []);
             const openFileById = options => protyle.opened.push(options);
-            ${foldClick}
+            ${clickAction}
+            ${extractClick("wysiwyg/index", condition => condition.startsWith("actionElement && shouldFoldEmbeddedListByAlt("),
+                "toggleListFold(", [], true)}
             protyle.rangeReads = (protyle.rangeReads || 0) + 1;
             ${embedClick}
             if (event.altKey && !protyle.disabled && actionElement && actionElement.parentElement.classList.contains("li")) {
@@ -459,9 +462,9 @@ const runCases = async () => {
         }
         byID("embedded-list").setAttribute("data-subtype", marker === "number" ? "o" : marker === "task" ? "t" : "u");
         const click = (target, modifiers = {}) => clickEmbed(protyle, {
-            target, button: 0, altKey: true, shiftKey: false, ctrlKey: false, metaKey: false,
+            target, button: 0, detail: 1, altKey: true, shiftKey: false, ctrlKey: false, metaKey: false,
             stopPropagation() {}, preventDefault() {}, ...modifiers,
-        });
+        }, !!(modifiers.ctrlKey || modifiers.metaKey));
         const caret = byID("embedded-after").querySelector('[contenteditable="true"]').firstChild;
         getSelection().collapse(caret, 2);
         const mouseDown = new MouseEvent("mousedown", {button: 0, altKey: true, bubbles: true, cancelable: true});

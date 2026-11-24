@@ -91,7 +91,7 @@ func initDatabase(forceRebuild bool) {
 	disableCache()
 	defer enableCache()
 
-	util.IncBootProgress(2, util.BootL10n(301, "Initializing database..."))
+	util.IncBootProgress(2, util.BootStageDatabase)
 
 	if forceRebuild {
 		closeDatabase()
@@ -109,6 +109,9 @@ func initDatabase(forceRebuild bool) {
 			migrateBlockEmbeddingsSchema()
 			if err := ensureBlocksDocIndexes(db); err != nil {
 				logging.LogFatalf(logging.ExitCodeUnavailableDatabase, "create document indexes failed: %s", err)
+			}
+			if err := ensureSearchMetadataIndex(db); err != nil {
+				logging.LogFatalf(logging.ExitCodeUnavailableDatabase, "create search metadata index failed: %s", err)
 			}
 			if err := ensureRefsDefIndexes(db); err != nil {
 				logging.LogFatalf(logging.ExitCodeUnavailableDatabase, "create refs definition indexes failed: %s", err)
@@ -200,6 +203,9 @@ func initDBTables() {
 
 	if err = ensureBlocksDocIndexes(db); err != nil {
 		logging.LogFatalf(logging.ExitCodeUnavailableDatabase, "create document indexes failed: %s", err)
+	}
+	if err = ensureSearchMetadataIndex(db); err != nil {
+		logging.LogFatalf(logging.ExitCodeUnavailableDatabase, "create search metadata index failed: %s", err)
 	}
 	if err = ensureRecentUpdatedBlocksIndexes(db); err != nil {
 		logging.LogFatalf(logging.ExitCodeUnavailableDatabase, "create recent updated block indexes failed: %s", err)
@@ -767,7 +773,7 @@ func buildAttributeFromNode(n *ast.Node, rootID, boxID, p string) (attributes []
 	case ast.NodeKramdownBlockIAL:
 		attrs := parse.IALValMap(n)
 		for name, val := range attrs {
-			if !isAttr(name) {
+			if name == treenode.TagCreatedAttr || !isAttr(name) {
 				continue
 			}
 
@@ -896,7 +902,7 @@ func buildSpanFromNode(n *ast.Node, tree *parse.Tree, rootID, boxID, p string, b
 		if asset := docTitleImgAsset(n, boxLocalPath, docDirLocalPath); nil != asset {
 			assets = append(assets, asset)
 		}
-		if tags := docTagSpans(n); 0 < len(tags) {
+		if tags := docTagSpans(n, boxID, p); 0 < len(tags) {
 			spans = append(spans, tags...)
 		}
 	case ast.NodeInlineHTML, ast.NodeHTMLBlock, ast.NodeIFrame, ast.NodeWidget, ast.NodeAudio, ast.NodeVideo:
@@ -1014,13 +1020,13 @@ func buildBlockFromNodeWithHeadingParent(n *ast.Node, tree *parse.Tree, headingP
 		if !treenode.IsNodeOCRed(n) {
 			util.PushNodeOCRQueue(n)
 		}
-		content = nodeStaticContent(n, nil, true, indexAssetPath.Load(), true, true)
+		content = nodeStaticContent(n, nil, true, indexAssetPath.Load(), true, true, true)
 
 		fc := treenode.FirstLeafBlock(n)
 		if !treenode.IsNodeOCRed(fc) {
 			util.PushNodeOCRQueue(fc)
 		}
-		fcontent = nodeStaticContent(fc, nil, true, false, true, true)
+		fcontent = nodeStaticContent(fc, nil, true, false, true, true, true)
 
 		parentID = n.Parent.ID
 		if headingParent != nil { // 如果在标题块下方，则将标题块作为父节点
@@ -1032,7 +1038,7 @@ func buildBlockFromNodeWithHeadingParent(n *ast.Node, tree *parse.Tree, headingP
 		if !treenode.IsNodeOCRed(n) {
 			util.PushNodeOCRQueue(n)
 		}
-		content = nodeStaticContent(n, nil, true, indexAssetPath.Load(), true, true)
+		content = nodeStaticContent(n, nil, true, indexAssetPath.Load(), true, true, true)
 
 		parentID = n.Parent.ID
 		if headingParent != nil {
@@ -1754,7 +1760,7 @@ func beginHistoryTx() (tx *sql.Tx, err error) {
 
 func beginAssetContentTx() (tx *sql.Tx, err error) {
 	if tx, err = assetContentDB.Begin(); err != nil {
-		logging.LogErrorf("begin asset content tx failed: %s\n  %s", err, logging.ShortStack())
+		logging.LogErrorf("begin asset content database [%s] tx failed: %s\n  %s", util.AssetContentDBPath, err, logging.ShortStack())
 		if strings.Contains(err.Error(), "database is locked") {
 			os.Exit(logging.ExitCodeUnavailableDatabase)
 		}
@@ -1811,6 +1817,7 @@ func prepareExecInsertTx(tx *sql.Tx, stmtSQL string, args []any) (err error) {
 	if !ok {
 		stmt, err = tx.Prepare(stmtSQL)
 		if err != nil {
+			handleDatabaseWriteError(tx, stmtSQL, args, err)
 			return
 		}
 		txStmtCacheLock.Lock()
@@ -1824,16 +1831,7 @@ func prepareExecInsertTx(tx *sql.Tx, stmtSQL string, args []any) (err error) {
 	}
 
 	if _, err = stmt.Exec(args...); err != nil {
-		tx.Rollback()
-		logging.LogErrorf("exec database stmt [%s] failed: %s\n  %s", stmtSQL, err, logging.ShortStack())
-
-		if isRecoverableDBFileError(err) {
-			closeDatabase()
-			util.RemoveDatabaseFile(util.DBPath)
-			time.Sleep(time.Second)
-			initDatabase(true)
-			logging.LogFatalf(logging.ExitCodeUnavailableDatabase, "database disk image [%s] is malformed, please restart SiYuan kernel to rebuild it\n\t%s\n\t%v", util.DBPath, stmtSQL, args)
-		}
+		handleDatabaseWriteError(tx, stmtSQL, args, err)
 		return
 	}
 	return
@@ -1841,16 +1839,7 @@ func prepareExecInsertTx(tx *sql.Tx, stmtSQL string, args []any) (err error) {
 
 func execStmtTx(tx *sql.Tx, stmt string, args ...any) (err error) {
 	if _, err = tx.Exec(stmt, args...); err != nil {
-		tx.Rollback()
-		logging.LogErrorf("exec database stmt [%s] failed: %s\n  %s", stmt, err, logging.ShortStack())
-
-		if isRecoverableDBFileError(err) {
-			closeDatabase()
-			util.RemoveDatabaseFile(util.DBPath)
-			time.Sleep(time.Second)
-			initDatabase(true)
-			logging.LogFatalf(logging.ExitCodeUnavailableDatabase, "database disk image [%s] is malformed, please restart SiYuan kernel to rebuild it\n\t%s\n\t%v", util.DBPath, stmt, args)
-		}
+		handleDatabaseWriteError(tx, stmt, args, err)
 		return
 	}
 	return
@@ -1906,6 +1895,10 @@ func ialAttr(ial, name string) (ret string) {
 func isRecoverableDBFileError(err error) bool {
 	if nil == err {
 		return false
+	}
+	var sqliteErr sqlite3.Error
+	if errors.As(err, &sqliteErr) && sqliteErr.Code == sqlite3.ErrCorrupt {
+		return true
 	}
 	errStr := err.Error()
 	return strings.Contains(errStr, "database disk image is malformed") ||
@@ -2148,6 +2141,9 @@ func initEncryptedDBTables(boxDB *sql.DB) (err error) {
 		}
 	}
 	if err = ensureBlocksDocIndexes(boxDB); err != nil {
+		return
+	}
+	if err = ensureSearchMetadataIndex(boxDB); err != nil {
 		return
 	}
 	if err = ensureRecentUpdatedBlocksIndexes(boxDB); err != nil {

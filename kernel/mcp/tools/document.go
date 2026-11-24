@@ -5,19 +5,33 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/88250/lute/ast"
+	"github.com/88250/lute/parse"
 	"github.com/siyuan-note/siyuan/kernel/model"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
 var DocumentTool = &Tool{
 	Name:        "document",
-	Description: "Document operations. Actions: get(id), create(notebook, parentID, title, markdown?), list(notebook, parentID=notebook root by default), delete(id), rename(id, title), move(id, notebook, parentID), duplicate(id), search_docs(keyword), info(id). Use parentID=\"\" for the notebook root. Titles are independent literal text. The legacy path=hPath parameter checks each candidate ancestor chain; ambiguous paths, empty or slash-containing ancestor titles and unavailable indexes return explicit errors. Never derive identity or hierarchy from a display hPath.",
+	Description: "Document operations. Actions: get(id), create(notebook, parentID, title, markdown?), list(notebook, parentID=notebook root by default), delete(id), rename(id, title), move(id, notebook, parentID), duplicate(id), search_docs(keyword), info(id). Use block.get for individual block content and block.get_kramdown for document body or stored block Markdown. document.get provides metadata and the document title, not the document body. Use export for export-formatted output. search_docs discovers documents by title path (hPath) or exact document ID, also matching notebook names and configured name/alias/memo fields; use search.fulltext for block content and sql.query for structured filters or statistics. list returns at most 128 visible direct child documents, excluding hidden documents, not a recursive tree, and reports truncation when more children exist. Use parentID=\"\" for the notebook root. Titles are independent literal text. The legacy path=hPath parameter checks each candidate ancestor chain; ambiguous paths, empty or slash-containing ancestor titles and unavailable indexes return explicit errors. Never derive identity or hierarchy from a display hPath.",
+	EffectScope: EffectScopeLocal,
+	ActionEffects: map[string]ToolEffects{
+		"get":         {LocalRead: true},
+		"list":        {LocalRead: true},
+		"search_docs": {LocalRead: true},
+		"info":        {LocalRead: true},
+		"create":      {LocalWrite: true},
+		"delete":      {LocalWrite: true},
+		"rename":      {LocalWrite: true},
+		"move":        {LocalWrite: true},
+		"duplicate":   {LocalWrite: true},
+	},
 	InputSchema: ToolSchema{
 		Type: "object",
 		Properties: map[string]Property{
@@ -32,7 +46,8 @@ var DocumentTool = &Tool{
 		},
 		Required: []string{"action"},
 	},
-	Handler: documentHandler,
+	Handler:        documentHandler,
+	ContextHandler: documentContextHandler,
 }
 
 func init() {
@@ -40,12 +55,16 @@ func init() {
 }
 
 func documentHandler(args map[string]any) (CallToolResult, error) {
+	return documentContextHandler(context.Background(), args)
+}
+
+func documentContextHandler(ctx context.Context, args map[string]any) (CallToolResult, error) {
 	action, _ := args["action"].(string)
 	switch action {
 	case "get":
 		return documentGet(args)
 	case "create":
-		return documentCreate(args)
+		return documentCreate(ctx, args)
 	case "list":
 		return documentList(args)
 	case "delete":
@@ -89,7 +108,7 @@ func documentGet(args map[string]any) (CallToolResult, error) {
 	)}}}, nil
 }
 
-func documentCreate(args map[string]any) (CallToolResult, error) {
+func documentCreate(ctx context.Context, args map[string]any) (CallToolResult, error) {
 	notebook, _ := args["notebook"].(string)
 	if notebook == "" {
 		return CallToolResult{Content: []ContentItem{{Type: "text", Text: "notebook is required"}}, IsError: true}, nil
@@ -105,7 +124,7 @@ func documentCreate(args map[string]any) (CallToolResult, error) {
 			return documentTargetFailure(errors.New("title is required with parentID")), nil
 		}
 		doc, err := model.CreateDocByParent(model.DocumentCreateRequest{Notebook: notebook, ParentID: target.id,
-			ID: ast.NewNodeID(), TitleFormat: "plain", Title: title, Markdown: markdown})
+			ID: ast.NewNodeID(), TitleFormat: "plain", Title: title, Markdown: markdown, AgentGenerated: isAgentWrite(ctx)})
 		if err != nil {
 			return documentTargetFailure(fmt.Errorf("create doc failed: %w", err)), nil
 		}
@@ -122,7 +141,12 @@ func documentCreate(args map[string]any) (CallToolResult, error) {
 
 	id := ast.NewNodeID()
 	docPath := strings.TrimSuffix(strings.TrimRight(target.path, "/"), ".sy") + "/" + id + ".sy"
-	tree, err := model.CreateDocByMd(notebook, docPath, title, markdown, nil, nil)
+	var tree *parse.Tree
+	if isAgentWrite(ctx) {
+		tree, err = model.CreateAgentDocByMd(notebook, docPath, title, markdown)
+	} else {
+		tree, err = model.CreateDocByMd(notebook, docPath, title, markdown, nil, nil)
+	}
 	if err != nil {
 		return CallToolResult{Content: []ContentItem{{Type: "text", Text: fmt.Sprintf("create doc failed: %s", err)}}, IsError: true}, nil
 	}
@@ -156,6 +180,9 @@ func documentTargetFailure(err error) CallToolResult {
 func resolveDocumentTarget(notebook string, args map[string]any, create, defaultRoot bool) (*documentTarget, error) {
 	parent, hasParent := args["parentID"]
 	legacy, hasPath := args["path"]
+	if _, ok := parent.(string); ok && legacy == "" {
+		hasPath = false
+	}
 	if hasParent && hasPath {
 		return nil, errors.New("parentID and path cannot be combined")
 	}
@@ -213,7 +240,7 @@ func documentList(args map[string]any) (CallToolResult, error) {
 		return documentTargetFailure(err), nil
 	}
 
-	files, _, err := model.ListDocTree(notebook, target.path, 0, false, false, 128)
+	files, total, err := model.ListDocTree(notebook, target.path, 0, false, false, 128)
 	if err != nil {
 		return CallToolResult{Content: []ContentItem{{Type: "text", Text: fmt.Sprintf("list docs failed: %s", err)}}, IsError: true}, nil
 	}
@@ -222,6 +249,9 @@ func documentList(args map[string]any) (CallToolResult, error) {
 	fmt.Fprintf(&sb, "Documents in %s (hPath: %s):\n\n", notebook, target.hPath)
 	for _, f := range files {
 		fmt.Fprintf(&sb, "- %s (id: %s, hPath: %s)\n", f.Name, f.ID, strings.TrimRight(target.hPath, "/")+"/"+f.Name)
+	}
+	if total > len(files) {
+		fmt.Fprintf(&sb, "\nTruncated: showing %d of %d visible direct child documents (limit: 128). This is not a complete listing.\n", len(files), total)
 	}
 	return CallToolResult{Content: []ContentItem{{Type: "text", Text: sb.String()}}}, nil
 }

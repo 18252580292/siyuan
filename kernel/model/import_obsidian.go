@@ -933,7 +933,7 @@ func readStableObsidianFile(file *obsidianSourceFile) ([]byte, error) {
 	if before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
 		return nil, fmt.Errorf("%w while reading", errObsidianSourceChanged)
 	}
-	return data, nil
+	return bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), nil
 }
 
 func newObsidianReadUserError(file *obsidianSourceFile, err error) error {
@@ -1755,7 +1755,7 @@ func importObsidianVaultTask(ctx context.Context, taskID, notebookName string) {
 		removeObsidianTemp(taskID)
 		return
 	}
-	if err = filelock.WriteFile(filepath.Join(boxDir, ".siyuan", "sort.json"), sortData); err != nil {
+	if err = util.WriteUserFile(filepath.Join(boxDir, ".siyuan", "sort.json"), sortData); err != nil {
 		result.Incomplete = true
 		markObsidianNotebookIncomplete(boxID, notebookName)
 		failObsidianTask(taskID, "writing", err, result)
@@ -2376,7 +2376,7 @@ func writeObsidianTempTree(docsTemp string, tree *parse.Tree) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		return err
 	}
-	return filelock.WriteFile(target, data)
+	return util.WriteUserFile(target, data)
 }
 
 func copyStableObsidianFile(source *obsidianSourceFile, destination string) error {
@@ -2386,7 +2386,7 @@ func copyStableObsidianFile(source *obsidianSourceFile, destination string) erro
 	if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
 		return err
 	}
-	if err := filelock.Copy(source.AbsPath, destination); err != nil {
+	if err := util.CopyUserFile(source.AbsPath, destination); err != nil {
 		return err
 	}
 	return validateObsidianSourceMetadata(source)
@@ -2408,7 +2408,7 @@ func writeObsidianSortFile(tempRoot string, docs []*obsidianDocPlan) error {
 	if err != nil {
 		return err
 	}
-	return filelock.WriteFile(filepath.Join(tempRoot, "sort.json"), data)
+	return util.WriteUserFile(filepath.Join(tempRoot, "sort.json"), data)
 }
 
 func copyObsidianTreeFiles(sourceRoot, destinationRoot string) error {
@@ -2430,7 +2430,7 @@ func copyObsidianTreeFiles(sourceRoot, destinationRoot string) error {
 		if entry.Type()&os.ModeSymlink != 0 {
 			return errors.New("staged document tree contains a symbolic link")
 		}
-		return filelock.Copy(current, destination)
+		return util.CopyUserFile(current, destination)
 	})
 }
 

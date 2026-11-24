@@ -2,6 +2,50 @@
 !include FileFunc.nsh
 Caption "${PRODUCT_NAME} ${VERSION}"
 
+!define MARKDOWN_PROG_ID "org.b3log.siyuan.markdown"
+!define SIYUAN_PATH_SCRIPT "${__FILEDIR__}\path.ps1"
+
+!macro UpdateKernelPath Operation
+    Push $R9
+    InitPluginsDir
+    File /oname=$PLUGINSDIR\siyuan-path.ps1 "${SIYUAN_PATH_SCRIPT}"
+    ${If} $installMode == "all"
+        nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\siyuan-path.ps1" -Operation ${Operation} -Scope Machine -KernelDirectory "$INSTDIR\resources\kernel"'
+    ${Else}
+        nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\siyuan-path.ps1" -Operation ${Operation} -Scope User -KernelDirectory "$INSTDIR\resources\kernel"'
+    ${EndIf}
+    Pop $R9
+    ${If} $R9 == 0
+        System::Call 'user32::SendMessageTimeoutW(p 0xffff, i 0x001a, p 0, w "Environment", i 2, i 5000, p 0)'
+    ${EndIf}
+    Pop $R9
+!macroend
+
+!macro RegisterMarkdownOpenWith
+    # 只加入打开方式，不修改扩展名默认值或用户的 UserChoice。
+    WriteRegStr SHELL_CONTEXT "Software\Classes\${MARKDOWN_PROG_ID}" "" "SiYuan Markdown"
+    WriteRegStr SHELL_CONTEXT "Software\Classes\${MARKDOWN_PROG_ID}\DefaultIcon" "" '"$INSTDIR\resources\markdown.ico",0'
+    WriteRegStr SHELL_CONTEXT "Software\Classes\${MARKDOWN_PROG_ID}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --markdown "%1"'
+    WriteRegNone SHELL_CONTEXT "Software\Classes\.md\OpenWithProgids" "${MARKDOWN_PROG_ID}"
+    WriteRegNone SHELL_CONTEXT "Software\Classes\.markdown\OpenWithProgids" "${MARKDOWN_PROG_ID}"
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+!macroend
+
+!macro UnregisterMarkdownOpenWith
+    # 旧安装器不得移除已指向其他安装目录的登记，也不清理其他应用的键。
+    Push $R9
+    ReadRegStr $R9 SHELL_CONTEXT "Software\Classes\${MARKDOWN_PROG_ID}\shell\open\command" ""
+    ${If} $R9 == '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --markdown "%1"'
+        DeleteRegValue SHELL_CONTEXT "Software\Classes\.md\OpenWithProgids" "${MARKDOWN_PROG_ID}"
+        DeleteRegValue SHELL_CONTEXT "Software\Classes\.markdown\OpenWithProgids" "${MARKDOWN_PROG_ID}"
+        DeleteRegKey /ifempty SHELL_CONTEXT "Software\Classes\.md\OpenWithProgids"
+        DeleteRegKey /ifempty SHELL_CONTEXT "Software\Classes\.markdown\OpenWithProgids"
+        DeleteRegKey SHELL_CONTEXT "Software\Classes\${MARKDOWN_PROG_ID}"
+        System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+    ${EndIf}
+    Pop $R9
+!macroend
+
 !macro WriteInstallLog Stage
     Push "${Stage}"
     Call AppendInstallLog
@@ -134,18 +178,18 @@ FunctionEnd
 !macroend
 
 !macro customInstall
+    !insertmacro RegisterMarkdownOpenWith
     !insertmacro WriteInstallLog "payload-extracted version=${VERSION} target=$INSTDIR"
     RMDir /r "$PROFILE\AppData\Local\siyuan-updater"
     nsExec::ExecToLog '"$SYSDIR\cmd.exe" /c mklink /H "$INSTDIR\resources\kernel\siyuan.exe" "$INSTDIR\resources\kernel\SiYuan-Kernel.exe" 2>nul || ver>nul'
-    ${If} $installMode == "all"
-        nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$k=\"$INSTDIR\resources\kernel\";$p=[Environment]::GetEnvironmentVariable(\"Path\",\"Machine\");if((-not $p) -or -not ($p.Split(\";\") -contains $k)){$p=\"$k;$p\";[Environment]::SetEnvironmentVariable(\"Path\",$p,\"Machine\")}else{Write-Host \"already in PATH\"}"'
-    ${Else}
-        nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$k=\"$INSTDIR\resources\kernel\";$p=[Environment]::GetEnvironmentVariable(\"Path\",\"User\");if((-not $p) -or -not ($p.Split(\";\") -contains $k)){$p=\"$k;$p\";[Environment]::SetEnvironmentVariable(\"Path\",$p,\"User\")}else{Write-Host \"already in PATH\"}"'
-    ${EndIf}
+    !insertmacro UpdateKernelPath Add
     !insertmacro WriteInstallLog "install-complete version=${VERSION} target=$INSTDIR"
 !macroend
 
 !macro customUnInstall
+    ${IfNot} ${isUpdated}
+        !insertmacro UnregisterMarkdownOpenWith
+    ${EndIf}
     ${IfNot} ${isUpdated}
         # 真正卸载时清理共用安装包，更新安装期间保留缓存。
         RMDir /r "$PROFILE\.config\siyuan\install"
@@ -171,11 +215,7 @@ FunctionEnd
     ${EndIf}
 
     RMDir /r "$PROFILE\AppData\Local\siyuan-updater"
-    ${If} $installMode == "all"
-        nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$k=\"$INSTDIR\resources\kernel\";$p=[Environment]::GetEnvironmentVariable(\"Path\",\"Machine\");if($p){$a=$p.Split(\";\") | ?{$_ -and ($_ -ne $k)};$p=[string]::Join(\";\",$a);[Environment]::SetEnvironmentVariable(\"Path\",$p,\"Machine\")}"'
-    ${Else}
-        nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "$k=\"$INSTDIR\resources\kernel\";$p=[Environment]::GetEnvironmentVariable(\"Path\",\"User\");if($p){$a=$p.Split(\";\") | ?{$_ -and ($_ -ne $k)};$p=[string]::Join(\";\",$a);[Environment]::SetEnvironmentVariable(\"Path\",$p,\"User\")}"'
-    ${EndIf}
+    !insertmacro UpdateKernelPath Remove
 !macroend
 
 # https://nsis.sourceforge.io/FindIt:_Simple_search_for_file_/_directory

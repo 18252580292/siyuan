@@ -441,6 +441,10 @@ const handleTouchEnd = (e: TouchEvent) => {
 };
 
 const handleContextMenu = (event: MouseEvent) => {
+    if (!event.isTrusted && dragState && !dragState.isDragging) {
+        // 合成长按菜单的 touchend 会阻断后续监听器，菜单打开前释放原触点的拖拽候选。
+        completeBridgeDrag(undefined, true);
+    }
     // WebView 会在手指仍按住时派发原生长按菜单，菜单遮罩会截获后续 drop。
     // 松手后由 event.ts 合成的 contextmenu 不是可信事件，需要保留以打开正常的长按菜单。
     if (shouldSuppressNativeContextMenu(event.isTrusted, hasActiveTouchGesture([dragState, manualState]))) {
@@ -1213,6 +1217,33 @@ const handleCancel = () => {
     // touchcancel 时两条路径都需无条件清理（cleanupDrag/cancelManualTouch 内部均做空状态处理）
     completeBridgeDrag(undefined, true);
     cancelManualTouch();
+};
+
+// 块标边缘划选仅接管同一目标上尚未开始的触摸拖拽候选。
+export const cancelTouchDragCandidate = (target: HTMLElement): (() => void) | false => {
+    if (manualState || foreignDragState || window.siyuan.touchDragActive) return false;
+    const gutter = target.closest<HTMLElement>(".protyle-gutters");
+    if (!gutter) return false;
+    if (dragState && (dragState.inputType !== "touch" || dragState.isMouse || dragState.isDragging ||
+        !isBlockGutter(dragState.draggableElement) || !dragState.draggableElement.contains(target))) return false;
+    const draggable = dragState?.draggableElement || getDraggableAncestor(target);
+    const originalDraggable = dragState?.restoreDraggable ? "true" : draggable?.getAttribute("draggable");
+    if (dragState) {
+        dragState.restoreDraggable = false;
+        completeBridgeDrag(undefined, true);
+    }
+    draggable?.setAttribute("draggable", "false");
+    setGutterTouchDragging(gutter, true);
+    let released = false;
+    return () => {
+        if (released) return;
+        released = true;
+        if (draggable) {
+            if (originalDraggable === null) draggable.removeAttribute("draggable");
+            else if (originalDraggable !== undefined) draggable.setAttribute("draggable", originalDraggable);
+        }
+        setGutterTouchDragging(gutter, false);
+    };
 };
 
 // 取消手动桥接（mousedown）路径：派发 mouseup 以触发各组件注册的清理回调（如 Outline.bindSort 的 mouseup 会清空 document.onmousemove 等），并复位状态

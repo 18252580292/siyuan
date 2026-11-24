@@ -16,12 +16,27 @@ import {normalizeInlineElementBoundaries} from "./inlineElementBoundary";
 import {renderLongTextRuns} from "./longTextWrap";
 import {renderImageActions} from "../render/imageActions";
 import {renderImageDisplay} from "../render/imageDisplay";
-import {renderIFrameResize} from "../render/iframeResize";
+import {renderMediaResize} from "../render/mediaResize";
 import {renderBlockDirection} from "../render/blockDirection";
+import {renderTableCorners} from "../render/tableCorners";
 
 export const processPasteCode = (html: string, text: string, originalTextHTML: string, protyle: IProtyle) => {
     const tempElement = document.createElement("div");
     tempElement.innerHTML = html;
+    const preElement = tempElement.querySelector("pre");
+    if (preElement) {
+        // IDE 识别仅用于独立代码片段，混合内容保留 HTML 中的段落和代码块结构。
+        let element: Element = preElement;
+        while (element !== tempElement) {
+            const parent = element.parentElement;
+            if (Array.from(parent.childNodes).some(node => node !== element &&
+                (node.nodeType === Node.ELEMENT_NODE ||
+                    node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ""))) {
+                return false;
+            }
+            element = parent;
+        }
+    }
     let isCode = false;
     if (tempElement.childElementCount === 1 &&
         (tempElement.lastElementChild as HTMLElement).style.fontFamily.indexOf("monospace") > -1) {
@@ -74,12 +89,13 @@ export const processRender = (previewPanel: Element) => {
     renderLongTextRuns(previewPanel);
     renderEmbedHeadings(previewPanel);
     renderTableCellRichElements(previewPanel);
+    renderTableCorners(previewPanel);
     // 受限 Lite 编辑器只渲染公式，代码围栏始终作为源码编辑，不能执行图表或 HTML。
     if (previewPanel.closest('[data-protyle-lite-render="safe"]')) {
         mathRender(previewPanel);
         return;
     }
-    renderIFrameResize(previewPanel);
+    renderMediaResize(previewPanel);
     customBlockRender(previewPanel);
     mindmapRender(previewPanel);
     const language = previewPanel.getAttribute("data-subtype");

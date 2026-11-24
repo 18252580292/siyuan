@@ -6,7 +6,9 @@ import type {ListMindmapSummary} from "./summary";
 import {LIST_MINDMAP_CONNECTOR_STYLES} from "./connectors";
 import type {ListMindmapConnectorStyle} from "./connectors";
 import {isListMindmapAppearance} from "./appearance";
-import type {ListMindmapAppearance} from "./appearance";
+import type {ListMindmapAppearance, ListMindmapNodeShape} from "./appearance";
+import {MINDMAP_RELATION_PATHS, MINDMAP_RELATION_STROKES} from "./relationGeometry";
+import type {MindmapRelationCurve, MindmapRelationPathStyle, MindmapRelationStrokeStyle} from "./relationGeometry";
 
 export interface ListMindmapNodeStyle {
     width?: number;
@@ -22,6 +24,8 @@ export interface ListMindmapNodeStyle {
     lineColor?: string;
     lineWidth?: number;
     lineDash?: boolean;
+    connectorStyle?: ListMindmapConnectorStyle;
+    shape?: ListMindmapNodeShape;
 }
 
 export interface ListMindmapRelation {
@@ -32,6 +36,10 @@ export interface ListMindmapRelation {
     color?: string;
     width?: number;
     dash?: boolean;
+    pathStyle?: MindmapRelationPathStyle;
+    strokeStyle?: MindmapRelationStrokeStyle;
+    curve?: MindmapRelationCurve;
+    freeRoute?: MindmapManualRoute;
     arrowDirection?: "forward" | "reverse" | "both" | "none";
     route?: MindmapManualRoute;
     fromAnchor?: MindmapRelationAnchor;
@@ -140,6 +148,8 @@ export const parseListMindmapMetadata = (value: string | null): ListMindmapMetad
             ("width" in relation && (typeof relation.width !== "number" ||
                 !Number.isFinite(relation.width) || relation.width < 0)) ||
             ("dash" in relation && typeof relation.dash !== "boolean") ||
+            ("pathStyle" in relation && !MINDMAP_RELATION_PATHS.some(style => style === relation.pathStyle)) ||
+            ("strokeStyle" in relation && !MINDMAP_RELATION_STROKES.some(style => style === relation.strokeStyle)) ||
             ("arrowDirection" in relation && (typeof relation.arrowDirection !== "string" ||
                 !["forward", "reverse", "both", "none"].includes(relation.arrowDirection)))) {
             throw invalidMetadata();
@@ -154,8 +164,19 @@ export const parseListMindmapMetadata = (value: string | null): ListMindmapMetad
                 }
             }
         }
-        if ("route" in relation) {
-            const route = relation.route;
+        if ("curve" in relation) {
+            const curve = relation.curve;
+            if (!isRecord(curve) || curve.version !== 1 || [curve.from, curve.to].some(point =>
+                !isRecord(point) || ["x", "y"].some(key => typeof point[key] !== "number" ||
+                    !Number.isFinite(point[key]) || Math.abs(Number(point[key])) > 1000000))) {
+                throw invalidMetadata();
+            }
+        }
+        for (const key of ["route", "freeRoute"]) {
+            if (!(key in relation)) {
+                continue;
+            }
+            const route = relation[key];
             if (!isRecord(route) || route.version !== 1 || !Array.isArray(route.points) ||
                 !route.points.length || route.points.length > 64 || route.points.some(point =>
                     !isRecord(point) || ["x", "y", "t"].some(key => typeof point[key] !== "number" ||
@@ -356,6 +377,15 @@ const cleanListMindmapDOM = (root: Element | DocumentFragment) => {
     root.querySelectorAll(".mindmap-view, .list-mindmap, .protyle-image-resize").forEach(element => element.remove());
     root.querySelectorAll(".img--select, .img--drag, .protyle-image-container--compact").forEach(element => {
         element.classList.remove("img--select", "img--drag", "protyle-image-container--compact");
+    });
+    // 说明字号取决于当前显示宽度，隐藏源节点和编辑器的布局差异不能成为正文冲突。
+    root.querySelectorAll<HTMLElement>(".img .img__name, .img .protyle-action__title, .img .img__alt").forEach(element => {
+        if (element.style.getPropertyValue("--protyle-image-font-size")) {
+            element.style.removeProperty("--protyle-image-font-size");
+            if (element.style.length === 0) {
+                element.removeAttribute("style");
+            }
+        }
     });
     // 页签导航和面板标识由渲染器生成，不参与正文比较或脑图节点事务。
     root.querySelectorAll(".tabs-header, .tabs-divider, .tabs-attributes").forEach(element => element.remove());
@@ -643,6 +673,9 @@ const normalizeList = (list: HTMLElement, start: number) => {
 
 const getDestinationList = (model: ListMindmapModel, targetId: string, placement: ListMindmapPlacement,
                             createListId: () => string): HTMLElement | undefined => {
+    if (placement !== "child" && targetId === model.root.id) {
+        return;
+    }
     if (targetId === model.list.getAttribute("data-node-id")) {
         return placement === "child" ? model.list : undefined;
     }

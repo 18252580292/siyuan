@@ -14,6 +14,13 @@ import (
 var BookmarkTool = &Tool{
 	Name:        "bookmark",
 	Description: "Bookmark management. Actions: list(), labels(), remove(label), rename(old, new).",
+	EffectScope: EffectScopeLocal,
+	ActionEffects: map[string]ToolEffects{
+		"list":   {LocalRead: true},
+		"labels": {LocalRead: true},
+		"remove": {LocalWrite: true},
+		"rename": {LocalWrite: true},
+	},
 	InputSchema: ToolSchema{
 		Type: "object",
 		Properties: map[string]Property{
@@ -50,7 +57,7 @@ func bookmarkHandler(args map[string]any) (CallToolResult, error) {
 }
 
 func bookmarkList(_ map[string]any) (CallToolResult, error) {
-	bookmarks := model.BuildBookmark()
+	bookmarks := model.BuildBookmark(false)
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Bookmarks (%d):\n\n", len(*bookmarks))
 	for _, b := range *bookmarks {

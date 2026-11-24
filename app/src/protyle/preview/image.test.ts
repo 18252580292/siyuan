@@ -1,10 +1,11 @@
 import * as assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readdirSync, readFileSync} from "node:fs";
 import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 import {ModuleKind, ScriptTarget, transpileModule} from "typescript";
+import {escapeHtmlTextAndAttr} from "../../util/escape";
 
-test("image preview initializes its toolbar when ready is dispatched on the source element", async () => {
+const createPreviewHarness = async (language = "en", zIndex = 10) => {
     const actions = ["zoom-in", "zoom-out", "one-to-one", "reset", "prev", "play", "next",
         "rotate-left", "rotate-right", "flip-horizontal", "flip-vertical", "copy", "copy-file"];
     class Classes extends Set<string> {
@@ -29,17 +30,25 @@ test("image preview initializes its toolbar when ready is dispatched on the sour
         }];
     }));
     const copied: string[] = [];
+    const copiedURLs: string[] = [];
+    const messages: Array<{message: string, type?: string}> = [];
+    let writeResult = () => Promise.resolve({status: "plain"});
+    const customButtons: Array<EventTarget & {className: string, attributes: Map<string, string>}> = [];
     const copiedFiles: string[] = [];
     let supportsFiles = true;
     const sourceElement = Object.assign(new EventTarget(), {childElementCount: 2});
     class TestViewer {
         public viewed = true;
         public viewer = {
+            style: {zIndex: "2015"},
             querySelector: (selector: string) => buttons.get(selector.replace(".viewer-navigation > ", "")),
         };
         public image = {src: "blob:first"};
         public toolbar = {
             querySelector: (selector: string) => {
+                if (selector === "ul") {
+                    return {append: (button: typeof customButtons[number]) => customButtons.push(button)};
+                }
                 assert.ok(buttons.has(selector));
                 return buttons.get(selector);
             },
@@ -66,29 +75,101 @@ test("image preview initializes its toolbar when ready is dispatched on the sour
     const compiled = transpileModule(source, {
         compilerOptions: {module: ModuleKind.CommonJS, target: ScriptTarget.ES2021},
     }).outputText;
-    const exports = {} as {previewImages: (sources: string[]) => void};
-    const languages = JSON.parse(readFileSync("appearance/langs/en.json", "utf8"));
+    const exports = {} as Pick<typeof import("./image"), "previewImages" | "previewDocImage">;
+    const requests: Array<{id: string}> = [];
+    const languages = JSON.parse(readFileSync(`appearance/langs/${language}.json`, "utf8"));
     const previewWindow = {
-        siyuan: {languages, viewer: undefined as TestViewer},
+        siyuan: {languages, zIndex, viewer: undefined as TestViewer},
         location: {href: "http://localhost:6806/stage/build/app/", origin: "http://localhost:6806"},
     };
     runInNewContext(compiled, {
         exports,
         require: () => ({
             Constants: {PROTYLE_CDN: ""},
+            escapeHtmlTextAndAttr,
+            isMobile: () => false,
             addScript: () => Promise.resolve(),
+            fetchPost: (_url: string, data: {id: string}, callback: (response: {data: string[]}) => void) => {
+                requests.push(data);
+                callback({data: ["assets/source.png"]});
+            },
             copyPNGByLink: (src: string) => copied.push(src),
+            writeClipboardData: ({textPlain}: {textPlain: string}) => {
+                copiedURLs.push(textPlain);
+                return writeResult();
+            },
+            showMessage: (message: string, _timeout?: number, type?: string) => messages.push({message, type}),
+            getZIndex: (element: {style: {zIndex: string}}) => Number(element.style.zIndex),
             writeAssetToClipboard: (src: string) => ({ignore: !supportsFiles, click: () => copiedFiles.push(src)}),
             isEncryptedBox: (box: string) => box === "encrypted",
         }),
-        document: {createElement: () => sourceElement},
+        document: {createElement: (tag: string) => {
+            if (tag === "ul") {
+                return sourceElement;
+            }
+            const attributes = new Map<string, string>();
+            return Object.assign(new EventTarget(), {attributes, setAttribute: (name: string, value: string) => attributes.set(name, value)});
+        }},
         window: previewWindow,
         Viewer: TestViewer,
         URL,
     });
-    exports.previewImages(["blob:first", "blob:second"]);
+    exports.previewImages(["assets/first image.png?box=encrypted", "https://example.com/second.png?size=2#image"]);
     await Promise.resolve();
     const instance = previewWindow.siyuan.viewer;
+    const copyURLButton = customButtons.find(button => button.className.includes("viewer-copy-url"));
+    return {
+        instance, copyURLButton, copied, copiedURLs, copiedFiles, messages, languages, buttons, sourceElement, requests, api: exports,
+        setWriteResult: (callback: typeof writeResult) => {writeResult = callback;},
+        setSupportsFiles: (value: boolean) => {supportsFiles = value;},
+    };
+};
+
+test("embedded image galleries request the source document while ordinary images retain their document", async () => {
+    const {api, requests} = await createPreviewHarness();
+    const cases: Array<Record<string, string> | undefined> = [undefined,
+        {"data-root-id": "source-doc", "data-id": "source-block"}, {"data-id": "source-block"}, {}];
+    for (const attributes of cases) {
+        const image = {closest: (selector: string) => {
+            if (selector === ".av__richtext-host, .av__celltext--rich") {
+                return null;
+            }
+            assert.equal(selector, ".protyle-wysiwyg__embed");
+            return attributes ? {getAttribute: (name: string) => attributes[name]} : null;
+        }} as unknown as HTMLElement;
+        api.previewDocImage("assets/source.png", "host-doc", "", image);
+        assert.equal(requests.at(-1).id, attributes?.["data-root-id"] || attributes?.["data-id"] || "host-doc");
+    }
+    api.previewDocImage("assets/source.png", "host-doc");
+    assert.equal(requests.at(-1).id, "host-doc", "callers without an image element retain their existing gallery");
+    await Promise.resolve();
+});
+
+test("image preview initializes its toolbar and reports successful address copies from clicks and keyboard", async () => {
+    const {instance, copyURLButton, copied, copiedURLs, copiedFiles, messages, languages, buttons, sourceElement,
+        setSupportsFiles} = await createPreviewHarness();
+    assert.equal(copyURLButton.attributes.get("role"), "button");
+    assert.equal(instance.viewer.style.zIndex, "2015");
+    assert.equal(copyURLButton.attributes.get("aria-label"), languages.copyImageURL);
+    copyURLButton.dispatchEvent(new Event("click"));
+    instance.options.view({detail: {index: 1}});
+    for (const key of ["Enter", " "]) {
+        const event = Object.assign(new Event("keydown", {cancelable: true}), {key});
+        copyURLButton.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, true);
+    }
+    assert.deepEqual(copiedURLs, ["assets/first image.png?box=encrypted",
+        "https://example.com/second.png?size=2#image", "https://example.com/second.png?size=2#image"]);
+    await new Promise(setImmediate);
+    assert.deepEqual(messages, Array.from({length: 3}, (): {message: string, type?: string} =>
+        ({message: languages.copied, type: undefined})));
+    instance.viewed = false;
+    copyURLButton.dispatchEvent(new Event("click"));
+    await new Promise(setImmediate);
+    assert.equal(copiedURLs.length, 3);
+    assert.equal(messages.length, 3);
+    instance.viewed = true;
+    instance.options.view({detail: {index: 0}});
     const title = () => instance.options.title[1]({alt: "photo.png"}, {naturalWidth: 640, naturalHeight: 480});
     assert.equal(title(), "1/2 photo [640 × 480]");
     instance.options.view({detail: {index: 1}});
@@ -126,9 +207,48 @@ test("image preview initializes its toolbar when ready is dispatched on the sour
     assert.deepEqual(copiedFiles, ["assets/a b.gif?box=plain"]);
     instance.options.view();
     assert.ok(fileButton.classList.has("fn__none"));
-    supportsFiles = false;
+    setSupportsFiles(false);
     instance.options.viewed();
     assert.ok(fileButton.classList.has("fn__none"));
     instance.options.toolbar.copyFile();
     assert.equal(copiedFiles.length, 1);
+});
+
+test("image address copy waits for clipboard completion before reporting success", async () => {
+    const {copyURLButton, messages, languages, setWriteResult} = await createPreviewHarness();
+    let finish: (result: {status: string}) => void;
+    setWriteResult(() => new Promise(resolve => {finish = resolve;}));
+    copyURLButton.dispatchEvent(new Event("click"));
+    await new Promise(setImmediate);
+    assert.deepEqual(messages, []);
+    finish({status: "plain"});
+    await new Promise(setImmediate);
+    assert.deepEqual(messages, [{message: languages.copied, type: undefined}]);
+});
+
+test("image preview stays above an existing high application layer", async () => {
+    const {instance} = await createPreviewHarness("en", 3000);
+    assert.equal(instance.viewer.style.zIndex, "3001");
+});
+
+for (const rejected of [false, true]) {
+    test(`image address copy reports ${rejected ? "rejected" : "failed"} clipboard writes without a success message`, async () => {
+        const {copyURLButton, messages, languages, setWriteResult} = await createPreviewHarness();
+        setWriteResult(() => rejected ? Promise.reject(new Error("Clipboard unavailable")) : Promise.resolve({status: "failed"}));
+        copyURLButton.dispatchEvent(new Event("click"));
+        await new Promise(setImmediate);
+        assert.deepEqual(messages, [{message: languages.copyImageURLFailed, type: "error"}]);
+    });
+}
+
+test("image address copy uses a complete translated phrase in every supported language", async () => {
+    const files = readdirSync("appearance/langs").filter(file => file.endsWith(".json"));
+    for (const file of files) {
+        const {copyURLButton, languages} = await createPreviewHarness(file.slice(0, -5));
+        assert.ok(languages.copyImageURL?.trim(), file);
+        assert.ok(languages.copyImageURLFailed?.trim(), file);
+        assert.equal(copyURLButton.attributes.get("aria-label"), languages.copyImageURL, file);
+    }
+    assert.equal((await createPreviewHarness("zh-CN")).copyURLButton.attributes.get("aria-label"), "复制图片地址");
+    assert.equal((await createPreviewHarness("ja")).copyURLButton.attributes.get("aria-label"), "画像の URL をコピー");
 });

@@ -99,9 +99,12 @@ function fixture(delay, mobile = false) {
             SIYUAN_VERSION: "qa", NODE_ENV: "development" });
         return exports;
     };
-    const { Constants } = load("constants.ts");
+    const { Constants } = load("constants.ts", {
+        "./util/dockKeymap": load("util/dockKeymap.ts"),
+    });
     const zIndex = load("util/zIndex.ts");
     const { Dialog } = load("dialog/index.ts", {
+        "../menus/overlayOwnership": load("menus/overlayOwnership.ts"),
         "../util/genID": { genUUID: () => "palette" }, "../util/zIndex": zIndex,
         "./moveResize": { moveResize() { } }, "../util/functions": { isMobile: () => false },
         "../constants": { Constants },

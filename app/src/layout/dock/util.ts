@@ -2,7 +2,7 @@ import {getAllDocks, getAllModels} from "../getAll";
 import {Tab} from "../Tab";
 import {Graph} from "./Graph";
 import {Outline} from "./Outline";
-import {fixWndFlex1, getInstanceById, getWndByLayout} from "../util";
+import {getInstanceById, getWndByLayout} from "../util";
 import {getDockByType, resizeTabs, setTabPosition} from "../tabUtil";
 import {Backlink} from "./Backlink";
 import type {App} from "../../index";
@@ -179,9 +179,13 @@ export const openOutline = async (options: {
         options.title = getDocDisplayName(response.data.name, response.data.ial[Constants.CUSTOM_SY_TITLE_EMPTY] === "true");
     }
     const newWnd = wnd.split("lr", false);
-    newWnd.element.style.width = "200px";
-    newWnd.element.classList.remove("fn__flex-1");
-    fixWndFlex1(newWnd.parent);
+    if (newWnd !== wnd) {
+        newWnd.element.style.width = Constants.SIYUAN_EMPTY_LAYOUT.left.data.flat()
+            .find(item => item.type === "outline").size.width + "px";
+        newWnd.element.classList.remove("fn__flex-1");
+        wnd.element.style.width = "";
+        wnd.element.classList.add("fn__flex-1");
+    }
     newWnd.addTab(new Tab({
         icon: "iconOutline",
         title: options.title,
@@ -222,6 +226,12 @@ export const updateDockHotkeys = () => {
     });
 };
 
+export const getDockBarToggleTip = () => {
+    const label = window.siyuan.config.uiLayout.hideDock ? window.siyuan.languages.showDockBar : window.siyuan.languages.hideDockBar;
+    const hotkey = updateHotkeyTip(window.siyuan.config.keymap.general.toggleDock.custom);
+    return hotkey ? `${label} ${hotkey}` : label;
+};
+
 export const toggleDockBar = (useElement: Element) => {
     const dockIsShow = useElement.getAttribute("xlink:href") === "#iconHideDock";
     if (dockIsShow) {
@@ -230,6 +240,7 @@ export const toggleDockBar = (useElement: Element) => {
         useElement.setAttribute("xlink:href", "#iconHideDock");
     }
     window.siyuan.config.uiLayout.hideDock = dockIsShow;
+    useElement.closest("#barDock")?.setAttribute("aria-label", getDockBarToggleTip());
     syncDockBarVisibility();
     resizeTabs();
     resetFloatDockSize();
@@ -288,7 +299,6 @@ export const selectOpenTab = async () => {
             tab.model.editor.protyle.wysiwyg.element.blur();
             tab.model.editor.protyle.title.editElement.blur();
             await files.selectItem(tab.model.editor.protyle.notebookId, tab.model.editor.protyle.path);
-            files.lastSelectedElement = files.element.querySelector(".b3-list-item--focus");
         }
     }
     dockFile.toggleModel("file", true);

@@ -36,6 +36,7 @@ import {initSelectionStyle} from "./selectionStyle";
 import {applyCompactMode} from "../config/tabs/compactMode";
 
 let headingNumberMeasurementRefreshTimer: number;
+let pendingDefaultStyleElement: HTMLLinkElement;
 let appearanceUpdate = Promise.resolve();
 let appearanceReloadPending = false;
 const appearancePackageRevisions = new Map<string, string>();
@@ -135,6 +136,10 @@ export const refreshThemeStyle = (themeAddress: string) => {
 };
 
 export const loadAssets = async (appearance: Config.IAppearance) => {
+    // 跟随当前前端的系统模式，仅更新运行时状态，避免共用内核的不同设备反复写回配置。
+    if (appearance.modeOS) {
+        appearance.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? 1 : 0;
+    }
     initSelectionStyle();
     const scriptLoads: Promise<unknown>[] = [];
     setBodyHighlight(appearance.bodyGradient);
@@ -159,34 +164,51 @@ export const loadAssets = async (appearance: Config.IAppearance) => {
     htmlElement.setAttribute("data-light-theme", data.themeLight);
     htmlElement.setAttribute("data-dark-theme", data.themeDark);
     const OSTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    if (window.siyuan.config.appearance.modeOS && (
-        (window.siyuan.config.appearance.mode === 1 && OSTheme === "light") ||
-        (window.siyuan.config.appearance.mode === 0 && OSTheme === "dark")
-    )) {
-        configApi.set("appearance.mode", OSTheme === "light" ? 0 : 1);
-        window.siyuan.config.appearance.mode = (OSTheme === "light" ? 0 : 1);
-    }
     if (previousThemeMode && previousThemeMode !== themeMode) {
         refreshChartTheme(document.body);
         refreshMermaidTheme(document.body);
     }
     const defaultStyleElement = document.getElementById("themeDefaultStyle");
     const defaultThemeAddress = `/appearance/themes/${data.mode === 1 ? "midnight" : "daylight"}/theme.css?v=${Constants.SIYUAN_VERSION}`;
+    if (pendingDefaultStyleElement && (!defaultStyleElement || !pendingDefaultStyleElement.isConnected ||
+        pendingDefaultStyleElement.getAttribute("href") !== defaultThemeAddress)) {
+        pendingDefaultStyleElement.onload = null;
+        pendingDefaultStyleElement.onerror = null;
+        pendingDefaultStyleElement.remove();
+        pendingDefaultStyleElement = undefined;
+    }
     if (defaultStyleElement) {
-        if (!defaultStyleElement.getAttribute("href").startsWith(defaultThemeAddress)) {
+        if (!defaultStyleElement.getAttribute("href").startsWith(defaultThemeAddress) && !pendingDefaultStyleElement) {
             const newStyleElement = document.createElement("link");
+            pendingDefaultStyleElement = newStyleElement;
             changedThemeStyleElements.push(newStyleElement);
             themeStylesChanged = true;
-            // 等待新样式表加载完成再移除旧样式表
-            new Promise((resolve) => {
-                newStyleElement.rel = "stylesheet";
-                newStyleElement.href = defaultThemeAddress;
-                newStyleElement.onload = resolve;
-                defaultStyleElement.parentNode.insertBefore(newStyleElement, defaultStyleElement);
-            }).then(() => {
-                defaultStyleElement.remove();
-                newStyleElement.id = "themeDefaultStyle";
-            });
+            const complete = (loaded: boolean) => {
+                newStyleElement.onload = null;
+                newStyleElement.onerror = null;
+                if (pendingDefaultStyleElement !== newStyleElement) {
+                    return;
+                }
+                pendingDefaultStyleElement = undefined;
+                const currentStyleElement = document.getElementById("themeDefaultStyle");
+                if (currentStyleElement && currentStyleElement !== defaultStyleElement) {
+                    newStyleElement.remove();
+                    return;
+                }
+                if (loaded) {
+                    defaultStyleElement.remove();
+                    newStyleElement.id = "themeDefaultStyle";
+                } else {
+                    newStyleElement.remove();
+                    console.error("load default theme stylesheet failed: " + defaultThemeAddress);
+                }
+            };
+            // 新样式表加载失败时保留旧样式表，避免界面失去基础样式。
+            newStyleElement.rel = "stylesheet";
+            newStyleElement.href = defaultThemeAddress;
+            newStyleElement.onload = () => complete(true);
+            newStyleElement.onerror = () => complete(false);
+            defaultStyleElement.parentNode.insertBefore(newStyleElement, defaultStyleElement);
         }
     } else {
         addStyle(defaultThemeAddress, "themeDefaultStyle");
@@ -357,7 +379,9 @@ export const setInlineStyle = async (set = true, servePath = "../../../", export
     const codeFontWeight = codeFonts[0]?.weight || 400;
     style += `\n:root { --b3-font-size-editor: ${window.siyuan.config.editor.fontSize}px; --b3-font-family-editor: ${editorFontFamilies || "var(--b3-font-family-protyle)"}; --b3-font-family-editor-code: ${codeFontFamily}; --b3-font-weight-editor-code: ${codeFontWeight}; --b3-database-attr-columns: ${window.siyuan.config.editor.databaseAttrLayout === 0 ? 1 : 2}; --b3-database-attr-column-flow: ${window.siyuan.config.editor.databaseAttrLayout === 2 ? 1 : 0} }
 .b3-typography code:not(.hljs), .protyle-wysiwyg span[data-type~=code] { font-variant-ligatures: ${window.siyuan.config.editor.codeLigatures ? "normal" : "none"} }
-.b3-typography:not(.b3-typography--default) code:not(.hljs), .protyle-wysiwyg span[data-type~=code] { font-family: var(--b3-font-family-editor-code); font-weight: var(--b3-font-weight-editor-code) }${window.siyuan.config.editor.justify ? "\n.protyle-wysiwyg [data-node-id] { text-align: justify }" : ""}`;
+.b3-typography:not(.b3-typography--default) code:not(.hljs), .protyle-wysiwyg span[data-type~=code] { font-family: var(--b3-font-family-editor-code) }
+.b3-typography:where(:not(.b3-typography--default)) :where(code:not(.hljs)), .protyle-wysiwyg :where(span[data-type~=code]) { font-weight: var(--b3-font-weight-editor-code) }
+.b3-typography :where(strong code:not(.hljs)) { font-weight: inherit }${window.siyuan.config.editor.justify ? "\n.protyle-wysiwyg [data-node-id] { text-align: justify }" : ""}`;
     if (editorFontFamilies) {
         style += `\n.b3-typography:not(.b3-typography--default), .protyle-wysiwyg, .protyle-title {${editorFontWeight ? `font-weight: ${editorFontWeight};` : ""}font-family: var(--b3-font-family-emoji-reset), var(--b3-font-family-editor), var(--b3-font-family)}`;
     }

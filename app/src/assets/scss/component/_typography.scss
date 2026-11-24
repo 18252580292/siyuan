@@ -403,6 +403,11 @@
     border-spacing: 0;
     width: max-content;
 
+    tr {
+      // 交错跨行合并时，每个逻辑行仍需独立的高度支撑。
+      height: calc(1.625em + 9px);
+    }
+
     thead > tr:first-child > :first-child {
       border-top-left-radius: var(--b3-table-border-radius-top-left);
     }
@@ -411,13 +416,19 @@
       border-top-right-radius: var(--b3-table-border-radius-top-right);
     }
 
-    tbody:last-of-type > tr:last-child > :first-child,
-    thead:last-child > tr:last-child > :first-child {
+    &:not([data-table-corners]) > tbody:last-of-type > tr:last-child > :first-child,
+    &:not([data-table-corners]) > thead:last-child > tr:last-child > :first-child,
+    > thead > tr > [data-table-cell-corner~="bottom-left"],
+    > tbody > tr > [data-table-cell-corner~="bottom-left"],
+    > tfoot > tr > [data-table-cell-corner~="bottom-left"] {
       border-bottom-left-radius: var(--b3-table-border-radius-bottom-left);
     }
 
-    tbody:last-of-type > tr:last-child > :nth-last-child(1 of :not(.fn__none)),
-    thead:last-child > tr:last-child > :nth-last-child(1 of :not(.fn__none)) {
+    &:not([data-table-corners]) > tbody:last-of-type > tr:last-child > :nth-last-child(1 of :not(.fn__none)),
+    &:not([data-table-corners]) > thead:last-child > tr:last-child > :nth-last-child(1 of :not(.fn__none)),
+    > thead > tr > [data-table-cell-corner~="bottom-right"],
+    > tbody > tr > [data-table-cell-corner~="bottom-right"],
+    > tfoot > tr > [data-table-cell-corner~="bottom-right"] {
       border-bottom-right-radius: var(--b3-table-border-radius-bottom-right);
     }
 
@@ -867,6 +878,16 @@
   }
 }
 
+.b3-list-item__text.document-title-preview span {
+  user-select: none;
+}
+
+// 标题预览默认继承所在界面的字号，单类主题或片段规则可直接覆盖。
+:where(.b3-typography).outline-document-title,
+:where(.b3-typography).document-title-preview {
+  font-size: inherit;
+}
+
 .protyle {
 
   &-icons {
@@ -993,7 +1014,8 @@
     word-break: break-word;
     position: relative;
 
-    &--done:not([data-task="/"]) > div[data-node-id].p {
+    &--done:not([data-task="/"]) > div[data-node-id].p,
+    &--done:not([data-task="/"]) > div[data-table-cell-node].p {
       @include task.completed-text;
     }
 
